@@ -108,9 +108,9 @@ type ProtonWriter struct {
 
 	// Per-block results collected during WriteBlock, indexed by block
 	// index (0-based). Protected by mu for concurrent pipeline workers.
-	mu         sync.Mutex
-	uploaded   map[int]uploadedBlock
-	totalSize  int64
+	mu        sync.Mutex
+	uploaded  map[int]uploadedBlock
+	totalSize int64
 }
 
 // uploadedBlock holds the result of a single block upload.

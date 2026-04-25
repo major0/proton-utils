@@ -4,12 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
-	"runtime/pprof"
-	"runtime/trace"
 
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
@@ -28,7 +24,6 @@ var cpFlags struct {
 	targetDir   string // -t, --target-directory
 	removeDest  bool   // --remove-destination (trash Proton / remove local before copy)
 	backup      bool   // --backup (local: rename to <name>~; Proton: no-op)
-	profile     string // --profile (write profiling data to directory)
 }
 
 var driveCpCmd = &cobra.Command{
@@ -60,70 +55,9 @@ func init() {
 	f.StringVarP(&cpFlags.targetDir, "target-directory", "t", "", "Copy all sources into this directory")
 	cli.BoolFlag(f, &cpFlags.removeDest, "remove-destination", false, "Trash/remove destination before copy (disables versioning)")
 	cli.BoolFlag(f, &cpFlags.backup, "backup", false, "Backup existing local files as <name>~")
-	f.StringVar(&cpFlags.profile, "profile", "", "Write CPU, mutex, block profiles and execution trace to this directory")
 }
 
 func runCp(_ *cobra.Command, args []string) error {
-	// Start profiling if requested.
-	if cpFlags.profile != "" {
-		if err := os.MkdirAll(cpFlags.profile, 0755); err != nil {
-			return fmt.Errorf("cp: create profile dir: %w", err)
-		}
-
-		// CPU profile.
-		cpuF, err := os.Create(filepath.Join(cpFlags.profile, "cpu.prof"))
-		if err != nil {
-			return fmt.Errorf("cp: create cpu profile: %w", err)
-		}
-		if err := pprof.StartCPUProfile(cpuF); err != nil {
-			cpuF.Close()
-			return fmt.Errorf("cp: start cpu profile: %w", err)
-		}
-
-		// Execution trace.
-		traceF, err := os.Create(filepath.Join(cpFlags.profile, "trace.out"))
-		if err != nil {
-			pprof.StopCPUProfile()
-			cpuF.Close()
-			return fmt.Errorf("cp: create trace: %w", err)
-		}
-		if err := trace.Start(traceF); err != nil {
-			traceF.Close()
-			pprof.StopCPUProfile()
-			cpuF.Close()
-			return fmt.Errorf("cp: start trace: %w", err)
-		}
-
-		// Enable mutex and block profiling.
-		runtime.SetMutexProfileFraction(1)
-		runtime.SetBlockProfileRate(1)
-
-		defer func() {
-			trace.Stop()
-			traceF.Close()
-			pprof.StopCPUProfile()
-			cpuF.Close()
-
-			// Write mutex profile.
-			if f, err := os.Create(filepath.Join(cpFlags.profile, "mutex.prof")); err == nil {
-				pprof.Lookup("mutex").WriteTo(f, 0)
-				f.Close()
-			}
-			// Write block profile.
-			if f, err := os.Create(filepath.Join(cpFlags.profile, "block.prof")); err == nil {
-				pprof.Lookup("block").WriteTo(f, 0)
-				f.Close()
-			}
-			// Write goroutine profile.
-			if f, err := os.Create(filepath.Join(cpFlags.profile, "goroutine.prof")); err == nil {
-				pprof.Lookup("goroutine").WriteTo(f, 0)
-				f.Close()
-			}
-
-			slog.Info("profiles written", "dir", cpFlags.profile)
-		}()
-	}
-
 	// Validate mutually exclusive flags.
 	if cpFlags.removeDest && cpFlags.backup {
 		return fmt.Errorf("cp: --remove-destination and --backup are mutually exclusive")

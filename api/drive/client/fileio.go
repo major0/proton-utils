@@ -17,7 +17,7 @@ import (
 type FileHandle struct {
 	Link       *drive.Link
 	Share      *drive.Share
-	LinkID     string             // file link ID (from CreateFileRes or Link.LinkID)
+	LinkID     string // file link ID (from CreateFileRes or Link.LinkID)
 	RevisionID string
 	Blocks     []proton.Block     // populated by OpenFile (source)
 	SessionKey *crypto.SessionKey // for encrypt (dest) or decrypt (source)

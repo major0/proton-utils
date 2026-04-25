@@ -74,6 +74,10 @@ var (
 		Short: "proton is a command line interface for Proton services",
 		Long:  `proton is a command line interface for managing Proton services (Drive, Mail, etc.)`,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			// Start profiling if --profile was set (no-op without build tag).
+			stopProfile := StartProfile()
+			cobra.OnFinalize(stopProfile)
+
 			// --log-level takes priority over -v count.
 			switch strings.ToLower(rootParams.LogLevel) {
 			case "trace", "debug":
@@ -257,6 +261,9 @@ func init() {
 	rootCmd.PersistentFlags().DurationVarP(&rootParams.Timeout, "timeout", "t", 60*time.Second, "Timeout for requests.")
 	rootCmd.PersistentFlags().IntVarP(&rootParams.MaxWorkers, "max-jobs", "j", 10, "Maximum number of jobs to run in parallel.")
 	rootCmd.PersistentFlags().StringVar(&AppVersionOverride, "app-version", "", "Override the app version string for this invocation")
+
+	// Profile flag — only registers when built with -tags profile.
+	RegisterProfileFlag()
 
 	// Hide the help flags as it ends up sorted into everything, which is a bit confusing.
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
