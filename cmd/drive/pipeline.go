@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/pool"
 )
 
@@ -17,10 +18,9 @@ import (
 // to Dst, then claims the next. When the current job has no unclaimed
 // blocks, the worker advances to the next job in the queue.
 //
-// Multiple jobs may have in-flight blocks simultaneously at job
-// boundaries, but new blocks are always claimed from the frontmost
-// incomplete job. This gives natural breadth-first serialization with
-// concurrent overlap during transitions.
+// If Src or Dst implement CloneableReader/CloneableWriter, each worker
+// gets its own clone (and thus its own file descriptor). Clones are
+// closed when the worker moves to a different job or exits.
 func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 	if len(jobs) == 0 {
 		return nil
@@ -36,7 +36,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		totalBlocks += jobs[i].Src.BlockCount()
 	}
 
-	// Shared state: current job index and its block map.
+	// Shared state: current job index.
 	var mu sync.Mutex
 	jobIdx := 0
 
@@ -69,7 +69,6 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 			if elapsed > 0 {
 				rate = float64(byd) / elapsed
 			}
-			// completed/total here is blocks, not files.
 			opts.Progress(bd, totalBlocks, byd, rate)
 		}
 	}
@@ -94,7 +93,6 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				job := maps[jobIdx].job
 				return ji, job, idx, job.Src.BlockSize(idx)
 			}
-			// Current job exhausted — advance.
 			jobIdx++
 		}
 		return -1, nil, 0, 0
@@ -103,7 +101,21 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 	p := pool.New(ctx, nWorkers)
 	for i := 0; i < nWorkers; i++ {
 		p.Go(func(ctx context.Context) error {
-			buf := make([]byte, drive.BlockSize)
+			buf := alignedAlloc(drive.BlockSize)
+
+			// Per-worker clones, keyed by job index. Opened on
+			// first use, closed when the worker exits.
+			srcClones := make(map[int]client.BlockReader)
+			dstClones := make(map[int]client.BlockWriter)
+			defer func() {
+				for _, r := range srcClones {
+					_ = r.Close()
+				}
+				for _, w := range dstClones {
+					_ = w.Close()
+				}
+			}()
+
 			for {
 				if ctx.Err() != nil {
 					return nil
@@ -112,12 +124,43 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				if job == nil {
 					return nil
 				}
-				n, err := job.Src.ReadBlock(ctx, idx, buf[:sz])
+
+				// Resolve per-worker reader for this job.
+				src, ok := srcClones[ji]
+				if !ok {
+					src = job.Src
+					if cr, canClone := job.Src.(CloneableReader); canClone {
+						cloned, err := cr.CloneReader()
+						if err != nil {
+							addErr(fmt.Errorf("clone reader %s: %w", job.Src.Describe(), err))
+							continue
+						}
+						src = cloned
+					}
+					srcClones[ji] = src
+				}
+
+				// Resolve per-worker writer for this job.
+				dst, ok := dstClones[ji]
+				if !ok {
+					dst = job.Dst
+					if cw, canClone := job.Dst.(CloneableWriter); canClone {
+						cloned, err := cw.CloneWriter()
+						if err != nil {
+							addErr(fmt.Errorf("clone writer %s: %w", job.Dst.Describe(), err))
+							continue
+						}
+						dst = cloned
+					}
+					dstClones[ji] = dst
+				}
+
+				n, err := src.ReadBlock(ctx, idx, buf[:sz])
 				if err != nil {
 					addErr(fmt.Errorf("read %s block %d: %w", job.Src.Describe(), idx, err))
 					continue
 				}
-				if err := job.Dst.WriteBlock(ctx, idx, buf[:n]); err != nil {
+				if err := dst.WriteBlock(ctx, idx, buf[:n]); err != nil {
 					addErr(fmt.Errorf("write %s block %d: %w", job.Dst.Describe(), idx, err))
 				} else {
 					blockDone(job, int64(n))
@@ -130,11 +173,9 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		})
 	}
 
-	// Wait for all workers. Pool tasks return nil — errors are
-	// collected via addErr, not through the pool.
 	_ = p.Wait()
 
-	// Close all readers and writers.
+	// Close all template readers and writers (non-cloned resources).
 	for i := range jobs {
 		if err := jobs[i].Src.Close(); err != nil {
 			addErr(fmt.Errorf("close reader %s: %w", jobs[i].Src.Describe(), err))

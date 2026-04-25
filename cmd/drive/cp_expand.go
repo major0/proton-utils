@@ -115,7 +115,14 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 		}
 
 		// Regular file — build a CopyJob.
-		info, err := d.Info()
+		// Use os.Stat (not d.Info) when following symlinks so we get
+		// the target's size, not the symlink's path length.
+		var info os.FileInfo
+		if d.Type()&os.ModeSymlink != 0 {
+			info, err = os.Stat(path)
+		} else {
+			info, err = d.Info()
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
 			return nil

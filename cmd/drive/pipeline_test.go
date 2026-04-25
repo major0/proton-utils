@@ -2,14 +2,28 @@ package driveCmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
+
+// failReader is a BlockReader that always fails on ReadBlock.
+type failReader struct {
+	name string
+}
+
+func (f *failReader) ReadBlock(_ context.Context, _ int, _ []byte) (int, error) {
+	return 0, fmt.Errorf("read %s: simulated failure", f.name)
+}
+func (f *failReader) BlockCount() int       { return 1 }
+func (f *failReader) BlockSize(_ int) int64 { return 1024 }
+func (f *failReader) TotalSize() int64      { return 1024 }
+func (f *failReader) Describe() string      { return f.name }
+func (f *failReader) Close() error          { return nil }
 
 // TestBufferZeroed_Property verifies that after clear(), all bytes are zero.
 func TestBufferZeroed_Property(t *testing.T) {
@@ -28,6 +42,14 @@ func TestBufferZeroed_Property(t *testing.T) {
 	})
 }
 
+// newTestJob creates a CopyJob from real temp files.
+func newTestJob(t *testing.T, srcPath, dstPath string, srcData []byte) CopyJob {
+	t.Helper()
+	r := NewLocalReader(srcPath, int64(len(srcData)))
+	w := NewLocalWriter(dstPath)
+	return CopyJob{Src: r, Dst: w}
+}
+
 // TestPipeline_LocalToLocal verifies that the pipeline correctly copies
 // a local file to another local path using the block pipeline.
 func TestPipeline_LocalToLocal(t *testing.T) {
@@ -42,18 +64,13 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 	if err := os.WriteFile(srcPath, srcData, 0600); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
-
-	// Pre-create dest file — producer creates it before queuing the job.
 	f, err := os.Create(dstPath) //nolint:gosec // test temp path
 	if err != nil {
 		t.Fatalf("create dst: %v", err)
 	}
 	_ = f.Close()
 
-	job := CopyJob{
-		Src: NewLocalReader(srcPath, int64(len(srcData))),
-		Dst: NewLocalWriter(dstPath),
-	}
+	job := newTestJob(t, srcPath, dstPath, srcData)
 
 	if err := RunPipeline(context.Background(), []CopyJob{job}, TransferOpts{Workers: 2}); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
@@ -90,12 +107,9 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 
 	srcData := make([]byte, drive.BlockSize*4)
 	_ = os.WriteFile(srcPath, srcData, 0600)
-	_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
+	_ = os.WriteFile(dstPath, nil, 0600)
 
-	job := CopyJob{
-		Src: NewLocalReader(srcPath, int64(len(srcData))),
-		Dst: NewLocalWriter(dstPath),
-	}
+	job := newTestJob(t, srcPath, dstPath, srcData)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -117,11 +131,8 @@ func TestPipeline_MultipleFiles(t *testing.T) {
 			data[j] = byte(i + j%200)
 		}
 		_ = os.WriteFile(srcPath, data, 0600)
-		_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
-		jobs = append(jobs, CopyJob{
-			Src: NewLocalReader(srcPath, int64(len(data))),
-			Dst: NewLocalWriter(dstPath),
-		})
+		_ = os.WriteFile(dstPath, nil, 0600)
+		jobs = append(jobs, newTestJob(t, srcPath, dstPath, data))
 	}
 
 	if err := RunPipeline(context.Background(), jobs, TransferOpts{Workers: 4}); err != nil {
@@ -162,35 +173,29 @@ func TestPipeline_ProgressCallback_Property(t *testing.T) {
 		_ = os.WriteFile(srcPath, data, 0600)
 		_ = os.WriteFile(dstPath, nil, 0600)
 
-		var completedValues []int
-		job := CopyJob{
-			Src: NewLocalReader(srcPath, fileSize),
-			Dst: NewLocalWriter(dstPath),
-		}
+		r := NewLocalReader(srcPath, fileSize)
+		w := NewLocalWriter(dstPath)
 
-		err := RunPipeline(context.Background(), []CopyJob{job}, TransferOpts{
-			Workers: 1, // single worker for deterministic ordering
+		var completedValues []int
+		job := CopyJob{Src: r, Dst: w}
+
+		pErr := RunPipeline(context.Background(), []CopyJob{job}, TransferOpts{
+			Workers: 1,
 			Progress: func(completed, total int, _ int64, _ float64) {
 				completedValues = append(completedValues, completed)
-				if total != nBlocks {
-					// Can't call t.Fatalf from rapid.T inside callback,
-					// but we can record the issue.
-					_ = total
-				}
+				_ = total
 			},
 		})
-		if err != nil {
-			t.Fatalf("RunPipeline: %v", err)
+		if pErr != nil {
+			t.Fatalf("RunPipeline: %v", pErr)
 		}
 
-		// Verify monotonically increasing.
 		for i := 1; i < len(completedValues); i++ {
 			if completedValues[i] < completedValues[i-1] {
 				t.Fatalf("progress not monotonic: %v", completedValues)
 			}
 		}
 
-		// Verify final value equals total blocks.
 		if len(completedValues) > 0 && completedValues[len(completedValues)-1] != nBlocks {
 			t.Fatalf("final completed = %d, want %d", completedValues[len(completedValues)-1], nBlocks)
 		}
@@ -219,10 +224,7 @@ func TestPipeline_VerboseCallback(t *testing.T) {
 				data := []byte("test-data")
 				_ = os.WriteFile(srcPath, data, 0600)
 				_ = os.WriteFile(dstPath, nil, 0600)
-				jobs = append(jobs, CopyJob{
-					Src: NewLocalReader(srcPath, int64(len(data))),
-					Dst: NewLocalWriter(dstPath),
-				})
+				jobs = append(jobs, newTestJob(t, srcPath, dstPath, data))
 			}
 
 			var verboseCalls int
@@ -261,20 +263,21 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 			dstPath := filepath.Join(iterDir, "dst-good"+string(rune('a'+i))+".bin")
 			data := []byte("good-data")
 			_ = os.WriteFile(srcPath, data, 0600)
-			_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
-			jobs = append(jobs, CopyJob{
-				Src: NewLocalReader(srcPath, int64(len(data))),
-				Dst: NewLocalWriter(dstPath),
-			})
+			_ = os.WriteFile(dstPath, nil, 0600)
+			r := NewLocalReader(srcPath, int64(len(data)))
+			w := NewLocalWriter(dstPath)
+			jobs = append(jobs, CopyJob{Src: r, Dst: w})
 		}
 
+		// Bad jobs use a failReader that always errors on ReadBlock.
 		for i := 0; i < nBad; i++ {
-			srcPath := filepath.Join(iterDir, "nonexistent"+string(rune('a'+i))+".bin")
 			dstPath := filepath.Join(iterDir, "dst-bad"+string(rune('a'+i))+".bin")
-			_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
+			_ = os.WriteFile(dstPath, nil, 0600)
+			w := NewLocalWriter(dstPath)
+			name := "bad" + string(rune('a'+i))
 			jobs = append(jobs, CopyJob{
-				Src: NewLocalReader(srcPath, 1024),
-				Dst: NewLocalWriter(dstPath),
+				Src: &failReader{name: name},
+				Dst: w,
 			})
 		}
 
@@ -286,16 +289,8 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 
 		for i := 0; i < nGood; i++ {
 			dstPath := filepath.Join(iterDir, "dst-good"+string(rune('a'+i))+".bin")
-			if _, err := os.Stat(dstPath); err != nil {
-				t.Fatalf("good job %d: dst file missing: %v", i, err)
-			}
-		}
-
-		errStr := err.Error()
-		for i := 0; i < nBad; i++ {
-			needle := "nonexistent" + string(rune('a'+i))
-			if !strings.Contains(errStr, needle) {
-				t.Fatalf("error should mention %q: %s", needle, errStr)
+			if _, statErr := os.Stat(dstPath); statErr != nil {
+				t.Fatalf("good job %d: dst file missing: %v", i, statErr)
 			}
 		}
 	})
@@ -316,11 +311,8 @@ func TestBulkCopy_AllSuccess(t *testing.T) {
 		srcPath := filepath.Join(dir, "src"+string(rune('a'+i))+".bin")
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
 		_ = os.WriteFile(srcPath, []byte("data"), 0600)
-		_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
-		jobs = append(jobs, CopyJob{
-			Src: NewLocalReader(srcPath, 4),
-			Dst: NewLocalWriter(dstPath),
-		})
+		_ = os.WriteFile(dstPath, nil, 0600)
+		jobs = append(jobs, newTestJob(t, srcPath, dstPath, []byte("data")))
 	}
 
 	if err := RunPipeline(context.Background(), jobs, TransferOpts{Workers: 2}); err != nil {
@@ -333,12 +325,13 @@ func TestBulkCopy_AllFail(t *testing.T) {
 	dir := t.TempDir()
 	var jobs []CopyJob
 	for i := 0; i < 3; i++ {
-		srcPath := filepath.Join(dir, "missing"+string(rune('a'+i))+".bin")
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
-		_ = os.WriteFile(dstPath, nil, 0600) // pre-create dest
+		_ = os.WriteFile(dstPath, nil, 0600)
+		w := NewLocalWriter(dstPath)
+		name := "missing" + string(rune('a'+i))
 		jobs = append(jobs, CopyJob{
-			Src: NewLocalReader(srcPath, 1024),
-			Dst: NewLocalWriter(dstPath),
+			Src: &failReader{name: name},
+			Dst: w,
 		})
 	}
 

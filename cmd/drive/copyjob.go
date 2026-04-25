@@ -5,13 +5,30 @@ import (
 	"errors"
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/major0/proton-cli/api/drive"
 	"github.com/major0/proton-cli/api/drive/client"
 )
 
-// DefaultWorkers is the default number of concurrent block workers.
-const DefaultWorkers = 8
+// MaxAutoWorkers is the upper bound for the auto-detected worker count.
+// Proton's storage API starts returning 429/499 above ~64 concurrent
+// requests, so we cap the automatic default there. Users can override
+// with --workers to go higher at their own risk.
+const MaxAutoWorkers = 64
+
+// defaultWorkers returns 2× the number of CPU cores, capped at
+// MaxAutoWorkers. Minimum 2.
+func defaultWorkers() int {
+	n := runtime.NumCPU() * 3
+	if n < 2 {
+		n = 2
+	}
+	if n > MaxAutoWorkers {
+		n = MaxAutoWorkers
+	}
+	return n
+}
 
 // CopyJob is a fully resolved source/destination pair.
 type CopyJob struct {
@@ -21,47 +38,83 @@ type CopyJob struct {
 
 // TransferOpts configures bulk transfer behavior.
 type TransferOpts struct {
-	Workers  int // reader/writer count; default DefaultWorkers (8)
+	Workers  int // reader/writer count; 0 = auto (2× cores, max 64)
 	Progress func(completed, total int, bytes int64, rate float64)
 	Verbose  func(src, dst string)
 }
 
-// workers returns the configured worker count, defaulting to DefaultWorkers.
+// workers returns the configured worker count, defaulting to
+// 2× CPU cores capped at MaxAutoWorkers.
 func (o TransferOpts) workers() int {
 	if o.Workers <= 0 {
-		return DefaultWorkers
+		return defaultWorkers()
 	}
 	return o.Workers
 }
 
-// LocalReader reads blocks from a local file. Each ReadBlock call
-// opens its own file descriptor so concurrent workers don't interfere.
-type LocalReader struct {
-	Path    string
-	Size    int64
-	nBlocks int
+// CloneableReader is implemented by BlockReaders that support per-worker
+// cloning. Each clone opens its own file descriptor so workers avoid
+// sharing kernel-level FD state.
+type CloneableReader interface {
+	CloneReader() (client.BlockReader, error)
 }
 
-// NewLocalReader creates a BlockReader for a local file.
+// CloneableWriter is implemented by BlockWriters that support per-worker
+// cloning.
+type CloneableWriter interface {
+	CloneWriter() (client.BlockWriter, error)
+}
+
+// LocalReader reads blocks from a local file. It holds no file
+// descriptor itself — each worker gets its own FD via CloneReader.
+// The original is used only for metadata (block count, size).
+type LocalReader struct {
+	path    string
+	size    int64
+	nBlocks int
+	f       *os.File // nil on the template; set on clones
+	direct  bool     // true if O_DIRECT / F_NOCACHE is active
+}
+
+// NewLocalReader creates a BlockReader template for a local file.
 func NewLocalReader(path string, size int64) *LocalReader {
 	return &LocalReader{
-		Path:    path,
-		Size:    size,
+		path:    path,
+		size:    size,
 		nBlocks: drive.BlockCount(size),
 	}
 }
 
-// ReadBlock opens the file, reads block at index into buf, and closes.
-func (r *LocalReader) ReadBlock(_ context.Context, index int, buf []byte) (int, error) {
-	f, err := os.Open(r.Path)
+// CloneReader opens a new file descriptor for a worker, attempting
+// direct I/O to bypass the page cache.
+func (r *LocalReader) CloneReader() (client.BlockReader, error) {
+	f, direct, err := openDirect(r.path, os.O_RDONLY, 0)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	defer func() { _ = f.Close() }()
+	return &LocalReader{
+		path:    r.path,
+		size:    r.size,
+		nBlocks: r.nBlocks,
+		f:       f,
+		direct:  direct,
+	}, nil
+}
 
+// ReadBlock reads block at index into buf using pread. If no file
+// descriptor is open (template instance), one is opened lazily.
+func (r *LocalReader) ReadBlock(_ context.Context, index int, buf []byte) (int, error) {
+	if r.f == nil {
+		f, direct, err := openDirect(r.path, os.O_RDONLY, 0)
+		if err != nil {
+			return 0, err
+		}
+		r.f = f
+		r.direct = direct
+	}
 	offset := int64(index) * drive.BlockSize
 	sz := r.BlockSize(index)
-	n, err := f.ReadAt(buf[:sz], offset)
+	n, err := r.f.ReadAt(buf[:sz], offset)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return 0, err
 	}
@@ -74,7 +127,7 @@ func (r *LocalReader) BlockCount() int { return r.nBlocks }
 // BlockSize returns the size of block at index.
 func (r *LocalReader) BlockSize(index int) int64 {
 	offset := int64(index) * drive.BlockSize
-	remaining := r.Size - offset
+	remaining := r.size - offset
 	if remaining <= 0 {
 		return 0
 	}
@@ -85,43 +138,107 @@ func (r *LocalReader) BlockSize(index int) int64 {
 }
 
 // Describe returns the file path.
-func (r *LocalReader) Describe() string { return r.Path }
+func (r *LocalReader) Describe() string { return r.path }
 
 // TotalSize returns the file size.
-func (r *LocalReader) TotalSize() int64 { return r.Size }
+func (r *LocalReader) TotalSize() int64 { return r.size }
 
-// Close is a no-op — FDs are per-call.
-func (r *LocalReader) Close() error { return nil }
+// Close closes the file descriptor if this is a clone.
+func (r *LocalReader) Close() error {
+	if r.f != nil {
+		return r.f.Close()
+	}
+	return nil
+}
 
-// LocalWriter writes blocks to a local file. Each WriteBlock call
-// opens its own file descriptor so concurrent workers don't interfere.
+// LocalWriter writes blocks to a local file. Like LocalReader, it
+// holds no file descriptor — workers get their own via CloneWriter.
+// When using direct I/O, the final file size is set via ftruncate
+// in Close since the last block write may be padded to sector alignment.
 type LocalWriter struct {
-	Path string
+	path     string
+	fileSize int64    // expected final size; set by pipeline via SetSize
+	f        *os.File // nil on the template; set on clones
+	direct   bool     // true if O_DIRECT / F_NOCACHE is active
 }
 
-// NewLocalWriter creates a BlockWriter for a local file.
+// NewLocalWriter creates a BlockWriter template for a local file.
 func NewLocalWriter(path string) *LocalWriter {
-	return &LocalWriter{Path: path}
+	return &LocalWriter{path: path}
 }
 
-// WriteBlock opens the file, writes data at the correct offset, and closes.
-func (w *LocalWriter) WriteBlock(_ context.Context, index int, data []byte) error {
-	f, err := os.OpenFile(w.Path, os.O_WRONLY, 0600)
+// SetSize records the expected final file size. Called before the
+// pipeline starts so Close can ftruncate after direct I/O writes.
+func (w *LocalWriter) SetSize(size int64) { w.fileSize = size }
+
+// CloneWriter opens a new file descriptor for a worker, attempting
+// direct I/O to bypass the page cache.
+func (w *LocalWriter) CloneWriter() (client.BlockWriter, error) {
+	f, direct, err := openDirect(w.path, os.O_WRONLY, 0600)
 	if err != nil {
+		return nil, err
+	}
+	return &LocalWriter{
+		path:     w.path,
+		fileSize: w.fileSize,
+		f:        f,
+		direct:   direct,
+	}, nil
+}
+
+// sectorAlign rounds size up to the nearest 4096-byte boundary.
+func sectorAlign(size int64) int64 {
+	const align = 4096
+	return (size + align - 1) &^ (align - 1)
+}
+
+// WriteBlock writes data at the correct offset using pwrite. If no
+// file descriptor is open (template instance), one is opened lazily.
+// For direct I/O, the last block is padded to sector alignment.
+func (w *LocalWriter) WriteBlock(_ context.Context, index int, data []byte) error {
+	if w.f == nil {
+		f, direct, err := openDirect(w.path, os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		w.f = f
+		w.direct = direct
+	}
+	offset := int64(index) * drive.BlockSize
+
+	// Direct I/O requires writes to be sector-aligned. Full blocks
+	// (4MB) are always aligned. The last block may be short — pad it.
+	if w.direct && int64(len(data))%4096 != 0 {
+		aligned := sectorAlign(int64(len(data)))
+		padded := alignedAlloc(int(aligned))
+		copy(padded, data)
+		_, err := w.f.WriteAt(padded, offset)
 		return err
 	}
-	defer func() { _ = f.Close() }()
 
-	offset := int64(index) * drive.BlockSize
-	_, err = f.WriteAt(data, offset)
+	_, err := w.f.WriteAt(data, offset)
 	return err
 }
 
 // Describe returns the file path.
-func (w *LocalWriter) Describe() string { return w.Path }
+func (w *LocalWriter) Describe() string { return w.path }
 
-// Close is a no-op — FDs are per-call.
-func (w *LocalWriter) Close() error { return nil }
+// Close truncates the file to the expected size (removing any padding
+// from the last direct I/O write) and closes the file descriptor.
+func (w *LocalWriter) Close() error {
+	if w.f == nil {
+		return nil
+	}
+	// If direct I/O was used and we know the file size, truncate to
+	// remove any sector-alignment padding from the last block.
+	if w.direct && w.fileSize > 0 {
+		if err := w.f.Truncate(w.fileSize); err != nil {
+			_ = w.f.Close()
+			return err
+		}
+	}
+	return w.f.Close()
+}
 
 // blockMap tracks block assignment for a single CopyJob. Workers claim
 // blocks sequentially via an advancing counter — no bitmap needed since

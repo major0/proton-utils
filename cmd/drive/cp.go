@@ -52,7 +52,7 @@ func init() {
 	cli.BoolFlag(f, &cpFlags.verbose, "verbose", false, "Print each file as it completes")
 	cli.BoolFlag(f, &cpFlags.progress, "progress", false, "Show aggregate transfer progress")
 	f.StringVar(&cpFlags.preserve, "preserve", "", "Preserve attributes: mode,timestamps")
-	f.IntVar(&cpFlags.workers, "workers", 0, "Number of concurrent workers (default: 2× CPU cores, max 64)")
+	f.IntVar(&cpFlags.workers, "workers", 0, "Number of concurrent workers (default: 3× CPU cores, max 64)")
 	f.StringVarP(&cpFlags.targetDir, "target-directory", "t", "", "Copy all sources into this directory")
 	cli.BoolFlag(f, &cpFlags.removeDest, "remove-destination", false, "Trash/remove destination before copy (disables versioning)")
 	cli.BoolFlagP(f, &cpFlags.force, "force", "f", false, "Overwrite existing destination files")
@@ -268,18 +268,29 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		job.Src = driveClient.NewProtonReader(fh.LinkID, fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
 	}
 
-	// Build destination writer. Pre-create local files so workers can
-	// write blocks at arbitrary offsets into an existing file.
+	// Build destination writer. Pre-create local files at the expected
+	// size so workers can write blocks at arbitrary offsets. This is
+	// required for O_DIRECT which cannot extend files via pwrite.
 	switch dst.pathType {
 	case PathLocal:
 		f, err := os.Create(dst.localPath)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
+		// Pre-allocate to the source size so pwrite at any offset works.
+		srcSize := job.Src.TotalSize()
+		if srcSize > 0 {
+			if err := f.Truncate(srcSize); err != nil {
+				_ = f.Close()
+				return nil, fmt.Errorf("cp: %s: preallocate: %w", dst.localPath, err)
+			}
+		}
 		if err := f.Close(); err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
-		job.Dst = NewLocalWriter(dst.localPath)
+		w := NewLocalWriter(dst.localPath)
+		w.SetSize(srcSize)
+		job.Dst = w
 	case PathProton:
 		name := filepath.Base(dst.raw)
 		if src.pathType == PathLocal {
