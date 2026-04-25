@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -103,9 +102,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 
 	p := pool.New(ctx, nWorkers)
 	for i := 0; i < nWorkers; i++ {
-		workerID := i
 		p.Go(func(ctx context.Context) error {
-			slog.Debug("pipeline.worker.start", "worker", workerID)
 			buf := make([]byte, drive.BlockSize)
 			for {
 				if ctx.Err() != nil {
@@ -113,10 +110,8 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 				}
 				ji, job, idx, sz := claim()
 				if job == nil {
-					slog.Debug("pipeline.worker.done", "worker", workerID)
 					return nil
 				}
-				slog.Debug("pipeline.worker.block.start", "worker", workerID, "block", idx)
 				n, err := job.Src.ReadBlock(ctx, idx, buf[:sz])
 				if err != nil {
 					addErr(fmt.Errorf("read %s block %d: %w", job.Src.Describe(), idx, err))
@@ -130,7 +125,6 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 						jobComplete(ji, job)
 					}
 				}
-				slog.Debug("pipeline.worker.block.done", "worker", workerID, "block", idx)
 				clear(buf[:n])
 			}
 		})

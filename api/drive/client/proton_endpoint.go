@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -158,10 +157,8 @@ func computeVerificationToken(verifyCode, encData []byte) []byte {
 // Block index is 0-based from the pipeline; the Proton API uses 1-based.
 func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) error {
 	apiIndex := index + 1 // Proton API block indices are 1-based
-	slog.Debug("writeBlock.start", "block", apiIndex, "size", len(data))
 
 	// Encrypt block with session key.
-	t0 := time.Now()
 	plain := crypto.NewPlainMessage(data)
 	encData, err := w.sessionKey.Encrypt(plain)
 	if err != nil {
@@ -177,7 +174,6 @@ func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) e
 	if err != nil {
 		return fmt.Errorf("armor block sig %d: %w", apiIndex, err)
 	}
-	slog.Debug("writeBlock.crypto", "block", apiIndex, "elapsed", time.Since(t0))
 
 	// SHA-256 of encrypted block for manifest + upload request.
 	h := sha256.New()
@@ -188,7 +184,6 @@ func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) e
 	verifyToken := computeVerificationToken(w.verifyCode, encData)
 
 	// Request upload URL for this single block.
-	t1 := time.Now()
 	req := proton.BlockUploadReq{
 		AddressID:  w.addressID,
 		VolumeID:   w.volumeID,
@@ -208,14 +203,11 @@ func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) e
 	if len(links) == 0 {
 		return fmt.Errorf("no upload link for block %d", apiIndex)
 	}
-	slog.Debug("writeBlock.requestUpload", "block", apiIndex, "elapsed", time.Since(t1))
 
 	// Upload encrypted block.
-	t2 := time.Now()
 	if err := w.store.UploadBlock(ctx, w.linkID, apiIndex, links[0].BareURL, links[0].Token, encData); err != nil {
 		return fmt.Errorf("upload block %d: %w", apiIndex, err)
 	}
-	slog.Debug("writeBlock.upload", "block", apiIndex, "elapsed", time.Since(t2), "encSize", len(encData))
 
 	// Record result for Close.
 	w.mu.Lock()
