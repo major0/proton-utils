@@ -168,6 +168,17 @@ func TestProtonReader_Close(t *testing.T) {
 	}
 }
 
+func testFileHandle(linkID string) *FileHandle {
+	return &FileHandle{
+		LinkID:     linkID,
+		RevisionID: "rev1",
+		ShareID:    "share1",
+		VolumeID:   "vol1",
+		AddressID:  "addr1",
+		SigAddr:    "test@example.com",
+	}
+}
+
 func TestProtonWriter_Describe(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -178,7 +189,8 @@ func TestProtonWriter_Describe(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := NewProtonWriter(tt.linkID, "rev1", nil, nil)
+			fh := testFileHandle(tt.linkID)
+			w := NewProtonWriter(fh, nil, nil)
 			if got := w.Describe(); got != tt.linkID {
 				t.Fatalf("Describe() = %q, want %q", got, tt.linkID)
 			}
@@ -186,18 +198,11 @@ func TestProtonWriter_Describe(t *testing.T) {
 	}
 }
 
-func TestProtonWriter_Close(t *testing.T) {
-	w := NewProtonWriter("link1", "rev1", nil, nil)
+func TestProtonWriter_Close_NoBlocks(t *testing.T) {
+	fh := testFileHandle("link1")
+	w := NewProtonWriter(fh, nil, nil)
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
-	}
-}
-
-func TestProtonWriter_WriteBlock(t *testing.T) {
-	w := NewProtonWriter("link1", "rev1", nil, nil)
-	// WriteBlock is a TODO stub that returns nil.
-	if err := w.WriteBlock(context.Background(), 0, []byte("data")); err != nil {
-		t.Fatalf("WriteBlock() = %v, want nil", err)
 	}
 }
 

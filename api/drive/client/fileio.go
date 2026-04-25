@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -16,11 +17,21 @@ import (
 type FileHandle struct {
 	Link       *drive.Link
 	Share      *drive.Share
+	LinkID     string             // file link ID (from CreateFileRes or Link.LinkID)
 	RevisionID string
 	Blocks     []proton.Block     // populated by OpenFile (source)
 	SessionKey *crypto.SessionKey // for encrypt (dest) or decrypt (source)
 	FileSize   int64              // populated by OpenFile (source)
 	ModTime    time.Time          // populated by OpenFile from XAttr (zero if unavailable)
+
+	// Upload-side fields populated by CreateFile.
+	NodeKR           *crypto.KeyRing // node keyring for encrypt signatures + XAttr
+	AddrKR           *crypto.KeyRing // address keyring for signing
+	ShareID          string          // share ID for verification data endpoint
+	VolumeID         string          // volume ID for block upload requests
+	AddressID        string          // address ID for block upload requests
+	SigAddr          string          // signature address for UpdateRevision
+	VerificationCode []byte          // raw verification code for block tokens
 }
 
 // CreateFile creates a file draft in Proton Drive and returns a
@@ -86,11 +97,29 @@ func (c *Client) CreateFile(ctx context.Context, share *drive.Share, parentLink 
 		return nil, fmt.Errorf("drive.CreateFile: %w", err)
 	}
 
+	// Fetch verification code for block upload tokens.
+	vd, err := c.Session.Client.GetVerificationData(ctx, shareID, res.ID, res.RevisionID)
+	if err != nil {
+		return nil, fmt.Errorf("drive.CreateFile: verification data: %w", err)
+	}
+	verifyCode, err := base64.StdEncoding.DecodeString(vd.VerificationCode)
+	if err != nil {
+		return nil, fmt.Errorf("drive.CreateFile: decode verification code: %w", err)
+	}
+
 	return &FileHandle{
-		Link:       parentLink,
-		Share:      share,
-		RevisionID: res.RevisionID,
-		SessionKey: sessionKey,
+		Link:             parentLink,
+		Share:            share,
+		LinkID:           res.ID,
+		RevisionID:       res.RevisionID,
+		SessionKey:       sessionKey,
+		NodeKR:           nodeKR,
+		AddrKR:           addrKR,
+		ShareID:          shareID,
+		VolumeID:         share.ProtonShare().VolumeID,
+		AddressID:        share.ProtonShare().AddressID,
+		SigAddr:          sigAddr,
+		VerificationCode: verifyCode,
 	}, nil
 }
 
@@ -144,6 +173,7 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 	return &FileHandle{
 		Link:       link,
 		Share:      link.Share(),
+		LinkID:     link.LinkID(),
 		RevisionID: revisionID,
 		Blocks:     revision.Blocks,
 		SessionKey: sessionKey,

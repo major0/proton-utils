@@ -73,7 +73,7 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 	}
 	var pushResp ForkPushResp
 
-	// Check for AUTH-* cookie presence.
+	// Log AUTH-* cookie presence for debugging.
 	hasAuthCookie := false
 	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
 		for _, c := range parent.cookieJar.Cookies(pushURL) {
@@ -83,9 +83,7 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 			}
 		}
 	}
-	if !hasAuthCookie {
-		slog.Warn("fork.push: no AUTH-* cookie in jar — child session may have restricted scopes", "service", targetService.Name)
-	}
+	slog.Debug("fork.push.jar-cookies", "url", parent.BaseURL+"/auth/v4/sessions/forks", "hasAuth", hasAuthCookie)
 
 	if err := parent.DoJSONCookie(ctx, "POST", "/auth/v4/sessions/forks", pushReq, &pushResp); err != nil {
 		return nil, nil, fmt.Errorf("%w: push: %w", ErrForkFailed, err)
@@ -143,7 +141,7 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService 
 	}
 	var pushResp ForkPushResp
 
-	// Check for AUTH-* cookie presence.
+	// Log AUTH-* cookie presence for debugging.
 	hasAuthCookie := false
 	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
 		for _, c := range parent.cookieJar.Cookies(pushURL) {
@@ -153,9 +151,7 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService 
 			}
 		}
 	}
-	if !hasAuthCookie {
-		slog.Warn("fork.push: no AUTH-* cookie in jar — child session may have restricted scopes", "service", targetService.Name)
-	}
+	slog.Debug("cookieFork.push.jar-cookies", "url", parent.BaseURL+"/auth/v4/sessions/forks", "hasAuth", hasAuthCookie)
 
 	if err := parent.DoJSONCookie(ctx, "POST", "/auth/v4/sessions/forks", pushReq, &pushResp); err != nil {
 		return nil, nil, fmt.Errorf("%w: push: %w", ErrForkFailed, err)
