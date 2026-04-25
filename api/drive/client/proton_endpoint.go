@@ -27,7 +27,10 @@ type ProtonReader struct {
 
 // NewProtonReader creates a BlockReader for a Proton Drive file.
 func NewProtonReader(linkID string, blocks []proton.Block, sessionKey *crypto.SessionKey, fileSize int64, blockSizes []int64, store BlockStore) *ProtonReader {
-	n := len(blockSizes)
+	n := len(blocks)
+	if n == 0 {
+		n = len(blockSizes)
+	}
 	if n == 0 {
 		n = drive.BlockCount(fileSize)
 	}
