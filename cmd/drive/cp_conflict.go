@@ -2,6 +2,7 @@ package driveCmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -9,9 +10,16 @@ import (
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 )
 
-// handleConflict handles destination file conflicts before copy.
-// Default: truncate local, version Proton. Directories merge.
-func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEndpoint, removeDest, backup bool) error {
+// handleConflict checks whether the destination already exists and
+// handles it according to the flags:
+//
+//   - No flags: refuse to overwrite (return error)
+//   - -f / --force: overwrite (truncate local, trash remote)
+//   - --remove-destination: remove before copy (local rm, remote trash)
+//   - --backup: rename local to <name>~ before copy
+//
+// Directories always merge — no conflict.
+func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEndpoint, opts cpOptions) error {
 	if dst.isDir() {
 		return nil
 	}
@@ -19,23 +27,30 @@ func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEn
 	switch dst.pathType {
 	case PathLocal:
 		if dst.localInfo == nil {
-			return nil
+			return nil // doesn't exist, no conflict
 		}
-		if backup {
+		if opts.backup {
 			return os.Rename(dst.localPath, dst.localPath+"~")
 		}
-		if removeDest {
+		if opts.removeDest {
 			return os.Remove(dst.localPath)
 		}
-		return os.Truncate(dst.localPath, 0)
+		if opts.force {
+			return os.Truncate(dst.localPath, 0)
+		}
+		return fmt.Errorf("cp: %s: file exists (use -f to overwrite)", dst.localPath)
 
 	case PathProton:
 		if dst.link == nil {
-			return nil
+			return nil // doesn't exist, no conflict
 		}
-		if dst.link.Type() != proton.LinkTypeFolder && removeDest {
+		if dst.link.Type() == proton.LinkTypeFolder {
+			return nil // directory, merge
+		}
+		if opts.removeDest || opts.force {
 			return dc.Remove(ctx, dst.share, dst.link, drive.RemoveOpts{})
 		}
+		return fmt.Errorf("cp: %s: file exists (use -f to overwrite)", dst.raw)
 	}
 	return nil
 }

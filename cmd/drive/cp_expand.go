@@ -130,7 +130,7 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 
 		fileDst := makeFileDst(dstBase, rel)
 
-		if err := handleConflict(ctx, dc, fileDst, opts.removeDest, opts.backup); err != nil {
+		if err := handleConflict(ctx, dc, fileDst, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
 			return nil
 		}
@@ -197,7 +197,7 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 
 		fileDst := makeFileDst(dstBase, entry.Path)
 
-		if err := handleConflict(ctx, dc, fileDst, opts.removeDest, opts.backup); err != nil {
+		if err := handleConflict(ctx, dc, fileDst, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", entry.Path, err)
 			continue
 		}

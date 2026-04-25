@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
@@ -129,24 +130,36 @@ func TestProtonReader_Describe(t *testing.T) {
 
 func TestProtonReader_ReadBlock(t *testing.T) {
 	linkID := "test-link"
-	blockData := []byte("encrypted-block-data-here")
+	plaintext := []byte("hello world block data")
+
+	// Generate a session key and encrypt the block.
+	sessionKey, err := crypto.GenerateSessionKey()
+	if err != nil {
+		t.Fatalf("GenerateSessionKey: %v", err)
+	}
+	plain := crypto.NewPlainMessage(plaintext)
+	encrypted, err := sessionKey.Encrypt(plain)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
 	// ProtonReader uses 1-based index for store.GetBlock (index+1).
-	store := newMockStore(linkID, map[int][]byte{1: blockData})
+	store := newMockStore(linkID, map[int][]byte{1: encrypted})
 	blocks := []proton.Block{{BareURL: "https://example.com/block/0", Token: "tok0"}}
 
-	r := NewProtonReader(linkID, blocks, nil, int64(len(blockData)), []int64{int64(len(blockData))}, store)
+	r := NewProtonReader(linkID, blocks, sessionKey, int64(len(plaintext)), []int64{int64(len(plaintext))}, store)
 
-	buf := make([]byte, len(blockData))
+	buf := make([]byte, len(plaintext)+1024) // extra room
 	n, err := r.ReadBlock(context.Background(), 0, buf)
 	if err != nil {
 		t.Fatalf("ReadBlock: %v", err)
 	}
-	if n != len(blockData) {
-		t.Fatalf("ReadBlock returned %d bytes, want %d", n, len(blockData))
+	if n != len(plaintext) {
+		t.Fatalf("ReadBlock returned %d bytes, want %d", n, len(plaintext))
 	}
-	for i := range blockData {
-		if buf[i] != blockData[i] {
-			t.Fatalf("mismatch at byte %d: got %d, want %d", i, buf[i], blockData[i])
+	for i := range plaintext {
+		if buf[i] != plaintext[i] {
+			t.Fatalf("mismatch at byte %d: got %d, want %d", i, buf[i], plaintext[i])
 		}
 	}
 }

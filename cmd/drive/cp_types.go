@@ -16,6 +16,7 @@ type cpOptions struct {
 	recursive   bool
 	dereference bool
 	removeDest  bool
+	force       bool
 	backup      bool
 	preserve    string
 	workers     int

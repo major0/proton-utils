@@ -51,6 +51,7 @@ func TestArgSplitting(t *testing.T) {
 			workers     int
 			targetDir   string
 			removeDest  bool
+			force       bool
 			backup      bool
 		}{}
 	}
@@ -155,6 +156,7 @@ func resetFlags() {
 		workers     int
 		targetDir   string
 		removeDest  bool
+		force       bool
 		backup      bool
 	}{}
 }
@@ -387,8 +389,39 @@ func TestResolvedEndpointBasename(t *testing.T) {
 }
 
 func TestConflictHandling(t *testing.T) {
-	t.Run("default overwrites existing file", func(t *testing.T) {
+	t.Run("default refuses to overwrite existing file", func(t *testing.T) {
 		resetFlags()
+		tmp := t.TempDir()
+		src := filepath.Join(tmp, "src.txt")
+		dst := filepath.Join(tmp, "dst.txt")
+		if err := os.WriteFile(src, []byte("new-data"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte("old-data-longer"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		err := runCp(nil, []string{src, dst})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "file exists") {
+			t.Errorf("error = %q, want substring %q", err, "file exists")
+		}
+
+		// Original content should be preserved.
+		got, err := os.ReadFile(dst) //nolint:gosec // test temp path
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "old-data-longer" {
+			t.Errorf("dst content = %q, want %q (should be unchanged)", got, "old-data-longer")
+		}
+	})
+
+	t.Run("-f overwrites existing file", func(t *testing.T) {
+		resetFlags()
+		cpFlags.force = true
 		tmp := t.TempDir()
 		src := filepath.Join(tmp, "src.txt")
 		dst := filepath.Join(tmp, "dst.txt")

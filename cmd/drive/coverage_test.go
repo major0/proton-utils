@@ -118,10 +118,10 @@ func TestResolvedEndpointIsDirProton(t *testing.T) {
 // TestHandleConflictProtonPaths exercises the Proton branches of handleConflict.
 func TestHandleConflictProtonPaths(t *testing.T) {
 	tests := []struct {
-		name       string
-		dst        *resolvedEndpoint
-		removeDest bool
-		backup     bool
+		name    string
+		dst     *resolvedEndpoint
+		opts    cpOptions
+		wantErr string
 	}{
 		{
 			name: "proton nil link is no-op",
@@ -142,23 +142,30 @@ func TestHandleConflictProtonPaths(t *testing.T) {
 			},
 		},
 		{
-			name: "proton file without removeDest is no-op",
+			name: "proton file without force refuses",
 			dst: &resolvedEndpoint{
 				pathType: PathProton,
+				raw:      "proton://root/file.txt",
 				link: drive.NewTestLink(&proton.Link{
 					LinkID: "file-1",
 					Type:   proton.LinkTypeFile,
 					State:  proton.LinkStateActive,
 				}, nil, nil, nil, "file.txt"),
 			},
-			removeDest: false,
+			wantErr: "file exists",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			err := handleConflict(ctx, nil, tt.dst, tt.removeDest, tt.backup)
+			err := handleConflict(ctx, nil, tt.dst, tt.opts)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q", tt.wantErr)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -679,6 +686,7 @@ func TestDfVolStateUnknown(t *testing.T) {
 // TestRunCpLocalToLocalOverwrite exercises the overwrite path in runCp.
 func TestRunCpLocalToLocalOverwrite(t *testing.T) {
 	resetFlags()
+	cpFlags.force = true
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "src.txt")
 	dst := filepath.Join(tmp, "dst.txt")

@@ -4,17 +4,17 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestHandleConflict(t *testing.T) {
 	tests := []struct {
-		name       string
-		setup      func(t *testing.T, tmp string) *resolvedEndpoint
-		removeDest bool
-		backup     bool
-		verify     func(t *testing.T, tmp string)
-		wantErr    string
+		name    string
+		setup   func(t *testing.T, tmp string) *resolvedEndpoint
+		opts    cpOptions
+		verify  func(t *testing.T, tmp string)
+		wantErr string
 	}{
 		{
 			name: "directory endpoint is no-op",
@@ -33,7 +33,6 @@ func TestHandleConflict(t *testing.T) {
 			},
 			verify: func(t *testing.T, tmp string) {
 				t.Helper()
-				// Directory should still exist.
 				if _, err := os.Stat(filepath.Join(tmp, "dir")); err != nil {
 					t.Errorf("directory should still exist: %v", err)
 				}
@@ -49,13 +48,29 @@ func TestHandleConflict(t *testing.T) {
 					localInfo: nil,
 				}
 			},
-			verify: func(t *testing.T, _ string) {
-				t.Helper()
-				// Nothing to verify — no-op.
-			},
+			verify: func(t *testing.T, _ string) { t.Helper() },
 		},
 		{
-			name: "default truncates existing file",
+			name: "default refuses to overwrite existing file",
+			setup: func(t *testing.T, tmp string) *resolvedEndpoint {
+				t.Helper()
+				f := filepath.Join(tmp, "existing.txt")
+				if err := os.WriteFile(f, []byte("old-content"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				info, _ := os.Stat(f)
+				return &resolvedEndpoint{
+					pathType:  PathLocal,
+					localPath: f,
+					localInfo: info,
+				}
+			},
+			wantErr: "file exists",
+			verify:  func(t *testing.T, _ string) { t.Helper() },
+		},
+		{
+			name: "force truncates existing file",
+			opts: cpOptions{force: true},
 			setup: func(t *testing.T, tmp string) *resolvedEndpoint {
 				t.Helper()
 				f := filepath.Join(tmp, "existing.txt")
@@ -81,8 +96,8 @@ func TestHandleConflict(t *testing.T) {
 			},
 		},
 		{
-			name:       "removeDest removes existing file",
-			removeDest: true,
+			name: "removeDest removes existing file",
+			opts: cpOptions{removeDest: true},
 			setup: func(t *testing.T, tmp string) *resolvedEndpoint {
 				t.Helper()
 				f := filepath.Join(tmp, "remove-me.txt")
@@ -104,8 +119,8 @@ func TestHandleConflict(t *testing.T) {
 			},
 		},
 		{
-			name:   "backup renames to tilde suffix",
-			backup: true,
+			name: "backup renames to tilde suffix",
+			opts: cpOptions{backup: true},
 			setup: func(t *testing.T, tmp string) *resolvedEndpoint {
 				t.Helper()
 				f := filepath.Join(tmp, "backup-me.txt")
@@ -121,11 +136,9 @@ func TestHandleConflict(t *testing.T) {
 			},
 			verify: func(t *testing.T, tmp string) {
 				t.Helper()
-				// Original should be gone.
 				if _, err := os.Stat(filepath.Join(tmp, "backup-me.txt")); !os.IsNotExist(err) {
 					t.Error("original file should have been renamed")
 				}
-				// Backup should exist.
 				data, err := os.ReadFile(filepath.Join(tmp, "backup-me.txt~")) //nolint:gosec // test temp path
 				if err != nil {
 					t.Fatalf("backup file missing: %v", err)
@@ -143,10 +156,13 @@ func TestHandleConflict(t *testing.T) {
 			dst := tt.setup(t, tmp)
 			ctx := context.Background()
 
-			err := handleConflict(ctx, nil, dst, tt.removeDest, tt.backup)
+			err := handleConflict(ctx, nil, dst, tt.opts)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error %q does not contain %q", err, tt.wantErr)
 				}
 				return
 			}

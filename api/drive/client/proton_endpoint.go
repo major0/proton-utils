@@ -45,7 +45,8 @@ func NewProtonReader(linkID string, blocks []proton.Block, sessionKey *crypto.Se
 	}
 }
 
-// ReadBlock fetches block at index from the BlockStore.
+// ReadBlock fetches block at index from the BlockStore, decrypts it
+// with the session key, and copies the plaintext into buf.
 func (r *ProtonReader) ReadBlock(ctx context.Context, index int, buf []byte) (int, error) {
 	if index >= len(r.blocks) {
 		return 0, fmt.Errorf("block index %d out of range (have %d blocks)", index, len(r.blocks))
@@ -57,8 +58,12 @@ func (r *ProtonReader) ReadBlock(ctx context.Context, index int, buf []byte) (in
 		return 0, err
 	}
 
-	// TODO: decrypt encrypted block using sessionKey into buf.
-	n := copy(buf, encrypted)
+	// Decrypt the data packet using the session key.
+	plainMsg, err := r.sessionKey.Decrypt(encrypted)
+	if err != nil {
+		return 0, fmt.Errorf("decrypt block %d: %w", index, err)
+	}
+	n := copy(buf, plainMsg.GetBinary())
 	return n, nil
 }
 

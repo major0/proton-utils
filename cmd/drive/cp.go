@@ -23,6 +23,7 @@ var cpFlags struct {
 	workers     int    // --workers (override default 8)
 	targetDir   string // -t, --target-directory
 	removeDest  bool   // --remove-destination (trash Proton / remove local before copy)
+	force       bool   // -f, --force (overwrite destination)
 	backup      bool   // --backup (local: rename to <name>~; Proton: no-op)
 }
 
@@ -51,9 +52,10 @@ func init() {
 	cli.BoolFlag(f, &cpFlags.verbose, "verbose", false, "Print each file as it completes")
 	cli.BoolFlag(f, &cpFlags.progress, "progress", false, "Show aggregate transfer progress")
 	f.StringVar(&cpFlags.preserve, "preserve", "", "Preserve attributes: mode,timestamps")
-	f.IntVar(&cpFlags.workers, "workers", 0, "Number of concurrent workers (default 8)")
+	f.IntVar(&cpFlags.workers, "workers", 0, "Number of concurrent workers (default: 2× CPU cores, max 64)")
 	f.StringVarP(&cpFlags.targetDir, "target-directory", "t", "", "Copy all sources into this directory")
 	cli.BoolFlag(f, &cpFlags.removeDest, "remove-destination", false, "Trash/remove destination before copy (disables versioning)")
+	cli.BoolFlagP(f, &cpFlags.force, "force", "f", false, "Overwrite existing destination files")
 	cli.BoolFlag(f, &cpFlags.backup, "backup", false, "Backup existing local files as <name>~")
 }
 
@@ -78,6 +80,7 @@ func runCp(_ *cobra.Command, args []string) error {
 		recursive:   cpFlags.recursive,
 		dereference: cpFlags.dereference,
 		removeDest:  cpFlags.removeDest,
+		force:       cpFlags.force,
 		backup:      cpFlags.backup,
 		preserve:    cpFlags.preserve,
 		workers:     cpFlags.workers,
@@ -192,7 +195,19 @@ func runCp(_ *cobra.Command, args []string) error {
 			continue
 		}
 
-		if err := handleConflict(ctx, dc, fileDst, opts.removeDest, opts.backup); err != nil {
+		// Same-file check before conflict handling — "source and
+		// destination are the same" takes priority over "file exists".
+		if srcEp.pathType == PathLocal && fileDst.pathType == PathLocal &&
+			srcEp.localPath == fileDst.localPath {
+			return fmt.Errorf("cp: %s: source and destination are the same", srcEp.raw)
+		}
+		if srcEp.pathType == PathProton && fileDst.pathType == PathProton &&
+			srcEp.link != nil && fileDst.link != nil &&
+			srcEp.link.LinkID() == fileDst.link.LinkID() {
+			return fmt.Errorf("cp: %s: source and destination are the same", srcEp.raw)
+		}
+
+		if err := handleConflict(ctx, dc, fileDst, opts); err != nil {
 			return err
 		}
 
