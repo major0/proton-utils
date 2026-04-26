@@ -5,30 +5,10 @@ import (
 	"errors"
 	"io"
 	"os"
-	"runtime"
 
 	"github.com/major0/proton-cli/api/drive"
 	"github.com/major0/proton-cli/api/drive/client"
 )
-
-// MaxAutoWorkers is the upper bound for the auto-detected worker count.
-// Proton's storage API starts returning 429/499 above ~64 concurrent
-// requests, so we cap the automatic default there. Users can override
-// with --workers to go higher at their own risk.
-const MaxAutoWorkers = 64
-
-// defaultWorkers returns 2× the number of CPU cores, capped at
-// MaxAutoWorkers. Minimum 2.
-func defaultWorkers() int {
-	n := runtime.NumCPU() * 3
-	if n < 2 {
-		n = 2
-	}
-	if n > MaxAutoWorkers {
-		n = MaxAutoWorkers
-	}
-	return n
-}
 
 // CopyJob is a fully resolved source/destination pair.
 type CopyJob struct {
@@ -38,18 +18,8 @@ type CopyJob struct {
 
 // TransferOpts configures bulk transfer behavior.
 type TransferOpts struct {
-	Workers  int // reader/writer count; 0 = auto (2× cores, max 64)
 	Progress func(completed, total int, bytes int64, rate float64)
 	Verbose  func(src, dst string)
-}
-
-// workers returns the configured worker count, defaulting to
-// 2× CPU cores capped at MaxAutoWorkers.
-func (o TransferOpts) workers() int {
-	if o.Workers <= 0 {
-		return defaultWorkers()
-	}
-	return o.Workers
 }
 
 // CloneableReader is implemented by BlockReaders that support per-worker

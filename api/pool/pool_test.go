@@ -2,7 +2,6 @@ package pool_test
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,8 +20,9 @@ func TestPool_GoBlocks(t *testing.T) {
 	// Block both workers.
 	started := make(chan struct{}, n)
 	release := make(chan struct{})
+	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
-		p.Go(func(_ context.Context) error {
+		p.Go(&wg, func(_ context.Context) error {
 			started <- struct{}{}
 			<-release
 			return nil
@@ -37,7 +37,7 @@ func TestPool_GoBlocks(t *testing.T) {
 	// The N+1th Go should block because all workers are busy.
 	submitted := make(chan struct{})
 	go func() {
-		p.Go(func(_ context.Context) error {
+		p.Go(&wg, func(_ context.Context) error {
 			return nil
 		})
 		close(submitted)
@@ -61,9 +61,7 @@ func TestPool_GoBlocks(t *testing.T) {
 		t.Fatal("Go still blocked after workers released")
 	}
 
-	if err := p.Wait(); err != nil {
-		t.Fatalf("Wait: %v", err)
-	}
+	wg.Wait()
 }
 
 // TestPool_NoThrottle verifies that tasks dispatch without delay when
@@ -74,41 +72,26 @@ func TestPool_NoThrottle(t *testing.T) {
 	p := pool.New(ctx, 4)
 
 	var count atomic.Int64
+	var wg sync.WaitGroup
 	for i := 0; i < taskCount; i++ {
-		p.Go(func(_ context.Context) error {
+		p.Go(&wg, func(_ context.Context) error {
 			count.Add(1)
 			return nil
 		})
 	}
 
-	if err := p.Wait(); err != nil {
-		t.Fatalf("Wait: %v", err)
-	}
+	wg.Wait()
 
 	if got := count.Load(); got != taskCount {
 		t.Fatalf("executed %d tasks, want %d", got, taskCount)
 	}
 }
 
-// TestPool_ZeroTasks verifies that Wait returns immediately when no
-// tasks have been submitted.
+// TestPool_ZeroTasks verifies that WaitGroup completes immediately
+// when no tasks have been submitted.
 func TestPool_ZeroTasks(t *testing.T) {
 	ctx := context.Background()
 	p := pool.New(ctx, 4)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- p.Wait()
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Wait: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Wait did not return for zero tasks")
-	}
 
 	snap := p.Stats()
 	if snap.Submitted != 0 || snap.Completed != 0 || snap.Active != 0 {
@@ -116,53 +99,55 @@ func TestPool_ZeroTasks(t *testing.T) {
 	}
 }
 
-// TestPool_Stats verifies that counters are accurate after a mixed batch
-// of successful and failing tasks.
+// TestPool_Stats verifies that counters are accurate after a batch.
 func TestPool_Stats(t *testing.T) {
-	const (
-		successes = 5
-		failures  = 3
-		total     = successes + failures
-	)
+	const total = 8
 
 	ctx := context.Background()
-	p := pool.New(ctx, total) // enough workers for all tasks
+	p := pool.New(ctx, total)
 
-	errBoom := errors.New("boom")
-
-	var mu sync.Mutex
-	var errs []error
-
-	for i := 0; i < successes; i++ {
-		p.Go(func(_ context.Context) error {
+	var wg sync.WaitGroup
+	for i := 0; i < total; i++ {
+		p.Go(&wg, func(_ context.Context) error {
 			return nil
 		})
 	}
-	for i := 0; i < failures; i++ {
-		p.Go(func(_ context.Context) error {
-			mu.Lock()
-			errs = append(errs, errBoom)
-			mu.Unlock()
-			return errBoom
-		})
-	}
 
-	// errgroup returns the first error; we just need Wait to finish.
-	_ = p.Wait()
+	wg.Wait()
 
 	snap := p.Stats()
 	if snap.Submitted != total {
 		t.Fatalf("Submitted %d, want %d", snap.Submitted, total)
 	}
-	// errgroup cancels on first error, so not all tasks may complete.
-	// But completed should be > 0 and <= total.
-	if snap.Completed == 0 {
-		t.Fatal("Completed is 0, expected at least 1")
-	}
-	if snap.Completed > total {
-		t.Fatalf("Completed %d > total %d", snap.Completed, total)
+	if snap.Completed != total {
+		t.Fatalf("Completed %d, want %d", snap.Completed, total)
 	}
 	if snap.Active != 0 {
 		t.Fatalf("Active %d after Wait, want 0", snap.Active)
+	}
+}
+
+// TestPool_Limit verifies the Limit method.
+func TestPool_Limit(t *testing.T) {
+	p := pool.New(context.Background(), 42)
+	if got := p.Limit(); got != 42 {
+		t.Fatalf("Limit() = %d, want 42", got)
+	}
+}
+
+// TestPool_WaitConvenience verifies the Wait convenience method.
+func TestPool_WaitConvenience(t *testing.T) {
+	ctx := context.Background()
+	p := pool.New(ctx, 4)
+
+	var count atomic.Int64
+	p.Wait(
+		func(_ context.Context) error { count.Add(1); return nil },
+		func(_ context.Context) error { count.Add(1); return nil },
+		func(_ context.Context) error { count.Add(1); return nil },
+	)
+
+	if got := count.Load(); got != 3 {
+		t.Fatalf("executed %d tasks, want 3", got)
 	}
 }

@@ -37,22 +37,11 @@ func TestTransferOpts(t *testing.T) {
 	t.Run("default workers", func(t *testing.T) {
 		opts := cpOptions{}
 		topts := transferOpts(opts)
-		if topts.Workers != 0 {
-			t.Errorf("Workers = %d, want 0 (default)", topts.Workers)
-		}
 		if topts.Progress != nil {
 			t.Error("Progress should be nil without --progress")
 		}
 		if topts.Verbose != nil {
 			t.Error("Verbose should be nil without --verbose")
-		}
-	})
-
-	t.Run("custom workers", func(t *testing.T) {
-		opts := cpOptions{workers: 16}
-		topts := transferOpts(opts)
-		if topts.Workers != 16 {
-			t.Errorf("Workers = %d, want 16", topts.Workers)
 		}
 	})
 

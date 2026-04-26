@@ -48,7 +48,6 @@ func TestArgSplitting(t *testing.T) {
 			verbose     bool
 			progress    bool
 			preserve    string
-			workers     int
 			targetDir   string
 			removeDest  bool
 			force       bool
@@ -153,7 +152,6 @@ func resetFlags() {
 		verbose     bool
 		progress    bool
 		preserve    string
-		workers     int
 		targetDir   string
 		removeDest  bool
 		force       bool

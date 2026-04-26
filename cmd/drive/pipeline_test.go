@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-cli/api/pool"
 	"pgregory.net/rapid"
 )
 
@@ -24,6 +25,11 @@ func (f *failReader) BlockSize(_ int) int64 { return 1024 }
 func (f *failReader) TotalSize() int64      { return 1024 }
 func (f *failReader) Describe() string      { return f.name }
 func (f *failReader) Close() error          { return nil }
+
+// testPool creates a pool for test use with the given concurrency.
+func testPool(ctx context.Context, n int) *pool.Pool {
+	return pool.New(ctx, n)
+}
 
 // TestBufferZeroed_Property verifies that after clear(), all bytes are zero.
 func TestBufferZeroed_Property(t *testing.T) {
@@ -50,8 +56,6 @@ func newTestJob(t *testing.T, srcPath, dstPath string, srcData []byte) CopyJob {
 	return CopyJob{Src: r, Dst: w}
 }
 
-// TestPipeline_LocalToLocal verifies that the pipeline correctly copies
-// a local file to another local path using the block pipeline.
 func TestPipeline_LocalToLocal(t *testing.T) {
 	dir := t.TempDir()
 	srcPath := filepath.Join(dir, "src.bin")
@@ -70,9 +74,10 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 	}
 	_ = f.Close()
 
+	ctx := context.Background()
 	job := newTestJob(t, srcPath, dstPath, srcData)
 
-	if err := RunPipeline(context.Background(), []CopyJob{job}, TransferOpts{Workers: 2}); err != nil {
+	if err := RunPipeline(ctx, testPool(ctx, 2), []CopyJob{job}, TransferOpts{}); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
@@ -91,15 +96,13 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 	}
 }
 
-// TestPipeline_EmptyJobs verifies that an empty job list returns nil.
 func TestPipeline_EmptyJobs(t *testing.T) {
-	if err := RunPipeline(context.Background(), nil, TransferOpts{Workers: 2}); err != nil {
+	ctx := context.Background()
+	if err := RunPipeline(ctx, testPool(ctx, 2), nil, TransferOpts{}); err != nil {
 		t.Fatalf("expected nil for empty jobs, got: %v", err)
 	}
 }
 
-// TestPipeline_ContextCancellation verifies that the pipeline stops
-// promptly when the context is cancelled.
 func TestPipeline_ContextCancellation(t *testing.T) {
 	dir := t.TempDir()
 	srcPath := filepath.Join(dir, "src.bin")
@@ -114,11 +117,9 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_ = RunPipeline(ctx, []CopyJob{job}, TransferOpts{Workers: 2})
+	_ = RunPipeline(ctx, testPool(ctx, 2), []CopyJob{job}, TransferOpts{})
 }
 
-// TestPipeline_MultipleFiles verifies that blocks from different files
-// are processed through the same pipeline.
 func TestPipeline_MultipleFiles(t *testing.T) {
 	dir := t.TempDir()
 
@@ -135,13 +136,14 @@ func TestPipeline_MultipleFiles(t *testing.T) {
 		jobs = append(jobs, newTestJob(t, srcPath, dstPath, data))
 	}
 
-	if err := RunPipeline(context.Background(), jobs, TransferOpts{Workers: 4}); err != nil {
+	ctx := context.Background()
+	if err := RunPipeline(ctx, testPool(ctx, 4), jobs, TransferOpts{}); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
 	for i, job := range jobs {
-		src, _ := os.ReadFile(job.Src.Describe())
-		dst, _ := os.ReadFile(job.Dst.Describe())
+		src, _ := os.ReadFile(job.Src.Describe()) //nolint:gosec // test
+		dst, _ := os.ReadFile(job.Dst.Describe()) //nolint:gosec // test
 		if len(dst) < len(src) {
 			t.Fatalf("file %d: dst size %d < src size %d", i, len(dst), len(src))
 		}
@@ -153,10 +155,6 @@ func TestPipeline_MultipleFiles(t *testing.T) {
 	}
 }
 
-// TestPipeline_ProgressCallback_Property verifies that the progress
-// callback receives monotonically increasing completed block counts.
-//
-// **Validates: Requirements 2.4**
 func TestPipeline_ProgressCallback_Property(t *testing.T) {
 	dir := t.TempDir()
 	rapid.Check(t, func(t *rapid.T) {
@@ -179,11 +177,10 @@ func TestPipeline_ProgressCallback_Property(t *testing.T) {
 		var completedValues []int
 		job := CopyJob{Src: r, Dst: w}
 
-		pErr := RunPipeline(context.Background(), []CopyJob{job}, TransferOpts{
-			Workers: 1,
-			Progress: func(completed, total int, _ int64, _ float64) {
+		ctx := context.Background()
+		pErr := RunPipeline(ctx, testPool(ctx, 1), []CopyJob{job}, TransferOpts{
+			Progress: func(completed, _ int, _ int64, _ float64) {
 				completedValues = append(completedValues, completed)
-				_ = total
 			},
 		})
 		if pErr != nil {
@@ -202,8 +199,6 @@ func TestPipeline_ProgressCallback_Property(t *testing.T) {
 	})
 }
 
-// TestPipeline_VerboseCallback verifies that the verbose callback is
-// called exactly once per completed job.
 func TestPipeline_VerboseCallback(t *testing.T) {
 	dir := t.TempDir()
 
@@ -228,8 +223,8 @@ func TestPipeline_VerboseCallback(t *testing.T) {
 			}
 
 			var verboseCalls int
-			err := RunPipeline(context.Background(), jobs, TransferOpts{
-				Workers: 2,
+			ctx := context.Background()
+			err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{
 				Verbose: func(_, _ string) {
 					verboseCalls++
 				},
@@ -244,8 +239,6 @@ func TestPipeline_VerboseCallback(t *testing.T) {
 	}
 }
 
-// TestBulkCopy_ErrorCollection_Property verifies that when a subset of
-// jobs fail, non-failing jobs complete and all errors are collected.
 func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 	dir := t.TempDir()
 
@@ -264,24 +257,23 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 			data := []byte("good-data")
 			_ = os.WriteFile(srcPath, data, 0600)
 			_ = os.WriteFile(dstPath, nil, 0600)
-			r := NewLocalReader(srcPath, int64(len(data)))
-			w := NewLocalWriter(dstPath)
-			jobs = append(jobs, CopyJob{Src: r, Dst: w})
-		}
-
-		// Bad jobs use a failReader that always errors on ReadBlock.
-		for i := 0; i < nBad; i++ {
-			dstPath := filepath.Join(iterDir, "dst-bad"+string(rune('a'+i))+".bin")
-			_ = os.WriteFile(dstPath, nil, 0600)
-			w := NewLocalWriter(dstPath)
-			name := "bad" + string(rune('a'+i))
 			jobs = append(jobs, CopyJob{
-				Src: &failReader{name: name},
-				Dst: w,
+				Src: NewLocalReader(srcPath, int64(len(data))),
+				Dst: NewLocalWriter(dstPath),
 			})
 		}
 
-		err := RunPipeline(context.Background(), jobs, TransferOpts{Workers: 2})
+		for i := 0; i < nBad; i++ {
+			dstPath := filepath.Join(iterDir, "dst-bad"+string(rune('a'+i))+".bin")
+			_ = os.WriteFile(dstPath, nil, 0600)
+			jobs = append(jobs, CopyJob{
+				Src: &failReader{name: "bad" + string(rune('a'+i))},
+				Dst: NewLocalWriter(dstPath),
+			})
+		}
+
+		ctx := context.Background()
+		err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{})
 
 		if err == nil {
 			t.Fatal("expected errors from bad jobs, got nil")
@@ -296,14 +288,13 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 	})
 }
 
-// TestBulkCopy_Empty verifies that an empty job list returns nil.
 func TestBulkCopy_Empty(t *testing.T) {
-	if err := RunPipeline(context.Background(), nil, TransferOpts{Workers: 2}); err != nil {
+	ctx := context.Background()
+	if err := RunPipeline(ctx, testPool(ctx, 2), nil, TransferOpts{}); err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
 }
 
-// TestBulkCopy_AllSuccess verifies that all-success jobs return nil error.
 func TestBulkCopy_AllSuccess(t *testing.T) {
 	dir := t.TempDir()
 	var jobs []CopyJob
@@ -315,27 +306,26 @@ func TestBulkCopy_AllSuccess(t *testing.T) {
 		jobs = append(jobs, newTestJob(t, srcPath, dstPath, []byte("data")))
 	}
 
-	if err := RunPipeline(context.Background(), jobs, TransferOpts{Workers: 2}); err != nil {
+	ctx := context.Background()
+	if err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{}); err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
 }
 
-// TestBulkCopy_AllFail verifies that all-failure jobs return errors for each.
 func TestBulkCopy_AllFail(t *testing.T) {
 	dir := t.TempDir()
 	var jobs []CopyJob
 	for i := 0; i < 3; i++ {
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
 		_ = os.WriteFile(dstPath, nil, 0600)
-		w := NewLocalWriter(dstPath)
-		name := "missing" + string(rune('a'+i))
 		jobs = append(jobs, CopyJob{
-			Src: &failReader{name: name},
-			Dst: w,
+			Src: &failReader{name: "missing" + string(rune('a'+i))},
+			Dst: NewLocalWriter(dstPath),
 		})
 	}
 
-	err := RunPipeline(context.Background(), jobs, TransferOpts{Workers: 2})
+	ctx := context.Background()
+	err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{})
 	if err == nil {
 		t.Fatal("expected errors, got nil")
 	}

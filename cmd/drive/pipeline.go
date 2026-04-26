@@ -13,20 +13,24 @@ import (
 	"github.com/major0/proton-cli/api/pool"
 )
 
-// RunPipeline transfers files using a pool of workers. Each worker
-// claims a block from the current job, reads it from Src, writes it
-// to Dst, then claims the next. When the current job has no unclaimed
-// blocks, the worker advances to the next job in the queue.
+// RunPipeline transfers files using the provided worker pool. Each
+// worker claims a block from the current job, reads it from Src,
+// writes it to Dst, then claims the next. When the current job has
+// no unclaimed blocks, the worker advances to the next job.
 //
 // If Src or Dst implement CloneableReader/CloneableWriter, each worker
 // gets its own clone (and thus its own file descriptor). Clones are
-// closed when the worker moves to a different job or exits.
-func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
+// closed when the worker is done.
+//
+// The pool's concurrency limit controls how many workers run in
+// parallel. The pipeline submits nWorkers tasks and waits for all
+// of them to complete.
+func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferOpts) error {
 	if len(jobs) == 0 {
 		return nil
 	}
 
-	nWorkers := opts.workers()
+	nWorkers := p.Limit()
 
 	// Build block maps for all jobs upfront.
 	maps := make([]*blockMap, len(jobs))
@@ -98,9 +102,9 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		return -1, nil, 0, 0
 	}
 
-	p := pool.New(ctx, nWorkers)
+	var wg sync.WaitGroup
 	for i := 0; i < nWorkers; i++ {
-		p.Go(func(ctx context.Context) error {
+		p.Go(&wg, func(ctx context.Context) error {
 			buf := alignedAlloc(drive.BlockSize)
 
 			// Per-worker clones, keyed by job index. Opened on
@@ -173,7 +177,7 @@ func RunPipeline(ctx context.Context, jobs []CopyJob, opts TransferOpts) error {
 		})
 	}
 
-	_ = p.Wait()
+	wg.Wait()
 
 	// Close all template readers and writers (non-cloned resources).
 	for i := range jobs {

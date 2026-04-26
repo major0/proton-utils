@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/major0/proton-cli/api"
@@ -62,7 +63,7 @@ func TestFindLinkByName_Empty(t *testing.T) {
 // non-nil pool with the default concurrency limit.
 func TestSessionPool_Default(t *testing.T) {
 	ctx := context.Background()
-	p := pool.New(ctx, api.DefaultMaxWorkers)
+	p := pool.New(ctx, api.DefaultMaxWorkers())
 
 	session := &api.Session{
 		Pool: p,
@@ -74,13 +75,12 @@ func TestSessionPool_Default(t *testing.T) {
 
 	// Verify pool is functional by submitting and waiting.
 	var ran bool
-	session.Pool.Go(func(_ context.Context) error {
+	var wg sync.WaitGroup
+	session.Pool.Go(&wg, func(_ context.Context) error {
 		ran = true
 		return nil
 	})
-	if err := session.Pool.Wait(); err != nil {
-		t.Fatalf("Pool.Wait: %v", err)
-	}
+	wg.Wait()
 	if !ran {
 		t.Fatal("pool task did not execute")
 	}

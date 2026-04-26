@@ -19,7 +19,6 @@ type cpOptions struct {
 	force       bool
 	backup      bool
 	preserve    string
-	workers     int
 	verbose     bool
 	progress    bool
 }

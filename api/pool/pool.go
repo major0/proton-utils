@@ -1,15 +1,16 @@
-// Package pool provides a bounded worker pool.
+// Package pool provides a bounded worker pool with throttle integration.
 //
-// Pool wraps golang.org/x/sync/errgroup with throttle integration and
-// atomic stats counters. It enforces a concurrency limit and coordinates
-// graceful shutdown via context cancellation.
+// The pool enforces a global concurrency limit via a semaphore and
+// optionally gates each task through a Waiter (e.g., rate-limit
+// throttle). A single pool is shared across the session lifetime;
+// callers submit work and wait on individual batches without draining
+// the pool.
 package pool
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // Waiter blocks until ready or the context is cancelled.
@@ -50,48 +51,76 @@ func (s *Stats) Snapshot() StatsSnapshot {
 	}
 }
 
-// Pool wraps errgroup.Group with throttle integration and stats.
+// Pool is a long-lived bounded worker pool. It uses a semaphore to
+// enforce a concurrency limit and an optional throttle to gate task
+// dispatch. Unlike errgroup, the pool is reusable — callers submit
+// work via Go and track completion with their own sync primitives.
 type Pool struct {
-	g        *errgroup.Group
+	sem      chan struct{}
 	ctx      context.Context
 	throttle Waiter
 	stats    Stats
 }
 
 // New creates a pool with n concurrent workers. The context governs
-// lifetime via errgroup.WithContext.
+// lifetime — when cancelled, throttle waits and new tasks abort early.
 func New(ctx context.Context, n int, opts ...Option) *Pool {
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(n)
-	p := &Pool{g: g, ctx: ctx}
+	p := &Pool{
+		sem: make(chan struct{}, n),
+		ctx: ctx,
+	}
 	for _, o := range opts {
 		o(p)
 	}
 	return p
 }
 
-// Go submits a task. Blocks if all workers are busy (errgroup
-// backpressure via SetLimit). The task receives the pool's context.
-func (p *Pool) Go(task func(context.Context) error) {
+// Limit returns the pool's concurrency limit.
+func (p *Pool) Limit() int { return cap(p.sem) }
+
+// Go submits a task to the pool. It acquires a semaphore slot (blocking
+// if all workers are busy), runs the task in a new goroutine, and
+// releases the slot when done. The caller's WaitGroup (if non-nil) is
+// used to track completion of a batch of tasks.
+func (p *Pool) Go(wg *sync.WaitGroup, task func(context.Context) error) {
+	if wg != nil {
+		wg.Add(1)
+	}
 	p.stats.submitted.Add(1)
-	p.g.Go(func() error {
+
+	// Acquire semaphore slot — blocks when pool is at capacity.
+	p.sem <- struct{}{}
+
+	go func() {
+		defer func() {
+			<-p.sem // release slot
+			p.stats.completed.Add(1)
+			if wg != nil {
+				wg.Done()
+			}
+		}()
+
 		if p.throttle != nil {
 			if err := p.throttle.Wait(p.ctx); err != nil {
-				p.stats.completed.Add(1)
-				return err
+				return
 			}
 		}
+
 		p.stats.active.Add(1)
 		defer p.stats.active.Add(-1)
-		defer p.stats.completed.Add(1)
-		return task(p.ctx)
-	})
+
+		_ = task(p.ctx)
+	}()
 }
 
-// Wait blocks until all tasks complete. Returns the first non-nil
-// error (errgroup semantics).
-func (p *Pool) Wait() error {
-	return p.g.Wait()
+// Wait is a convenience that creates a WaitGroup, submits all tasks,
+// and waits for them to complete. For one-shot batch work.
+func (p *Pool) Wait(tasks ...func(context.Context) error) {
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		p.Go(&wg, t)
+	}
+	wg.Wait()
 }
 
 // Stats returns a point-in-time snapshot of pool counters.

@@ -84,8 +84,8 @@ func TestClient_Throttle(t *testing.T) {
 
 func TestClient_MaxWorkers(t *testing.T) {
 	c := &Client{}
-	if got := c.MaxWorkers(); got != api.DefaultMaxWorkers {
-		t.Fatalf("MaxWorkers() = %d, want %d", got, api.DefaultMaxWorkers)
+	if got := c.MaxWorkers(); got != api.DefaultMaxWorkers() {
+		t.Fatalf("MaxWorkers() = %d, want %d", got, api.DefaultMaxWorkers())
 	}
 }
 

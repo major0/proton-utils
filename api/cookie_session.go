@@ -650,7 +650,7 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 
 	session := &Session{}
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
+	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
 	session.cookieJar = jar
 
 	session.manager = proton.New(managerOpts...)

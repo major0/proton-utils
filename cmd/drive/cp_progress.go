@@ -10,9 +10,6 @@ import (
 // transferOpts builds TransferOpts from the resolved copy options.
 func transferOpts(opts cpOptions) TransferOpts {
 	topts := TransferOpts{}
-	if opts.workers > 0 {
-		topts.Workers = opts.workers
-	}
 	if opts.progress {
 		topts.Progress = makeProgressFunc()
 	}

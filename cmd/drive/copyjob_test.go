@@ -151,26 +151,6 @@ func TestLocalReader_BlockCount_Property(t *testing.T) {
 	})
 }
 
-// TestTransferOpts_DefaultWorkers verifies the default worker count.
-func TestTransferOpts_DefaultWorkers(t *testing.T) {
-	want := defaultWorkers()
-
-	opts := TransferOpts{}
-	if got := opts.workers(); got != want {
-		t.Fatalf("default workers = %d, want %d", got, want)
-	}
-
-	opts.Workers = 16
-	if got := opts.workers(); got != 16 {
-		t.Fatalf("custom workers = %d, want 16", got)
-	}
-
-	opts.Workers = -1
-	if got := opts.workers(); got != want {
-		t.Fatalf("negative workers = %d, want %d", got, want)
-	}
-}
-
 // TestLocalReadWrite_RoundTrip_Property writes random data to a file,
 // reads it back via LocalReader, and verifies the data matches.
 func TestLocalReadWrite_RoundTrip_Property(t *testing.T) {
@@ -209,41 +189,6 @@ func TestLocalReadWrite_RoundTrip_Property(t *testing.T) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(reassembled), len(data))
 		}
 	})
-}
-
-// TestTransferOpts_Workers_TableDriven extends worker count tests.
-func TestTransferOpts_Workers_TableDriven(t *testing.T) {
-	tests := []struct {
-		name    string
-		workers int
-		want    int
-	}{
-		{"zero defaults", 0, defaultWorkers()},
-		{"negative defaults", -1, defaultWorkers()},
-		{"negative large", -100, defaultWorkers()},
-		{"one", 1, 1},
-		{"custom", 16, 16},
-		{"large", 1000, 1000},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := TransferOpts{Workers: tt.workers}
-			if got := opts.workers(); got != tt.want {
-				t.Fatalf("workers() = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestDefaultWorkers verifies the auto-detection logic.
-func TestDefaultWorkers(t *testing.T) {
-	n := defaultWorkers()
-	if n < 2 {
-		t.Fatalf("defaultWorkers() = %d, want >= 2", n)
-	}
-	if n > MaxAutoWorkers {
-		t.Fatalf("defaultWorkers() = %d, want <= %d", n, MaxAutoWorkers)
-	}
 }
 
 // TestBlockMap tests the blockMap claim logic.

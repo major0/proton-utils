@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	api "github.com/major0/proton-cli/api"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
+	apiPool "github.com/major0/proton-cli/api/pool"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +22,6 @@ var cpFlags struct {
 	verbose     bool   // -v, --verbose
 	progress    bool   // --progress
 	preserve    string // --preserve=mode,timestamps
-	workers     int    // --workers (override default 8)
 	targetDir   string // -t, --target-directory
 	removeDest  bool   // --remove-destination (trash Proton / remove local before copy)
 	force       bool   // -f, --force (overwrite destination)
@@ -52,7 +53,6 @@ func init() {
 	cli.BoolFlag(f, &cpFlags.verbose, "verbose", false, "Print each file as it completes")
 	cli.BoolFlag(f, &cpFlags.progress, "progress", false, "Show aggregate transfer progress")
 	f.StringVar(&cpFlags.preserve, "preserve", "", "Preserve attributes: mode,timestamps")
-	f.IntVar(&cpFlags.workers, "workers", 0, "Number of concurrent workers (default: 3× CPU cores, max 64)")
 	f.StringVarP(&cpFlags.targetDir, "target-directory", "t", "", "Copy all sources into this directory")
 	cli.BoolFlag(f, &cpFlags.removeDest, "remove-destination", false, "Trash/remove destination before copy (disables versioning)")
 	cli.BoolFlagP(f, &cpFlags.force, "force", "f", false, "Overwrite existing destination files")
@@ -83,7 +83,6 @@ func runCp(_ *cobra.Command, args []string) error {
 		force:       cpFlags.force,
 		backup:      cpFlags.backup,
 		preserve:    cpFlags.preserve,
-		workers:     cpFlags.workers,
 		verbose:     cpFlags.verbose,
 		progress:    cpFlags.progress,
 	}
@@ -231,7 +230,16 @@ func runCp(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := RunPipeline(ctx, jobs, transferOpts(opts)); err != nil {
+	// Use the session pool when available (Proton paths), otherwise
+	// create a local pool for local-only copies.
+	var wp *apiPool.Pool
+	if dc != nil {
+		wp = dc.Session.Pool
+	} else {
+		wp = apiPool.New(ctx, api.DefaultMaxWorkers())
+	}
+
+	if err := RunPipeline(ctx, wp, jobs, transferOpts(opts)); err != nil {
 		return err
 	}
 

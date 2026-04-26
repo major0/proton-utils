@@ -98,27 +98,6 @@ func TestRunCpTargetDirectory(t *testing.T) {
 	}
 }
 
-func TestRunCpWorkers(t *testing.T) {
-	resetFlags()
-	cpFlags.workers = 4
-	tmp := t.TempDir()
-	src := filepath.Join(tmp, "src.txt")
-	dst := filepath.Join(tmp, "dst.txt")
-	_ = os.WriteFile(src, []byte("data"), 0600)
-
-	if err := runCp(nil, []string{src, dst}); err != nil {
-		t.Fatalf("runCp: %v", err)
-	}
-
-	got, err := os.ReadFile(dst) //nolint:gosec // test temp path
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "data" {
-		t.Errorf("content = %q, want %q", got, "data")
-	}
-}
-
 func TestRunCpEmptySourceList(t *testing.T) {
 	resetFlags()
 	cpFlags.targetDir = "/tmp"

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +31,23 @@ type serialCookie struct {
 	Path   string `json:"path"`
 }
 
-// DefaultMaxWorkers is the default concurrency limit for session operations.
-const DefaultMaxWorkers = 10
+// MaxAutoWorkers is the upper bound for the auto-detected worker count.
+// Proton's storage API rate-limits above ~64 concurrent requests.
+const MaxAutoWorkers = 64
+
+// DefaultMaxWorkers returns 3× the number of logical CPU cores, capped
+// at MaxAutoWorkers. Minimum 2. This is the default concurrency limit
+// for session operations and block pipelines.
+func DefaultMaxWorkers() int {
+	n := runtime.NumCPU() * 3
+	if n < 2 {
+		n = 2
+	}
+	if n > MaxAutoWorkers {
+		n = MaxAutoWorkers
+	}
+	return n
+}
 
 // DefaultThrottleBackoff is the initial backoff duration for rate limiting.
 const DefaultThrottleBackoff = time.Second
@@ -153,7 +169,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 
 	var session Session
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
+	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -189,7 +205,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 func sessionFromLogin(ctx context.Context, options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers, pool.WithThrottle(session.Throttle))
+	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar

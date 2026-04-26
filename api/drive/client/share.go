@@ -60,6 +60,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 	slog.Debug("client.ListShares", "volumeID", volumeID)
 
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 	shares := make([]drive.Share, 0, len(pshares))
 
 	for _, s := range pshares {
@@ -67,7 +68,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 			continue
 		}
 		shareID := s.ShareID
-		c.Session.Pool.Go(func(ctx context.Context) error {
+		c.Session.Pool.Go(&wg, func(ctx context.Context) error {
 			share, err := c.GetShare(ctx, shareID)
 			if err != nil {
 				slog.Error("worker", "shareID", shareID, "error", err)
@@ -80,9 +81,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 		})
 	}
 
-	if err := c.Session.Pool.Wait(); err != nil {
-		return shares, err
-	}
+	wg.Wait()
 	return shares, nil
 }
 
