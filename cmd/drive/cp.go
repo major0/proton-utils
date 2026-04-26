@@ -233,7 +233,7 @@ func runCp(_ *cobra.Command, args []string) error {
 	// Use the session pool when available (Proton paths), otherwise
 	// create a local pool for local-only copies.
 	var wp *apiPool.Pool
-	if dc != nil {
+	if dc != nil && dc.Session.Pool != nil {
 		wp = dc.Session.Pool
 	} else {
 		wp = apiPool.New(ctx, api.DefaultMaxWorkers())
