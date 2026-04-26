@@ -63,21 +63,20 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 		}
 		// Dest doesn't exist — resolve the parent within the same share.
 		if multiSource {
-			return nil, fmt.Errorf("cp: %s: no such file or directory", arg.raw)
+			return nil, fmt.Errorf("cp: %s: not found", arg.raw)
 		}
 		// Parse the URI to get the share and path components separately.
 		sharePart, pathPart, parseErr := parseProtonURI(arg.raw)
 		if parseErr != nil {
-			return nil, fmt.Errorf("cp: %s: %w", arg.raw, parseErr)
+			return nil, fmt.Errorf("cp: %w", parseErr)
 		}
 		if pathPart == "" {
-			// proton://share with no sub-path — the share itself doesn't exist.
-			return nil, fmt.Errorf("cp: %s: %w", arg.raw, err)
+			return nil, fmt.Errorf("cp: share not found: %s", sharePart)
 		}
 		// Resolve the share first — if the share doesn't exist, fail here.
 		share, shareErr := dc.ResolveShareComponent(ctx, sharePart)
 		if shareErr != nil {
-			return nil, fmt.Errorf("cp: %s: %w", arg.raw, shareErr)
+			return nil, fmt.Errorf("cp: share not found: %s", sharePart)
 		}
 		// Resolve the parent path within the share.
 		parentPath := filepath.Dir(pathPart)
@@ -89,10 +88,10 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 		}
 		parentLink, pErr := share.Link.ResolvePath(ctx, parentPath, true)
 		if pErr != nil {
-			return nil, fmt.Errorf("cp: %s: %w", arg.raw, pErr)
+			return nil, fmt.Errorf("cp: directory not found: %s", parentPath)
 		}
 		if parentLink.Type() != proton.LinkTypeFolder {
-			return nil, fmt.Errorf("cp: %s: not a directory", parentPath)
+			return nil, fmt.Errorf("cp: not a directory: %s", parentPath)
 		}
 		ep.link = parentLink
 		ep.share = share
