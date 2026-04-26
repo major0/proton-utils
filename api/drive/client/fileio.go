@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
@@ -94,6 +95,14 @@ func (c *Client) CreateFile(ctx context.Context, share *drive.Share, parentLink 
 	shareID := share.ProtonShare().ShareID
 	res, err := c.Session.Client.CreateFile(ctx, shareID, req)
 	if err != nil {
+		// Convert sentinel errors into typed errors. The caller is
+		// responsible for Lookup if it needs the blocking Link.
+		if errors.Is(err, proton.ErrFileNameExist) {
+			return nil, fmt.Errorf("drive.CreateFile: %w", proton.ErrFileNameExist)
+		}
+		if errors.Is(err, proton.ErrADraftExist) {
+			return nil, fmt.Errorf("drive.CreateFile: %w", proton.ErrADraftExist)
+		}
 		return nil, fmt.Errorf("drive.CreateFile: %w", err)
 	}
 
@@ -180,4 +189,107 @@ func (c *Client) OpenFile(ctx context.Context, link *drive.Link) (*FileHandle, e
 		FileSize:   fileSize,
 		ModTime:    modTime,
 	}, nil
+}
+
+// OverwriteFile creates a new revision on an existing file link,
+// returning a FileHandle ready for upload. This preserves the link
+// identity (same LinkID, permissions, shares) while replacing the
+// content — equivalent to open(O_TRUNC) on a local filesystem.
+//
+// If a stale draft revision exists on the file, it is deleted before
+// creating the new revision. The session key and node keyring are
+// derived from the existing link (not generated fresh).
+func (c *Client) OverwriteFile(ctx context.Context, share *drive.Share, link *drive.Link) (*FileHandle, error) {
+	if link.Type() != proton.LinkTypeFile {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: not a file", link.LinkID())
+	}
+
+	shareID := share.ProtonShare().ShareID
+	linkID := link.LinkID()
+
+	// Derive crypto from existing link.
+	nodeKR, err := link.KeyRing()
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: keyring: %w", linkID, err)
+	}
+
+	pLink := link.ProtonLink()
+	sessionKey, err := pLink.GetSessionKey(nodeKR)
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: session key: %w", linkID, err)
+	}
+
+	addrKR, err := c.addrKRForLink(link)
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: address keyring: %w", linkID, err)
+	}
+
+	sigAddr, err := c.signatureAddress(link)
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: signature address: %w", linkID, err)
+	}
+
+	// Create a new revision on the existing link.
+	res, err := c.Session.Client.CreateRevision(ctx, shareID, linkID)
+	if err != nil {
+		// Draft exists — delete it and retry. CreateRevision returns
+		// a wrapped *proton.APIError (not a sentinel) for 409/2500.
+		var apiErr *proton.APIError
+		isDraft := errors.Is(err, proton.ErrADraftExist)
+		if !isDraft {
+			if errors.As(err, &apiErr) && apiErr.Status == 409 {
+				isDraft = true
+			}
+		}
+		if isDraft {
+			if delErr := c.deleteStaleRevision(ctx, shareID, linkID); delErr != nil {
+				return nil, fmt.Errorf("drive.OverwriteFile: %s: delete stale draft: %w", linkID, delErr)
+			}
+			res, err = c.Session.Client.CreateRevision(ctx, shareID, linkID)
+			if err != nil {
+				return nil, fmt.Errorf("drive.OverwriteFile: %s: create revision after draft cleanup: %w", linkID, err)
+			}
+		} else {
+			return nil, fmt.Errorf("drive.OverwriteFile: %s: create revision: %w", linkID, err)
+		}
+	}
+
+	// Fetch verification code for block upload tokens.
+	vd, err := c.Session.Client.GetVerificationData(ctx, shareID, linkID, res.ID)
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: verification data: %w", linkID, err)
+	}
+	verifyCode, err := base64.StdEncoding.DecodeString(vd.VerificationCode)
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFile: %s: decode verification code: %w", linkID, err)
+	}
+
+	return &FileHandle{
+		Link:             link,
+		Share:            share,
+		LinkID:           linkID,
+		RevisionID:       res.ID,
+		SessionKey:       sessionKey,
+		NodeKR:           nodeKR,
+		AddrKR:           addrKR,
+		ShareID:          shareID,
+		VolumeID:         share.ProtonShare().VolumeID,
+		AddressID:        share.ProtonShare().AddressID,
+		SigAddr:          sigAddr,
+		VerificationCode: verifyCode,
+	}, nil
+}
+
+// deleteStaleRevision finds and deletes a draft revision on the given file.
+func (c *Client) deleteStaleRevision(ctx context.Context, shareID, linkID string) error {
+	revisions, err := c.Session.Client.ListRevisions(ctx, shareID, linkID)
+	if err != nil {
+		return fmt.Errorf("list revisions: %w", err)
+	}
+	for _, rev := range revisions {
+		if rev.State == proton.RevisionStateDraft {
+			return c.Session.Client.DeleteRevision(ctx, shareID, linkID, rev.ID)
+		}
+	}
+	return fmt.Errorf("no draft revision found")
 }

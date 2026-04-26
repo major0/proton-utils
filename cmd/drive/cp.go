@@ -304,25 +304,88 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		}
 		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
 		if err != nil {
-			// File already exists (code 2500) — trash and retry if forced.
-			var apiErr proton.APIError
-			if errors.As(err, &apiErr) && apiErr.Code == proton.AFileOrFolderNameExist {
+			switch {
+			case errors.Is(err, proton.ErrFileNameExist):
 				if !opts.force && !opts.removeDest {
-					return nil, fmt.Errorf("cp: file exists: %s (use -f to overwrite)", name)
+					return nil, fmt.Errorf("cp: %s: file exists (use -f to overwrite)", name)
 				}
-				// Find and trash the existing file, then retry.
-				existing, lookupErr := dst.link.Lookup(ctx, name)
+				// Lookup the blocker to determine type and get the Link.
+				blocker, lookupErr := dst.link.Lookup(ctx, name)
 				if lookupErr != nil {
+					return nil, fmt.Errorf("cp: %s: lookup: %w", name, lookupErr)
+				}
+				switch {
+				case blocker == nil:
+					// Race: blocker removed between CreateFile and Lookup — retry.
+					fh, err = dc.CreateFile(ctx, dst.share, dst.link, name)
+					if err != nil {
+						return nil, fmt.Errorf("cp: %s: %w", name, err)
+					}
+				case blocker.Type() == proton.LinkTypeFolder:
+					return nil, fmt.Errorf("cp: %s: cannot overwrite directory with non-directory", name)
+				case blocker.State() == proton.LinkStateTrashed:
+					// Trashed link still occupies the name hash — permanently delete, then create new.
+					if delErr := dc.Remove(ctx, dst.share, blocker, drive.RemoveOpts{Permanent: true}); delErr != nil {
+						return nil, fmt.Errorf("cp: %s: remove trashed: %w", name, delErr)
+					}
+					fh, err = dc.CreateFile(ctx, dst.share, dst.link, name)
+					if err != nil {
+						return nil, fmt.Errorf("cp: %s: %w", name, err)
+					}
+				default:
+					// Active file or draft — check if it has a committed revision.
+					pLink := blocker.ProtonLink()
+					hasActiveRevision := pLink.FileProperties != nil &&
+						pLink.FileProperties.ActiveRevision.ID != "" &&
+						pLink.FileProperties.ActiveRevision.State == proton.RevisionStateActive
+					if !hasActiveRevision {
+						// No committed revision — delete the link and create fresh.
+						if delErr := dc.Remove(ctx, dst.share, blocker, drive.RemoveOpts{Permanent: true}); delErr != nil {
+							return nil, fmt.Errorf("cp: %s: remove draft link: %w", name, delErr)
+						}
+						fh, err = dc.CreateFile(ctx, dst.share, dst.link, name)
+						if err != nil {
+							return nil, fmt.Errorf("cp: %s: %w", name, err)
+						}
+					} else {
+						// Has active revision — overwrite via CreateRevision.
+						fh, err = dc.OverwriteFile(ctx, dst.share, blocker)
+						if err != nil {
+							return nil, fmt.Errorf("cp: %s: %w", name, err)
+						}
+					}
+				}
+
+			case errors.Is(err, proton.ErrADraftExist):
+				if !opts.force && !opts.removeDest {
+					return nil, fmt.Errorf("cp: %s: file exists (use -f to overwrite)", name)
+				}
+				// Draft-only link or stale draft — lookup and handle.
+				blocker, lookupErr := dst.link.Lookup(ctx, name)
+				if lookupErr != nil {
+					return nil, fmt.Errorf("cp: %s: lookup draft: %w", name, lookupErr)
+				}
+				switch {
+				case blocker != nil && blocker.State() == proton.LinkStateDraft:
+					// Draft-only link: delete and recreate.
+					if delErr := dc.Remove(ctx, dst.share, blocker, drive.RemoveOpts{Permanent: true}); delErr != nil {
+						return nil, fmt.Errorf("cp: %s: remove draft: %w", name, delErr)
+					}
+					fh, err = dc.CreateFile(ctx, dst.share, dst.link, name)
+					if err != nil {
+						return nil, fmt.Errorf("cp: %s: %w", name, err)
+					}
+				case blocker != nil:
+					// Active file with stale draft — overwrite.
+					fh, err = dc.OverwriteFile(ctx, dst.share, blocker)
+					if err != nil {
+						return nil, fmt.Errorf("cp: %s: %w", name, err)
+					}
+				default:
 					return nil, fmt.Errorf("cp: %s: %w", name, err)
 				}
-				if trashErr := dc.Remove(ctx, dst.share, existing, drive.RemoveOpts{}); trashErr != nil {
-					return nil, fmt.Errorf("cp: trash %s: %w", name, trashErr)
-				}
-				fh, err = dc.CreateFile(ctx, dst.share, dst.link, name)
-				if err != nil {
-					return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
-				}
-			} else {
+
+			default:
 				return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
 			}
 		}

@@ -47,8 +47,13 @@ func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEn
 		if dst.link.Type() == proton.LinkTypeFolder {
 			return nil // directory, merge
 		}
-		if opts.removeDest || opts.force {
+		if opts.removeDest {
 			return dc.Remove(ctx, dst.share, dst.link, drive.RemoveOpts{})
+		}
+		if opts.force {
+			// Don't trash — buildCopyJob handles -f via OverwriteFile
+			// (CreateRevision on existing link preserves link identity).
+			return nil
 		}
 		return fmt.Errorf("cp: %s: file exists (use -f to overwrite)", dst.raw)
 	}

@@ -118,6 +118,7 @@ type ProtonWriter struct {
 	mu        sync.Mutex
 	uploaded  map[int]uploadedBlock
 	totalSize int64
+	closed    bool // prevents double-commit
 }
 
 // uploadedBlock holds the result of a single block upload.
@@ -237,6 +238,11 @@ func (w *ProtonWriter) Describe() string { return w.linkID }
 // UpdateRevision with block tokens, XAttr, and manifest signature.
 func (w *ProtonWriter) Close() error {
 	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil
+	}
+	w.closed = true
 	nBlocks := len(w.uploaded)
 	totalSize := w.totalSize
 	w.mu.Unlock()
@@ -280,6 +286,7 @@ func (w *ProtonWriter) Close() error {
 	}
 
 	req := proton.UpdateRevisionReq{
+		State:             proton.RevisionStateActive,
 		BlockList:         blockTokens,
 		ManifestSignature: manifestSigStr,
 		SignatureAddress:  w.sigAddr,

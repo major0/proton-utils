@@ -108,15 +108,22 @@ func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferO
 			buf := make([]byte, drive.BlockSize)
 
 			// Per-worker clones, keyed by job index. Opened on
-			// first use, closed when the worker exits.
+			// first use, closed when the worker exits. Only close
+			// actual clones here — templates are closed post-wg.
 			srcClones := make(map[int]client.BlockReader)
 			dstClones := make(map[int]client.BlockWriter)
+			srcIsClone := make(map[int]bool)
+			dstIsClone := make(map[int]bool)
 			defer func() {
-				for _, r := range srcClones {
-					_ = r.Close()
+				for ji, r := range srcClones {
+					if srcIsClone[ji] {
+						_ = r.Close()
+					}
 				}
-				for _, w := range dstClones {
-					_ = w.Close()
+				for ji, w := range dstClones {
+					if dstIsClone[ji] {
+						_ = w.Close()
+					}
 				}
 			}()
 
@@ -140,6 +147,7 @@ func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferO
 							continue
 						}
 						src = cloned
+						srcIsClone[ji] = true
 					}
 					srcClones[ji] = src
 				}
@@ -155,6 +163,7 @@ func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferO
 							continue
 						}
 						dst = cloned
+						dstIsClone[ji] = true
 					}
 					dstClones[ji] = dst
 				}
