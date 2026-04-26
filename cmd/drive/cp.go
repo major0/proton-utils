@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ProtonMail/go-proton-api"
 	api "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	apiPool "github.com/major0/proton-cli/api/pool"
 	cli "github.com/major0/proton-cli/cmd"
@@ -177,6 +179,13 @@ func runCp(_ *cobra.Command, args []string) error {
 				link:      dstEp.link,
 				share:     dstEp.share,
 			}
+			// For local destinations, stat the child to detect conflicts.
+			if fileDst.pathType == PathLocal {
+				info, err := os.Stat(fileDst.localPath)
+				if err == nil {
+					fileDst.localInfo = info
+				}
+			}
 		}
 
 		// Directory sources: expand recursively or skip.
@@ -210,7 +219,7 @@ func runCp(_ *cobra.Command, args []string) error {
 			return err
 		}
 
-		job, err := buildCopyJob(ctx, dc, srcEp, fileDst)
+		job, err := buildCopyJob(ctx, dc, srcEp, fileDst, opts)
 		if err != nil {
 			return err
 		}
@@ -251,7 +260,7 @@ func runCp(_ *cobra.Command, args []string) error {
 // buildCopyJob constructs a CopyJob from resolved source and destination
 // endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
 // FileHandle with revision, session key, and block info.
-func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint) (*CopyJob, error) {
+func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint, opts cpOptions) (*CopyJob, error) {
 	// Check for same source and destination.
 	if src.pathType == PathLocal && dst.pathType == PathLocal && src.localPath == dst.localPath {
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
@@ -295,7 +304,27 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		}
 		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
 		if err != nil {
-			return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
+			// File already exists (code 2500) — trash and retry if forced.
+			var apiErr proton.APIError
+			if errors.As(err, &apiErr) && apiErr.Code == proton.AFileOrFolderNameExist {
+				if !opts.force && !opts.removeDest {
+					return nil, fmt.Errorf("cp: file exists: %s (use -f to overwrite)", name)
+				}
+				// Find and trash the existing file, then retry.
+				existing, lookupErr := dst.link.Lookup(ctx, name)
+				if lookupErr != nil {
+					return nil, fmt.Errorf("cp: %s: %w", name, err)
+				}
+				if trashErr := dc.Remove(ctx, dst.share, existing, drive.RemoveOpts{}); trashErr != nil {
+					return nil, fmt.Errorf("cp: trash %s: %w", name, trashErr)
+				}
+				fh, err = dc.CreateFile(ctx, dst.share, dst.link, name)
+				if err != nil {
+					return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
+				}
+			} else {
+				return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
+			}
 		}
 		store := driveClient.NewBlockStore(dc.Session, nil)
 		job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)

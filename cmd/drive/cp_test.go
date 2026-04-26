@@ -98,6 +98,7 @@ func TestArgSplitting(t *testing.T) {
 			args: []string{srcA, srcB},
 			setup: func() {
 				cpFlags.targetDir = destDir
+				cpFlags.force = true // dest may have files from prior subtests
 			},
 			wantErr: "",
 		},

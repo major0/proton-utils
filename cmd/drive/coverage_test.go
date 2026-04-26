@@ -234,7 +234,7 @@ func TestBuildCopyJobSameProtonLink(t *testing.T) {
 		link:     link,
 	}
 
-	_, err := buildCopyJob(context.Background(), nil, src, dst)
+	_, err := buildCopyJob(context.Background(), nil, src, dst, cpOptions{})
 	if err == nil {
 		t.Fatal("expected error for same Proton link")
 	}

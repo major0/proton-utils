@@ -98,7 +98,7 @@ func TestBuildCopyJobErrors(t *testing.T) {
 			src, dst := tt.setup(t, tmp)
 			ctx := context.Background()
 
-			job, err := buildCopyJob(ctx, nil, src, dst)
+			job, err := buildCopyJob(ctx, nil, src, dst, cpOptions{})
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErr)

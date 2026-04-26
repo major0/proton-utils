@@ -142,7 +142,7 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 			return nil
 		}
 
-		job, err := buildCopyJob(ctx, dc, fileSrc, fileDst)
+		job, err := buildCopyJob(ctx, dc, fileSrc, fileDst, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", path, err)
 			return nil
@@ -209,7 +209,7 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 			continue
 		}
 
-		job, err := buildCopyJob(ctx, dc, fileSrc, fileDst)
+		job, err := buildCopyJob(ctx, dc, fileSrc, fileDst, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cp: %s: %v\n", entry.Path, err)
 			continue
