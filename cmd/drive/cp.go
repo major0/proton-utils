@@ -276,29 +276,18 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		job.Src = driveClient.NewProtonReader(fh.LinkID, fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
 	}
 
-	// Build destination writer. Pre-create local files at the expected
-	// size so workers can write blocks at arbitrary offsets. This is
-	// required for O_DIRECT which cannot extend files via pwrite.
+	// Build destination writer. Pre-create local files so workers can
+	// write blocks at arbitrary offsets into an existing file.
 	switch dst.pathType {
 	case PathLocal:
 		f, err := os.Create(dst.localPath)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
-		// Pre-allocate to the source size so pwrite at any offset works.
-		srcSize := job.Src.TotalSize()
-		if srcSize > 0 {
-			if err := f.Truncate(srcSize); err != nil {
-				_ = f.Close()
-				return nil, fmt.Errorf("cp: %s: preallocate: %w", dst.localPath, err)
-			}
-		}
 		if err := f.Close(); err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
-		w := NewLocalWriter(dst.localPath)
-		w.SetSize(srcSize)
-		job.Dst = w
+		job.Dst = NewLocalWriter(dst.localPath)
 	case PathProton:
 		name := filepath.Base(dst.raw)
 		if src.pathType == PathLocal {

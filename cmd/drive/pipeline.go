@@ -105,7 +105,7 @@ func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferO
 	var wg sync.WaitGroup
 	for i := 0; i < nWorkers; i++ {
 		p.Go(&wg, func(ctx context.Context) error {
-			buf := alignedAlloc(drive.BlockSize)
+			buf := make([]byte, drive.BlockSize)
 
 			// Per-worker clones, keyed by job index. Opened on
 			// first use, closed when the worker exits.
