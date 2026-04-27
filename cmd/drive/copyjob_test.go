@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/drive"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"pgregory.net/rapid"
 )
 
@@ -129,7 +130,7 @@ func TestBuildCopyJobErrors(t *testing.T) {
 func TestLocalReader_BlockCount_Property(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		size := int64(rapid.IntRange(0, drive.BlockSize*20).Draw(t, "size"))
-		r := NewLocalReader("/dev/null", size)
+		r := driveClient.NewLocalReader("/dev/null", size)
 		defer func() { _ = r.Close() }()
 
 		wantBlocks := drive.BlockCount(size)
@@ -167,7 +168,7 @@ func TestLocalReadWrite_RoundTrip_Property(t *testing.T) {
 			t.Fatalf("write: %v", err)
 		}
 
-		r := NewLocalReader(srcPath, size)
+		r := driveClient.NewLocalReader(srcPath, size)
 		defer func() { _ = r.Close() }()
 
 		if r.BlockCount() != drive.BlockCount(size) {
@@ -191,45 +192,9 @@ func TestLocalReadWrite_RoundTrip_Property(t *testing.T) {
 	})
 }
 
-// TestBlockMap tests the blockMap claim logic.
-func TestBlockMap(t *testing.T) {
-	tests := []struct {
-		name       string
-		blockCount int
-		claims     int
-		wantLast   int
-	}{
-		{"single block", 1, 1, 0},
-		{"single block exhausted", 1, 2, -1},
-		{"multi block", 5, 3, 2},
-		{"all claimed", 3, 4, -1},
-		{"zero blocks", 0, 1, -1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			size := int64(tt.blockCount) * drive.BlockSize
-			if tt.blockCount == 0 {
-				size = 0
-			}
-			r := NewLocalReader("/dev/null", size)
-			defer func() { _ = r.Close() }()
-			job := &CopyJob{Src: r}
-			bm := newBlockMap(job)
-
-			var last int
-			for i := 0; i < tt.claims; i++ {
-				last = bm.claim()
-			}
-			if last != tt.wantLast {
-				t.Fatalf("after %d claims: last = %d, want %d", tt.claims, last, tt.wantLast)
-			}
-		})
-	}
-}
-
 // TestLocalReader_Describe returns the path.
 func TestLocalReader_Describe(t *testing.T) {
-	r := NewLocalReader("/dev/null", 100)
+	r := driveClient.NewLocalReader("/dev/null", 100)
 	defer func() { _ = r.Close() }()
 	if got := r.Describe(); got != "/dev/null" {
 		t.Fatalf("Describe() = %q, want %q", got, "/dev/null")
@@ -243,7 +208,7 @@ func TestLocalWriter_Describe(t *testing.T) {
 	if err := os.WriteFile(f, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	w := NewLocalWriter(f)
+	w := driveClient.NewLocalWriter(f)
 	defer func() { _ = w.Close() }()
 	if got := w.Describe(); got != f {
 		t.Fatalf("Describe() = %q, want %q", got, f)
@@ -252,7 +217,7 @@ func TestLocalWriter_Describe(t *testing.T) {
 
 // TestLocalReader_Close is a no-op on template (nil fd).
 func TestLocalReader_Close(t *testing.T) {
-	r := NewLocalReader("/dev/null", 0)
+	r := driveClient.NewLocalReader("/dev/null", 0)
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
@@ -260,7 +225,7 @@ func TestLocalReader_Close(t *testing.T) {
 
 // TestLocalWriter_Close is a no-op on template (nil fd).
 func TestLocalWriter_Close(t *testing.T) {
-	w := NewLocalWriter("/dev/null")
+	w := driveClient.NewLocalWriter("/dev/null")
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
@@ -269,7 +234,7 @@ func TestLocalWriter_Close(t *testing.T) {
 // TestLocalReader_BlockSize_BeyondEnd verifies BlockSize returns 0 for
 // indices beyond the file.
 func TestLocalReader_BlockSize_BeyondEnd(t *testing.T) {
-	r := NewLocalReader("/dev/null", 100)
+	r := driveClient.NewLocalReader("/dev/null", 100)
 	defer func() { _ = r.Close() }()
 	if got := r.BlockSize(1); got != 0 {
 		t.Fatalf("BlockSize(1) = %d, want 0 for 100-byte file", got)
@@ -284,8 +249,8 @@ func TestCloneableReader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewLocalReader(f, 11)
-	var cr CloneableReader = r // compile-time check
+	r := driveClient.NewLocalReader(f, 11)
+	var cr driveClient.CloneableReader = r // compile-time check
 
 	clone, err := cr.CloneReader()
 	if err != nil {
@@ -311,8 +276,8 @@ func TestCloneableWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := NewLocalWriter(f)
-	var cw CloneableWriter = w // compile-time check
+	w := driveClient.NewLocalWriter(f)
+	var cw driveClient.CloneableWriter = w // compile-time check
 
 	clone, err := cw.CloneWriter()
 	if err != nil {

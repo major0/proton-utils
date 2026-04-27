@@ -5,11 +5,13 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 )
 
 // transferOpts builds TransferOpts from the resolved copy options.
-func transferOpts(opts cpOptions) TransferOpts {
-	topts := TransferOpts{}
+func transferOpts(opts cpOptions) driveClient.TransferOpts {
+	topts := driveClient.TransferOpts{}
 	if opts.progress {
 		topts.Progress = makeProgressFunc()
 	}

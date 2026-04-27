@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/drive"
+	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/pool"
 	"pgregory.net/rapid"
 )
@@ -49,11 +50,11 @@ func TestBufferZeroed_Property(t *testing.T) {
 }
 
 // newTestJob creates a CopyJob from real temp files.
-func newTestJob(t *testing.T, srcPath, dstPath string, srcData []byte) CopyJob {
+func newTestJob(t *testing.T, srcPath, dstPath string, srcData []byte) driveClient.CopyJob {
 	t.Helper()
-	r := NewLocalReader(srcPath, int64(len(srcData)))
-	w := NewLocalWriter(dstPath)
-	return CopyJob{Src: r, Dst: w}
+	r := driveClient.NewLocalReader(srcPath, int64(len(srcData)))
+	w := driveClient.NewLocalWriter(dstPath)
+	return driveClient.CopyJob{Src: r, Dst: w}
 }
 
 func TestPipeline_LocalToLocal(t *testing.T) {
@@ -77,7 +78,7 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 	ctx := context.Background()
 	job := newTestJob(t, srcPath, dstPath, srcData)
 
-	if err := RunPipeline(ctx, testPool(ctx, 2), []CopyJob{job}, TransferOpts{}); err != nil {
+	if err := driveClient.RunPipeline(ctx, testPool(ctx, 2), []driveClient.CopyJob{job}, driveClient.TransferOpts{}); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
@@ -98,7 +99,7 @@ func TestPipeline_LocalToLocal(t *testing.T) {
 
 func TestPipeline_EmptyJobs(t *testing.T) {
 	ctx := context.Background()
-	if err := RunPipeline(ctx, testPool(ctx, 2), nil, TransferOpts{}); err != nil {
+	if err := driveClient.RunPipeline(ctx, testPool(ctx, 2), nil, driveClient.TransferOpts{}); err != nil {
 		t.Fatalf("expected nil for empty jobs, got: %v", err)
 	}
 }
@@ -117,13 +118,13 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_ = RunPipeline(ctx, testPool(ctx, 2), []CopyJob{job}, TransferOpts{})
+	_ = driveClient.RunPipeline(ctx, testPool(ctx, 2), []driveClient.CopyJob{job}, driveClient.TransferOpts{})
 }
 
 func TestPipeline_MultipleFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	var jobs []CopyJob
+	var jobs []driveClient.CopyJob
 	for i := 0; i < 5; i++ {
 		srcPath := filepath.Join(dir, "src"+string(rune('a'+i))+".bin")
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
@@ -137,7 +138,7 @@ func TestPipeline_MultipleFiles(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := RunPipeline(ctx, testPool(ctx, 4), jobs, TransferOpts{}); err != nil {
+	if err := driveClient.RunPipeline(ctx, testPool(ctx, 4), jobs, driveClient.TransferOpts{}); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
@@ -171,14 +172,14 @@ func TestPipeline_ProgressCallback_Property(t *testing.T) {
 		_ = os.WriteFile(srcPath, data, 0600)
 		_ = os.WriteFile(dstPath, nil, 0600)
 
-		r := NewLocalReader(srcPath, fileSize)
-		w := NewLocalWriter(dstPath)
+		r := driveClient.NewLocalReader(srcPath, fileSize)
+		w := driveClient.NewLocalWriter(dstPath)
 
 		var completedValues []int
-		job := CopyJob{Src: r, Dst: w}
+		job := driveClient.CopyJob{Src: r, Dst: w}
 
 		ctx := context.Background()
-		pErr := RunPipeline(ctx, testPool(ctx, 1), []CopyJob{job}, TransferOpts{
+		pErr := driveClient.RunPipeline(ctx, testPool(ctx, 1), []driveClient.CopyJob{job}, driveClient.TransferOpts{
 			Progress: func(completed, _ int, _ int64, _ float64) {
 				completedValues = append(completedValues, completed)
 			},
@@ -212,7 +213,7 @@ func TestPipeline_VerboseCallback(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var jobs []CopyJob
+			var jobs []driveClient.CopyJob
 			for i := 0; i < tt.nJobs; i++ {
 				srcPath := filepath.Join(dir, tt.name+string(rune('a'+i))+".bin")
 				dstPath := srcPath + ".dst"
@@ -224,7 +225,7 @@ func TestPipeline_VerboseCallback(t *testing.T) {
 
 			var verboseCalls int
 			ctx := context.Background()
-			err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{
+			err := driveClient.RunPipeline(ctx, testPool(ctx, 2), jobs, driveClient.TransferOpts{
 				Verbose: func(_, _ string) {
 					verboseCalls++
 				},
@@ -249,7 +250,7 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 		iterDir := filepath.Join(dir, rapid.StringMatching(`[a-z]{8}`).Draw(t, "iter"))
 		_ = os.MkdirAll(iterDir, 0700)
 
-		var jobs []CopyJob
+		var jobs []driveClient.CopyJob
 
 		for i := 0; i < nGood; i++ {
 			srcPath := filepath.Join(iterDir, "good"+string(rune('a'+i))+".bin")
@@ -257,23 +258,23 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 			data := []byte("good-data")
 			_ = os.WriteFile(srcPath, data, 0600)
 			_ = os.WriteFile(dstPath, nil, 0600)
-			jobs = append(jobs, CopyJob{
-				Src: NewLocalReader(srcPath, int64(len(data))),
-				Dst: NewLocalWriter(dstPath),
+			jobs = append(jobs, driveClient.CopyJob{
+				Src: driveClient.NewLocalReader(srcPath, int64(len(data))),
+				Dst: driveClient.NewLocalWriter(dstPath),
 			})
 		}
 
 		for i := 0; i < nBad; i++ {
 			dstPath := filepath.Join(iterDir, "dst-bad"+string(rune('a'+i))+".bin")
 			_ = os.WriteFile(dstPath, nil, 0600)
-			jobs = append(jobs, CopyJob{
+			jobs = append(jobs, driveClient.CopyJob{
 				Src: &failReader{name: "bad" + string(rune('a'+i))},
-				Dst: NewLocalWriter(dstPath),
+				Dst: driveClient.NewLocalWriter(dstPath),
 			})
 		}
 
 		ctx := context.Background()
-		err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{})
+		err := driveClient.RunPipeline(ctx, testPool(ctx, 2), jobs, driveClient.TransferOpts{})
 
 		if err == nil {
 			t.Fatal("expected errors from bad jobs, got nil")
@@ -290,14 +291,14 @@ func TestBulkCopy_ErrorCollection_Property(t *testing.T) {
 
 func TestBulkCopy_Empty(t *testing.T) {
 	ctx := context.Background()
-	if err := RunPipeline(ctx, testPool(ctx, 2), nil, TransferOpts{}); err != nil {
+	if err := driveClient.RunPipeline(ctx, testPool(ctx, 2), nil, driveClient.TransferOpts{}); err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
 }
 
 func TestBulkCopy_AllSuccess(t *testing.T) {
 	dir := t.TempDir()
-	var jobs []CopyJob
+	var jobs []driveClient.CopyJob
 	for i := 0; i < 3; i++ {
 		srcPath := filepath.Join(dir, "src"+string(rune('a'+i))+".bin")
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
@@ -307,25 +308,25 @@ func TestBulkCopy_AllSuccess(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{}); err != nil {
+	if err := driveClient.RunPipeline(ctx, testPool(ctx, 2), jobs, driveClient.TransferOpts{}); err != nil {
 		t.Fatalf("expected nil, got: %v", err)
 	}
 }
 
 func TestBulkCopy_AllFail(t *testing.T) {
 	dir := t.TempDir()
-	var jobs []CopyJob
+	var jobs []driveClient.CopyJob
 	for i := 0; i < 3; i++ {
 		dstPath := filepath.Join(dir, "dst"+string(rune('a'+i))+".bin")
 		_ = os.WriteFile(dstPath, nil, 0600)
-		jobs = append(jobs, CopyJob{
+		jobs = append(jobs, driveClient.CopyJob{
 			Src: &failReader{name: "missing" + string(rune('a'+i))},
-			Dst: NewLocalWriter(dstPath),
+			Dst: driveClient.NewLocalWriter(dstPath),
 		})
 	}
 
 	ctx := context.Background()
-	err := RunPipeline(ctx, testPool(ctx, 2), jobs, TransferOpts{})
+	err := driveClient.RunPipeline(ctx, testPool(ctx, 2), jobs, driveClient.TransferOpts{})
 	if err == nil {
 		t.Fatal("expected errors, got nil")
 	}

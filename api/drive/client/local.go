@@ -1,4 +1,4 @@
-package driveCmd
+package client
 
 import (
 	"context"
@@ -7,33 +7,7 @@ import (
 	"os"
 
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/api/drive/client"
 )
-
-// CopyJob is a fully resolved source/destination pair.
-type CopyJob struct {
-	Src client.BlockReader
-	Dst client.BlockWriter
-}
-
-// TransferOpts configures bulk transfer behavior.
-type TransferOpts struct {
-	Progress func(completed, total int, bytes int64, rate float64)
-	Verbose  func(src, dst string)
-}
-
-// CloneableReader is implemented by BlockReaders that support per-worker
-// cloning. Each clone opens its own file descriptor so workers avoid
-// sharing kernel-level FD state.
-type CloneableReader interface {
-	CloneReader() (client.BlockReader, error)
-}
-
-// CloneableWriter is implemented by BlockWriters that support per-worker
-// cloning.
-type CloneableWriter interface {
-	CloneWriter() (client.BlockWriter, error)
-}
 
 // LocalReader reads blocks from a local file. It holds no file
 // descriptor itself — each worker gets its own FD via CloneReader.
@@ -55,7 +29,7 @@ func NewLocalReader(path string, size int64) *LocalReader {
 }
 
 // CloneReader opens a new file descriptor for a worker.
-func (r *LocalReader) CloneReader() (client.BlockReader, error) {
+func (r *LocalReader) CloneReader() (BlockReader, error) {
 	f, err := os.Open(r.path)
 	if err != nil {
 		return nil, err
@@ -130,7 +104,7 @@ func NewLocalWriter(path string) *LocalWriter {
 }
 
 // CloneWriter opens a new file descriptor for a worker.
-func (w *LocalWriter) CloneWriter() (client.BlockWriter, error) {
+func (w *LocalWriter) CloneWriter() (BlockWriter, error) {
 	f, err := os.OpenFile(w.path, os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, err
@@ -162,29 +136,4 @@ func (w *LocalWriter) Close() error {
 		return w.f.Close()
 	}
 	return nil
-}
-
-// blockMap tracks block assignment for a single CopyJob. Workers claim
-// blocks sequentially via an advancing counter — no bitmap needed since
-// blocks are never released or reordered.
-type blockMap struct {
-	job   *CopyJob
-	total int
-	next  int // next block to claim; caller holds pipeline mutex
-}
-
-// newBlockMap creates a blockMap for a CopyJob.
-func newBlockMap(job *CopyJob) *blockMap {
-	return &blockMap{job: job, total: job.Src.BlockCount()}
-}
-
-// claim returns the index of the next unclaimed block, or -1 if all
-// blocks have been claimed. Caller must hold the pipeline mutex.
-func (m *blockMap) claim() int {
-	if m.next >= m.total {
-		return -1
-	}
-	idx := m.next
-	m.next++
-	return idx
 }

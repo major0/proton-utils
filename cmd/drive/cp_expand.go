@@ -51,7 +51,7 @@ func makeFileDst(dstBase *resolvedEndpoint, relPath string) *resolvedEndpoint {
 // files. Destination subdirectories are created as encountered (breadth-
 // first for Proton sources, natural walk order for local). Directories
 // never become CopyJobs — only files with block data do.
-func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]CopyJob, []preserveEntry, error) {
+func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]driveClient.CopyJob, []preserveEntry, error) {
 	switch src.pathType {
 	case PathLocal:
 		return expandLocalRecursive(ctx, dc, src, dstBase, opts)
@@ -62,8 +62,8 @@ func expandRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *
 }
 
 // expandLocalRecursive walks a local source directory tree.
-func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]CopyJob, []preserveEntry, error) {
-	var jobs []CopyJob
+func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]driveClient.CopyJob, []preserveEntry, error) {
+	var jobs []driveClient.CopyJob
 	var preserves []preserveEntry
 	srcRoot := src.localPath
 
@@ -169,8 +169,8 @@ func expandLocalRecursive(ctx context.Context, dc *driveClient.Client, src, dstB
 
 // expandProtonRecursive walks a Proton source directory tree using
 // breadth-first TreeWalk.
-func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]CopyJob, []preserveEntry, error) {
-	var jobs []CopyJob
+func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dstBase *resolvedEndpoint, opts cpOptions) ([]driveClient.CopyJob, []preserveEntry, error) {
+	var jobs []driveClient.CopyJob
 
 	results := make(chan driveClient.WalkEntry, 64)
 	var walkErr error

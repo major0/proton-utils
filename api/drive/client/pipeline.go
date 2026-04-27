@@ -1,4 +1,4 @@
-package driveCmd
+package client
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/pool"
 )
 
@@ -110,8 +109,8 @@ func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferO
 			// Per-worker clones, keyed by job index. Opened on
 			// first use, closed when the worker exits. Only close
 			// actual clones here — templates are closed post-wg.
-			srcClones := make(map[int]client.BlockReader)
-			dstClones := make(map[int]client.BlockWriter)
+			srcClones := make(map[int]BlockReader)
+			dstClones := make(map[int]BlockWriter)
 			srcIsClone := make(map[int]bool)
 			dstIsClone := make(map[int]bool)
 			defer func() {

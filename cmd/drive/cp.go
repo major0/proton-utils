@@ -156,7 +156,7 @@ func runCp(_ *cobra.Command, args []string) error {
 	}
 
 	// Build CopyJobs for all source/dest pairs.
-	var jobs []CopyJob
+	var jobs []driveClient.CopyJob
 	var preserves []preserveEntry
 	for _, src := range sources {
 		srcEp, err := resolveSource(ctx, dc, src, opts)
@@ -248,7 +248,7 @@ func runCp(_ *cobra.Command, args []string) error {
 		wp = apiPool.New(ctx, api.DefaultMaxWorkers())
 	}
 
-	if err := RunPipeline(ctx, wp, jobs, transferOpts(opts)); err != nil {
+	if err := driveClient.RunPipeline(ctx, wp, jobs, transferOpts(opts)); err != nil {
 		return err
 	}
 
@@ -260,7 +260,7 @@ func runCp(_ *cobra.Command, args []string) error {
 // buildCopyJob constructs a CopyJob from resolved source and destination
 // endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
 // FileHandle with revision, session key, and block info.
-func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint, opts cpOptions) (*CopyJob, error) {
+func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint, opts cpOptions) (*driveClient.CopyJob, error) {
 	// Check for same source and destination.
 	if src.pathType == PathLocal && dst.pathType == PathLocal && src.localPath == dst.localPath {
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
@@ -270,12 +270,12 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
 	}
 
-	var job CopyJob
+	var job driveClient.CopyJob
 
 	// Build source reader.
 	switch src.pathType {
 	case PathLocal:
-		job.Src = NewLocalReader(src.localPath, src.localInfo.Size())
+		job.Src = driveClient.NewLocalReader(src.localPath, src.localInfo.Size())
 	case PathProton:
 		fh, err := dc.OpenFile(ctx, src.link)
 		if err != nil {
@@ -296,7 +296,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		if err := f.Close(); err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
-		job.Dst = NewLocalWriter(dst.localPath)
+		job.Dst = driveClient.NewLocalWriter(dst.localPath)
 	case PathProton:
 		name := filepath.Base(dst.raw)
 		if src.pathType == PathLocal {
