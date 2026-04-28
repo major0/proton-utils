@@ -11,16 +11,20 @@ import (
 )
 
 // BlockStore fetches and stores encrypted blocks. Session-aware and
-// cache-aware — implementations check the on-disk object cache before
-// making HTTP requests.
+// cache-aware — implementations check the in-memory buffer cache, then
+// the on-disk object cache, before making HTTP requests.
 type BlockStore interface {
 	// GetBlock fetches a raw encrypted block by linkID and block index.
-	// Checks on-disk cache first when enabled. Returns the full block bytes.
+	// Checks buffer cache, then disk cache, then HTTP. Returns the full
+	// block bytes.
 	GetBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error)
 	// RequestUpload obtains upload URLs for a batch of blocks.
 	RequestUpload(ctx context.Context, req proton.BlockUploadReq) ([]proton.BlockUploadLink, error)
 	// UploadBlock uploads an encrypted block to the given URL.
 	UploadBlock(ctx context.Context, linkID string, index int, bareURL, token string, data []byte) error
+	// Invalidate removes cached blocks for a linkID from both the
+	// buffer cache and the on-disk cache.
+	Invalidate(linkID string)
 }
 
 // blockReader wraps a []byte to satisfy resty.MultiPartStream.
@@ -30,31 +34,44 @@ type blockReader struct {
 
 func (b *blockReader) GetMultipartReader() io.Reader { return b.r }
 
-// httpBlockStore implements BlockStore using the session's HTTP transport
-// and an optional on-disk block cache.
+// httpBlockStore implements BlockStore using the session's HTTP transport,
+// an optional in-memory buffer cache, and an optional on-disk block cache.
 type httpBlockStore struct {
-	session *api.Session
-	cache   *blockCache // nil when caching disabled
+	session  *api.Session
+	cache    *blockCache  // nil when disk caching disabled
+	bufCache *bufferCache // nil when buffer caching disabled
 }
 
 // NewBlockStore creates a BlockStore backed by the session's HTTP transport.
-// If cache is non-nil, blocks are checked/populated in the cache.
-func NewBlockStore(session *api.Session, cache *blockCache) BlockStore {
-	return &httpBlockStore{session: session, cache: cache}
+// If diskCache is non-nil, blocks are checked/populated in the on-disk cache.
+// If bufCache is non-nil, blocks are checked/populated in the in-memory cache.
+func NewBlockStore(session *api.Session, diskCache *blockCache, bufCache *bufferCache) BlockStore {
+	return &httpBlockStore{session: session, cache: diskCache, bufCache: bufCache}
 }
 
-// GetBlock fetches a raw encrypted block. Checks the cache first when
-// available (by linkID + block index), falls through to HTTP on miss,
-// and populates the cache on fetch.
+// GetBlock fetches a raw encrypted block. Checks the buffer cache first,
+// then the disk cache, then falls through to HTTP. Populates both caches
+// on fetch.
 func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
-	// Cache check.
+	// 1. Buffer cache check.
+	if s.bufCache != nil {
+		if data, err := s.bufCache.Get(linkID, index); data != nil || err != nil {
+			return data, err
+		}
+	}
+
+	// 2. Disk cache check.
 	if s.cache != nil {
 		if data, err := s.cache.getBlock(linkID, index); err == nil && data != nil {
+			// Populate buffer cache on disk hit.
+			if s.bufCache != nil {
+				s.bufCache.Put(linkID, index, data)
+			}
 			return data, nil
 		}
 	}
 
-	// HTTP fetch.
+	// 3. HTTP fetch.
 	rc, err := s.session.Client.GetBlock(ctx, bareURL, token)
 	if err != nil {
 		return nil, fmt.Errorf("blockstore.GetBlock %s block %d: %w", linkID, index, err)
@@ -66,7 +83,10 @@ func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int,
 		return nil, fmt.Errorf("blockstore.GetBlock %s block %d: read: %w", linkID, index, err)
 	}
 
-	// Cache populate (best-effort).
+	// Populate both caches (best-effort).
+	if s.bufCache != nil {
+		s.bufCache.Put(linkID, index, data)
+	}
 	if s.cache != nil {
 		_ = s.cache.putBlock(linkID, index, data)
 	}
@@ -91,9 +111,23 @@ func (s *httpBlockStore) UploadBlock(ctx context.Context, linkID string, index i
 	}
 
 	// Cache populate (best-effort).
+	if s.bufCache != nil {
+		s.bufCache.Put(linkID, index, data)
+	}
 	if s.cache != nil {
 		_ = s.cache.putBlock(linkID, index, data)
 	}
 
 	return nil
+}
+
+// Invalidate removes cached blocks for a linkID from both the buffer
+// cache and the on-disk cache.
+func (s *httpBlockStore) Invalidate(linkID string) {
+	if s.bufCache != nil {
+		s.bufCache.Invalidate(linkID)
+	}
+	if s.cache != nil {
+		_ = s.cache.invalidate(linkID)
+	}
 }

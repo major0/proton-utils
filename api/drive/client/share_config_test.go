@@ -145,7 +145,7 @@ func TestBlockStoreNilCache_NoDiskWrites(t *testing.T) {
 
 	// Create a BlockStore with nil cache (DiskCacheEnabled=false).
 	// Verify no files are written to the cache directory.
-	store := NewBlockStore(nil, nil)
+	store := NewBlockStore(nil, nil, nil)
 	_ = store // store with nil cache won't write to disk
 
 	// Verify the directory is empty.

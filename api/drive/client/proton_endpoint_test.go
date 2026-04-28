@@ -34,6 +34,8 @@ func (m *mockBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ st
 	return nil
 }
 
+func (m *mockBlockStore) Invalidate(_ string) {}
+
 // newMockStore creates a mockBlockStore pre-populated with block data.
 func newMockStore(linkID string, blocks map[int][]byte) *mockBlockStore {
 	m := &mockBlockStore{blocks: make(map[string][]byte)}

@@ -281,7 +281,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", src.raw, err)
 		}
-		store := driveClient.NewBlockStore(dc.Session, nil)
+		store := driveClient.NewBlockStore(dc.Session, nil, nil)
 		job.Src = driveClient.NewProtonReader(fh.LinkID, fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
 	}
 
@@ -389,7 +389,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 				return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
 			}
 		}
-		store := driveClient.NewBlockStore(dc.Session, nil)
+		store := driveClient.NewBlockStore(dc.Session, nil, nil)
 		job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)
 	}
 
