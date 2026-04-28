@@ -29,6 +29,14 @@ const (
 // It tracks byte offset, owns crypto state for decrypt/encrypt, and
 // delegates block I/O to a BlockStore. Implements io.Reader,
 // io.ReaderAt, io.Seeker, io.Writer, io.WriterAt, and io.Closer.
+//
+// Concurrency: fd.mu protects offset, closed, curBlock, curIdx, and
+// fileSize. Read/ReadAt release the lock before calling store.GetBlock
+// so block I/O never holds the FD mutex. Write/WriteAt hold the lock
+// during buffer accumulation but flushBlock only copies data and spawns
+// a goroutine — the actual encrypt+upload runs outside the lock.
+// Close sets closed=true under lock, then flushes/waits outside it;
+// concurrent ops see os.ErrClosed on their next lock acquisition.
 type FileDescriptor struct {
 	// Identity
 	linkID     string

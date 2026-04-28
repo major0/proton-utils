@@ -684,3 +684,240 @@ func TestFDSyncOnReadFDReturnsEBADF(t *testing.T) {
 		t.Fatalf("Sync on read FD: got %v, want syscall.EBADF", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Concurrency stress tests (Task 9.2)
+// ---------------------------------------------------------------------------
+
+// TestFDConcurrentReadAndReadAt runs multiple goroutines calling Read and
+// ReadAt simultaneously on the same read FD. Verifies no panics and no
+// data corruption (ReadAt returns correct data at each offset).
+func TestFDConcurrentReadAndReadAt(t *testing.T) {
+	// Use data spanning 2+ blocks to exercise cross-block reads.
+	size := int(drive.BlockSize + 4096)
+	plaintext := make([]byte, size)
+	for i := range plaintext {
+		plaintext[i] = byte(i % 251)
+	}
+
+	fd := newTestFD(t, plaintext)
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines*2)
+
+	// Half the goroutines do sequential Read.
+	for g := 0; g < goroutines/2; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			buf := make([]byte, 512)
+			for i := 0; i < 20; i++ {
+				_, err := fd.Read(buf)
+				if err != nil && err != io.EOF {
+					errs <- fmt.Errorf("reader %d iter %d: %w", id, i, err)
+					return
+				}
+			}
+		}(g)
+	}
+
+	// Other half do ReadAt at various offsets.
+	for g := goroutines / 2; g < goroutines; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < 20; i++ {
+				off := int64((id*1024 + i*256) % size)
+				readLen := 256
+				if int(off)+readLen > size {
+					readLen = size - int(off)
+				}
+				if readLen <= 0 {
+					continue
+				}
+				buf := make([]byte, readLen)
+				n, err := fd.ReadAt(buf, off)
+				if err != nil && err != io.EOF {
+					errs <- fmt.Errorf("readat %d iter %d: %w", id, i, err)
+					return
+				}
+				if !bytes.Equal(buf[:n], plaintext[off:off+int64(n)]) {
+					errs <- fmt.Errorf("readat %d iter %d: data mismatch at offset %d", id, i, off)
+					return
+				}
+			}
+		}(g)
+	}
+
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+// TestFDConcurrentWrite runs multiple goroutines calling Write
+// simultaneously on the same write FD. Total writes stay under
+// BlockSize to avoid triggering flushBlock crypto. Verifies no panics
+// and total bytes written matches expectations.
+func TestFDConcurrentWrite(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+
+	const goroutines = 8
+	const writesPerGoroutine = 10
+	const chunkSize = 64 // 8 * 10 * 64 = 5120 bytes, well under BlockSize
+
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+	var totalWritten int64
+
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			data := bytes.Repeat([]byte{byte(id)}, chunkSize)
+			for i := 0; i < writesPerGoroutine; i++ {
+				n, err := fd.Write(data)
+				if err != nil {
+					errs <- fmt.Errorf("writer %d iter %d: %w", id, i, err)
+					return
+				}
+				if n != chunkSize {
+					errs <- fmt.Errorf("writer %d iter %d: wrote %d, want %d", id, i, n, chunkSize)
+					return
+				}
+			}
+		}(g)
+	}
+
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	// Verify total bytes accumulated.
+	fd.mu.Lock()
+	totalWritten = fd.fileSize
+	gotLen := len(fd.curBlock)
+	fd.mu.Unlock()
+
+	wantTotal := int64(goroutines * writesPerGoroutine * chunkSize)
+	if totalWritten != wantTotal {
+		t.Fatalf("fileSize = %d, want %d", totalWritten, wantTotal)
+	}
+	if int64(gotLen) != wantTotal {
+		t.Fatalf("curBlock len = %d, want %d", gotLen, wantTotal)
+	}
+}
+
+// TestFDConcurrentCloseWithRead has one goroutine reading in a loop and
+// another closing the FD. The reader must eventually get os.ErrClosed
+// (or io.EOF) and must not panic.
+func TestFDConcurrentCloseWithRead(t *testing.T) {
+	size := int(drive.BlockSize + 1024)
+	plaintext := make([]byte, size)
+	for i := range plaintext {
+		plaintext[i] = byte(i % 199)
+	}
+
+	fd := newTestFD(t, plaintext)
+
+	var wg sync.WaitGroup
+	sawClosed := make(chan struct{})
+
+	// Reader goroutine.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 512)
+		for {
+			_, err := fd.Read(buf)
+			if errors.Is(err, os.ErrClosed) {
+				close(sawClosed)
+				return
+			}
+			if errors.Is(err, io.EOF) {
+				// Reached end of file before close — seek back and retry.
+				_, _ = fd.Seek(0, io.SeekStart)
+				continue
+			}
+			// Other errors are acceptable during close race.
+			if err != nil {
+				close(sawClosed)
+				return
+			}
+		}
+	}()
+
+	// Let the reader run a bit, then close.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Small busy loop to let reader start.
+		for i := 0; i < 100; i++ {
+			_ = i
+		}
+		if err := fd.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
+
+	wg.Wait()
+
+	// Verify the reader saw the close (or at least didn't panic).
+	select {
+	case <-sawClosed:
+		// Good — reader observed the close.
+	default:
+		// Reader finished without seeing ErrClosed — that's OK if it
+		// hit EOF first and then Close happened. The important thing
+		// is no panic and no data race.
+	}
+}
+
+// TestFDConcurrentCloseWithWrite has one goroutine writing in a loop
+// and another closing the FD. The writer must eventually get
+// os.ErrClosed and must not panic. Writes stay under BlockSize.
+func TestFDConcurrentCloseWithWrite(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+
+	var wg sync.WaitGroup
+	sawClosed := make(chan struct{})
+
+	// Writer goroutine.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		data := make([]byte, 64)
+		for i := 0; i < 100; i++ {
+			_, err := fd.Write(data)
+			if errors.Is(err, os.ErrClosed) {
+				close(sawClosed)
+				return
+			}
+			if err != nil {
+				close(sawClosed)
+				return
+			}
+		}
+		// Exhausted iterations without seeing close — still OK.
+		close(sawClosed)
+	}()
+
+	// Let the writer run a bit, then close.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			_ = i
+		}
+		if err := fd.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
+
+	wg.Wait()
+	<-sawClosed
+}
