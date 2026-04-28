@@ -2,13 +2,18 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -23,7 +28,7 @@ const (
 // FileDescriptor is an active handle to an open Proton Drive file.
 // It tracks byte offset, owns crypto state for decrypt/encrypt, and
 // delegates block I/O to a BlockStore. Implements io.Reader,
-// io.ReaderAt, io.Seeker, and io.Closer.
+// io.ReaderAt, io.Seeker, io.Writer, io.WriterAt, and io.Closer.
 type FileDescriptor struct {
 	// Identity
 	linkID     string
@@ -45,6 +50,21 @@ type FileDescriptor struct {
 	closed   bool
 	mode     fdMode
 
+	// Write-side fields (only populated for fdWrite mode)
+	curBlock []byte                // current block accumulator (up to BlockSize)
+	curIdx   int                   // current block index being filled
+	inflight sync.WaitGroup        // tracks in-flight upload goroutines
+	tokens   map[int]uploadedBlock // collected after upload, keyed by block index
+	tokensMu sync.Mutex            // protects tokens and firstErr
+	firstErr error                 // first upload error
+
+	// Upload metadata (write-only, from FileHandle)
+	volumeID   string
+	addressID  string
+	sigAddr    string
+	verifyCode []byte       // raw verification code for block tokens
+	session    *api.Session // needed for UpdateRevision
+
 	// Shared infrastructure
 	store BlockStore
 
@@ -57,6 +77,8 @@ var (
 	_ io.Reader   = (*FileDescriptor)(nil)
 	_ io.ReaderAt = (*FileDescriptor)(nil)
 	_ io.Seeker   = (*FileDescriptor)(nil)
+	_ io.Writer   = (*FileDescriptor)(nil)
+	_ io.WriterAt = (*FileDescriptor)(nil)
 	_ io.Closer   = (*FileDescriptor)(nil)
 )
 
@@ -262,17 +284,468 @@ func (fd *FileDescriptor) Seek(offset int64, whence int) (int64, error) {
 	return newOffset, nil
 }
 
-// Close implements io.Closer. It marks the FD as closed so subsequent
-// operations return os.ErrClosed. Idempotent — second Close is a no-op.
+// Close implements io.Closer. For read-mode FDs, it marks the FD as
+// closed. For write-mode FDs, it flushes any pending data and commits
+// the revision. Idempotent — second Close is a no-op.
 func (fd *FileDescriptor) Close() error {
 	fd.mu.Lock()
-	defer fd.mu.Unlock()
-
+	if fd.closed {
+		fd.mu.Unlock()
+		return nil
+	}
 	fd.closed = true
+	mode := fd.mode
+	hasCurBlock := len(fd.curBlock) > 0
+	fd.mu.Unlock()
+
+	if mode == fdWrite && (hasCurBlock || fd.hasTokens()) {
+		if hasCurBlock {
+			fd.flushBlock(fd.curIdx, fd.curBlock)
+		}
+		fd.inflight.Wait()
+
+		fd.tokensMu.Lock()
+		err := fd.firstErr
+		fd.tokensMu.Unlock()
+		if err != nil {
+			return err
+		}
+
+		return fd.commitRevision()
+	}
+
 	return nil
 }
 
 // Stat returns metadata from the underlying Link without API calls.
 func (fd *FileDescriptor) Stat() drive.FileInfo {
 	return fd.link.Stat()
+}
+
+// hasTokens reports whether any uploaded block tokens have been collected.
+func (fd *FileDescriptor) hasTokens() bool {
+	fd.tokensMu.Lock()
+	defer fd.tokensMu.Unlock()
+	return len(fd.tokens) > 0
+}
+
+// newWriteFD constructs a write-mode FileDescriptor from a FileHandle.
+func newWriteFD(fh *FileHandle, store BlockStore, session *api.Session) *FileDescriptor {
+	return &FileDescriptor{
+		linkID:     fh.LinkID,
+		revisionID: fh.RevisionID,
+		shareID:    fh.ShareID,
+		sessionKey: fh.SessionKey,
+		nodeKR:     fh.NodeKR,
+		addrKR:     fh.AddrKR,
+		mode:       fdWrite,
+		store:      store,
+		curBlock:   make([]byte, 0, drive.BlockSize),
+		tokens:     make(map[int]uploadedBlock),
+		volumeID:   fh.VolumeID,
+		addressID:  fh.AddressID,
+		sigAddr:    fh.SigAddr,
+		verifyCode: fh.VerificationCode,
+		session:    session,
+	}
+}
+
+// CreateFD creates a new file in Proton Drive and returns a write-mode
+// FileDescriptor. It wraps Client.CreateFile to obtain the FileHandle.
+func (c *Client) CreateFD(ctx context.Context, share *drive.Share, parent *drive.Link, name string) (*FileDescriptor, error) {
+	fh, err := c.CreateFile(ctx, share, parent, name)
+	if err != nil {
+		return nil, fmt.Errorf("drive.CreateFD: %w", err)
+	}
+
+	store := NewBlockStore(c.Session, nil, nil)
+	return newWriteFD(fh, store, c.Session), nil
+}
+
+// OverwriteFD creates a new revision on an existing file and returns a
+// write-mode FileDescriptor. It wraps Client.OverwriteFile.
+func (c *Client) OverwriteFD(ctx context.Context, share *drive.Share, link *drive.Link) (*FileDescriptor, error) {
+	fh, err := c.OverwriteFile(ctx, share, link)
+	if err != nil {
+		return nil, fmt.Errorf("drive.OverwriteFD: %w", err)
+	}
+
+	store := NewBlockStore(c.Session, nil, nil)
+	return newWriteFD(fh, store, c.Session), nil
+}
+
+// Write implements io.Writer. It buffers data into the current block
+// and flushes full blocks for encrypt+upload. Returns syscall.EBADF
+// if the FD is read-only.
+func (fd *FileDescriptor) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	fd.mu.Lock()
+	if fd.closed {
+		fd.mu.Unlock()
+		return 0, os.ErrClosed
+	}
+	if fd.mode != fdWrite {
+		fd.mu.Unlock()
+		return 0, syscall.EBADF
+	}
+
+	total := 0
+	for len(p) > 0 {
+		space := int(drive.BlockSize) - len(fd.curBlock)
+		chunk := len(p)
+		if chunk > space {
+			chunk = space
+		}
+		fd.curBlock = append(fd.curBlock, p[:chunk]...)
+		p = p[chunk:]
+		total += chunk
+		fd.fileSize += int64(chunk)
+
+		if len(fd.curBlock) == int(drive.BlockSize) {
+			fd.flushBlock(fd.curIdx, fd.curBlock)
+			fd.curBlock = make([]byte, 0, drive.BlockSize)
+			fd.curIdx++
+		}
+	}
+	fd.mu.Unlock()
+
+	return total, nil
+}
+
+// WriteAt implements io.WriterAt. It writes data at the given offset
+// without modifying the FD's current offset. Returns syscall.EBADF
+// if the FD is read-only.
+func (fd *FileDescriptor) WriteAt(p []byte, off int64) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	fd.mu.Lock()
+	if fd.closed {
+		fd.mu.Unlock()
+		return 0, os.ErrClosed
+	}
+	if fd.mode != fdWrite {
+		fd.mu.Unlock()
+		return 0, syscall.EBADF
+	}
+
+	total := 0
+	for len(p) > 0 {
+		targetIdx := int(off / drive.BlockSize)
+		blockOff := int(off % drive.BlockSize)
+
+		// If targeting a different block, flush the current one first.
+		if targetIdx != fd.curIdx {
+			if len(fd.curBlock) > 0 {
+				fd.flushBlock(fd.curIdx, fd.curBlock)
+			}
+			fd.curBlock = make([]byte, 0, drive.BlockSize)
+			fd.curIdx = targetIdx
+		}
+
+		// Extend curBlock with zeros if the write offset is beyond
+		// the current accumulator length.
+		if blockOff > len(fd.curBlock) {
+			fd.curBlock = append(fd.curBlock, make([]byte, blockOff-len(fd.curBlock))...)
+		}
+
+		space := int(drive.BlockSize) - blockOff
+		chunk := len(p)
+		if chunk > space {
+			chunk = space
+		}
+
+		// Overwrite or extend within the block.
+		end := blockOff + chunk
+		if end <= len(fd.curBlock) {
+			copy(fd.curBlock[blockOff:end], p[:chunk])
+		} else {
+			// Partially overwrite existing, then append the rest.
+			if blockOff < len(fd.curBlock) {
+				copy(fd.curBlock[blockOff:], p[:len(fd.curBlock)-blockOff])
+			}
+			fd.curBlock = append(fd.curBlock, p[len(fd.curBlock)-blockOff:chunk]...)
+		}
+
+		p = p[chunk:]
+		off += int64(chunk)
+		total += chunk
+
+		// Track file size growth.
+		if off > fd.fileSize {
+			fd.fileSize = off
+		}
+
+		if len(fd.curBlock) == int(drive.BlockSize) {
+			fd.flushBlock(fd.curIdx, fd.curBlock)
+			fd.curBlock = make([]byte, 0, drive.BlockSize)
+			fd.curIdx++
+		}
+	}
+	fd.mu.Unlock()
+
+	return total, nil
+}
+
+// flushBlock submits a block for encrypt+upload in a background
+// goroutine. The result is collected in the tokens map.
+func (fd *FileDescriptor) flushBlock(index int, data []byte) {
+	// Make a copy so the caller can reuse the slice.
+	block := make([]byte, len(data))
+	copy(block, data)
+
+	fd.inflight.Add(1)
+	go func() {
+		defer fd.inflight.Done()
+
+		apiIndex := index + 1 // Proton API uses 1-based block indices
+
+		// Encrypt block with session key.
+		plain := crypto.NewPlainMessage(block)
+		encData, err := fd.sessionKey.Encrypt(plain)
+		if err != nil {
+			fd.setFirstErr(fmt.Errorf("encrypt block %d: %w", apiIndex, err))
+			return
+		}
+
+		// Encrypted signature of the plaintext block.
+		encSig, err := fd.addrKR.SignDetachedEncrypted(plain, fd.nodeKR)
+		if err != nil {
+			fd.setFirstErr(fmt.Errorf("sign block %d: %w", apiIndex, err))
+			return
+		}
+		encSigStr, err := encSig.GetArmored()
+		if err != nil {
+			fd.setFirstErr(fmt.Errorf("armor block sig %d: %w", apiIndex, err))
+			return
+		}
+
+		// SHA-256 of encrypted block for manifest.
+		h := sha256.New()
+		h.Write(encData)
+		hash := h.Sum(nil)
+
+		// Compute verification token.
+		verifyToken := computeVerificationToken(fd.verifyCode, encData)
+
+		// Request upload URL.
+		req := proton.BlockUploadReq{
+			AddressID:  fd.addressID,
+			VolumeID:   fd.volumeID,
+			LinkID:     fd.linkID,
+			RevisionID: fd.revisionID,
+			BlockList: []proton.BlockUploadInfo{{
+				Index:        apiIndex,
+				EncSignature: encSigStr,
+				Verifier:     &proton.BlockVerifier{Token: base64.StdEncoding.EncodeToString(verifyToken)},
+			}},
+			ThumbnailList: []interface{}{},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		links, err := fd.store.RequestUpload(ctx, req)
+		if err != nil {
+			fd.setFirstErr(fmt.Errorf("request upload block %d: %w", apiIndex, err))
+			return
+		}
+		if len(links) == 0 {
+			fd.setFirstErr(fmt.Errorf("no upload link for block %d", apiIndex))
+			return
+		}
+
+		// Upload encrypted block.
+		if err := fd.store.UploadBlock(ctx, fd.linkID, apiIndex, links[0].BareURL, links[0].Token, encData); err != nil {
+			fd.setFirstErr(fmt.Errorf("upload block %d: %w", apiIndex, err))
+			return
+		}
+
+		// Record result.
+		fd.tokensMu.Lock()
+		fd.tokens[index] = uploadedBlock{
+			token:   links[0].Token,
+			encHash: hash,
+			rawSize: int64(len(block)),
+		}
+		fd.tokensMu.Unlock()
+	}()
+}
+
+// setFirstErr records the first error encountered during background
+// uploads. Subsequent errors are discarded.
+func (fd *FileDescriptor) setFirstErr(err error) {
+	fd.tokensMu.Lock()
+	defer fd.tokensMu.Unlock()
+	if fd.firstErr == nil {
+		fd.firstErr = err
+	}
+}
+
+// Sync flushes any partial block, waits for in-flight uploads, commits
+// the current revision, and creates a new revision for subsequent
+// writes. Returns syscall.EBADF if the FD is read-only.
+func (fd *FileDescriptor) Sync() error {
+	fd.mu.Lock()
+	if fd.closed {
+		fd.mu.Unlock()
+		return os.ErrClosed
+	}
+	if fd.mode != fdWrite {
+		fd.mu.Unlock()
+		return syscall.EBADF
+	}
+
+	// Flush partial block.
+	if len(fd.curBlock) > 0 {
+		fd.flushBlock(fd.curIdx, fd.curBlock)
+		fd.curBlock = fd.curBlock[:0]
+	}
+	fd.mu.Unlock()
+
+	fd.inflight.Wait()
+
+	fd.tokensMu.Lock()
+	err := fd.firstErr
+	nTokens := len(fd.tokens)
+	fd.tokensMu.Unlock()
+
+	if err != nil {
+		return err
+	}
+
+	// No-op if nothing was written since last Sync.
+	if nTokens == 0 {
+		return nil
+	}
+
+	if err := fd.commitRevision(); err != nil {
+		return err
+	}
+
+	// Create a new revision for subsequent writes.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	res, err := fd.session.Client.CreateRevision(ctx, fd.shareID, fd.linkID)
+	if err != nil {
+		return fmt.Errorf("fd.Sync: create new revision: %w", err)
+	}
+
+	// Fetch new verification code.
+	vd, err := fd.session.Client.GetVerificationData(ctx, fd.shareID, fd.linkID, res.ID)
+	if err != nil {
+		return fmt.Errorf("fd.Sync: verification data: %w", err)
+	}
+	verifyCode, err := base64.StdEncoding.DecodeString(vd.VerificationCode)
+	if err != nil {
+		return fmt.Errorf("fd.Sync: decode verification code: %w", err)
+	}
+
+	fd.mu.Lock()
+	fd.revisionID = res.ID
+	fd.verifyCode = verifyCode
+	fd.curIdx = 0
+	fd.curBlock = make([]byte, 0, drive.BlockSize)
+	fd.mu.Unlock()
+
+	fd.tokensMu.Lock()
+	fd.tokens = make(map[int]uploadedBlock)
+	fd.firstErr = nil
+	fd.tokensMu.Unlock()
+
+	return nil
+}
+
+// Truncate adjusts the file size. Full block discard is deferred —
+// for now it only updates the fileSize field.
+func (fd *FileDescriptor) Truncate(size int64) error {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+
+	if fd.closed {
+		return os.ErrClosed
+	}
+	if fd.mode != fdWrite {
+		return syscall.EBADF
+	}
+
+	fd.fileSize = size
+	return nil
+}
+
+// commitRevision builds the manifest, signs it, and calls
+// UpdateRevision to commit the current revision as active.
+func (fd *FileDescriptor) commitRevision() error {
+	fd.tokensMu.Lock()
+	nBlocks := len(fd.tokens)
+	// Copy tokens under lock.
+	tokensCopy := make(map[int]uploadedBlock, nBlocks)
+	for k, v := range fd.tokens {
+		tokensCopy[k] = v
+	}
+	fd.tokensMu.Unlock()
+
+	if nBlocks == 0 {
+		return nil
+	}
+
+	// Build ordered block token list and manifest hash.
+	blockTokens := make([]proton.BlockToken, nBlocks)
+	blockSizes := make([]int64, nBlocks)
+	var manifestData []byte
+	var totalSize int64
+	for i := 0; i < nBlocks; i++ {
+		ub, ok := tokensCopy[i]
+		if !ok {
+			return fmt.Errorf("fd.commitRevision: missing block %d in upload results", i)
+		}
+		blockTokens[i] = proton.BlockToken{
+			Index: i + 1, // 1-based
+			Token: ub.token,
+		}
+		blockSizes[i] = ub.rawSize
+		manifestData = append(manifestData, ub.encHash...)
+		totalSize += ub.rawSize
+	}
+
+	// Sign the manifest (concatenated SHA-256 hashes of encrypted blocks).
+	manifestSig, err := fd.addrKR.SignDetached(crypto.NewPlainMessage(manifestData))
+	if err != nil {
+		return fmt.Errorf("fd.commitRevision: sign manifest: %w", err)
+	}
+	manifestSigStr, err := manifestSig.GetArmored()
+	if err != nil {
+		return fmt.Errorf("fd.commitRevision: armor manifest sig: %w", err)
+	}
+
+	// Build XAttr with file metadata.
+	xAttrCommon := &proton.RevisionXAttrCommon{
+		ModificationTime: time.Now().UTC().Format("2006-01-02T15:04:05-0700"),
+		Size:             totalSize,
+		BlockSizes:       blockSizes,
+	}
+
+	req := proton.UpdateRevisionReq{
+		State:             proton.RevisionStateActive,
+		BlockList:         blockTokens,
+		ManifestSignature: manifestSigStr,
+		SignatureAddress:  fd.sigAddr,
+	}
+	if err := req.SetEncXAttrString(fd.addrKR, fd.nodeKR, xAttrCommon); err != nil {
+		return fmt.Errorf("fd.commitRevision: encrypt xattr: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := fd.session.Client.UpdateRevision(ctx, fd.shareID, fd.linkID, fd.revisionID, req); err != nil {
+		return fmt.Errorf("fd.commitRevision: %w", err)
+	}
+
+	return nil
 }

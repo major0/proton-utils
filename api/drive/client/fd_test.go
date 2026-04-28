@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -365,5 +366,321 @@ func TestFDCloseIdempotent(t *testing.T) {
 	}
 	if err := fd.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Write-mode mock and helper (Tasks 7.3, 7.4)
+// ---------------------------------------------------------------------------
+
+// writeMemBlockStore extends memBlockStore to capture RequestUpload and
+// UploadBlock calls for write-path testing.
+type writeMemBlockStore struct {
+	memBlockStore
+	mu       sync.Mutex
+	uploads  map[int][]byte // keyed by 1-based block index
+	reqCount int
+}
+
+func (m *writeMemBlockStore) RequestUpload(_ context.Context, req proton.BlockUploadReq) ([]proton.BlockUploadLink, error) {
+	m.mu.Lock()
+	m.reqCount++
+	m.mu.Unlock()
+	links := make([]proton.BlockUploadLink, len(req.BlockList))
+	for i, b := range req.BlockList {
+		links[i] = proton.BlockUploadLink{
+			BareURL: fmt.Sprintf("https://test/upload/%d", b.Index),
+			Token:   fmt.Sprintf("upload-token-%d", b.Index),
+		}
+	}
+	return links, nil
+}
+
+func (m *writeMemBlockStore) UploadBlock(_ context.Context, _ string, index int, _, _ string, data []byte) error {
+	m.mu.Lock()
+	m.uploads[index] = append([]byte(nil), data...)
+	m.mu.Unlock()
+	return nil
+}
+
+// newWriteTestFD creates a write-mode FileDescriptor without real PGP
+// keyrings. Suitable for testing buffer accumulation, mode checks, and
+// Close idempotency — anything that doesn't invoke flushBlock's crypto.
+func newWriteTestFD(t testing.TB) (*FileDescriptor, *writeMemBlockStore) {
+	t.Helper()
+
+	sessionKey, err := crypto.GenerateSessionKey()
+	if err != nil {
+		t.Fatalf("GenerateSessionKey: %v", err)
+	}
+
+	store := &writeMemBlockStore{
+		memBlockStore: memBlockStore{blocks: make(map[int][]byte)},
+		uploads:       make(map[int][]byte),
+	}
+
+	fd := &FileDescriptor{
+		linkID:     "write-test-link",
+		revisionID: "write-test-rev",
+		shareID:    "write-test-share",
+		sessionKey: sessionKey,
+		// nodeKR and addrKR are nil — tests must not trigger flushBlock crypto
+		mode:       fdWrite,
+		store:      store,
+		curBlock:   make([]byte, 0, drive.BlockSize),
+		tokens:     make(map[int]uploadedBlock),
+		verifyCode: make([]byte, 32),
+	}
+	return fd, store
+}
+
+// ---------------------------------------------------------------------------
+// Property tests — write path (Task 7.3)
+// ---------------------------------------------------------------------------
+
+// TestFDPropertyWriteBlockBoundaries verifies that after writing N bytes,
+// curBlock holds N%BlockSize bytes and curIdx equals ⌊N/BlockSize⌋.
+// This tests the accumulation logic without triggering actual crypto in
+// flushBlock (which would need real PGP keyrings). We cap writes below
+// BlockSize so flushBlock is never called.
+//
+// **Validates: Requirements 2.3**
+func TestFDPropertyWriteBlockBoundaries(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		fd, _ := newWriteTestFD(t)
+
+		// Write a total of N bytes in random-sized chunks, all fitting
+		// within a single block to avoid triggering flushBlock crypto.
+		totalSize := rapid.IntRange(1, int(drive.BlockSize)-1).Draw(rt, "totalSize")
+		written := 0
+		for written < totalSize {
+			chunkSize := rapid.IntRange(1, totalSize-written).Draw(rt, "chunkSize")
+			data := make([]byte, chunkSize)
+			n, err := fd.Write(data)
+			if err != nil {
+				rt.Fatalf("Write: %v", err)
+			}
+			if n != chunkSize {
+				rt.Fatalf("Write returned %d, want %d", n, chunkSize)
+			}
+			written += n
+		}
+
+		fd.mu.Lock()
+		gotCurBlockLen := len(fd.curBlock)
+		gotCurIdx := fd.curIdx
+		gotFileSize := fd.fileSize
+		fd.mu.Unlock()
+
+		// All data fits in one block, so curIdx should be 0 and
+		// curBlock should hold all written bytes.
+		wantCurBlockLen := totalSize
+		wantCurIdx := 0
+
+		if gotCurBlockLen != wantCurBlockLen {
+			rt.Fatalf("curBlock len = %d, want %d (wrote %d bytes)", gotCurBlockLen, wantCurBlockLen, totalSize)
+		}
+		if gotCurIdx != wantCurIdx {
+			rt.Fatalf("curIdx = %d, want %d", gotCurIdx, wantCurIdx)
+		}
+		if gotFileSize != int64(totalSize) {
+			rt.Fatalf("fileSize = %d, want %d", gotFileSize, totalSize)
+		}
+	})
+}
+
+// TestFDPropertyCloseIdempotentWrite verifies that Close on a write-mode
+// FD is idempotent — second Close returns nil.
+//
+// **Validates: Requirements 2.6**
+func TestFDPropertyCloseIdempotentWrite(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		fd, _ := newWriteTestFD(t)
+		// Close without writing anything — no crypto needed.
+		if err := fd.Close(); err != nil {
+			rt.Fatalf("first Close: %v", err)
+		}
+		if err := fd.Close(); err != nil {
+			rt.Fatalf("second Close: %v", err)
+		}
+
+		// Verify the FD is actually closed.
+		fd.mu.Lock()
+		closed := fd.closed
+		fd.mu.Unlock()
+		if !closed {
+			rt.Fatal("FD not marked closed after Close")
+		}
+	})
+}
+
+// TestFDPropertyReadOnlyRejectsWrites verifies that Write and WriteAt on
+// a read-mode FD return syscall.EBADF.
+//
+// **Validates: Requirements 6.2**
+func TestFDPropertyReadOnlyRejectsWrites(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		size := rapid.IntRange(1, 4096).Draw(rt, "size")
+		plaintext := make([]byte, size)
+		fd := newTestFD(t, plaintext)
+
+		writeLen := rapid.IntRange(1, 256).Draw(rt, "writeLen")
+		buf := make([]byte, writeLen)
+
+		// Write must fail with EBADF.
+		_, err := fd.Write(buf)
+		if !errors.Is(err, syscall.EBADF) {
+			rt.Fatalf("Write on read FD: got %v, want syscall.EBADF", err)
+		}
+
+		// WriteAt must fail with EBADF.
+		off := rapid.Int64Range(0, int64(size)-1).Draw(rt, "writeAtOff")
+		_, err = fd.WriteAt(buf, off)
+		if !errors.Is(err, syscall.EBADF) {
+			rt.Fatalf("WriteAt on read FD: got %v, want syscall.EBADF", err)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests — write path (Task 7.4)
+// ---------------------------------------------------------------------------
+
+// TestFDWriteAccumulation writes small chunks and verifies curBlock grows.
+func TestFDWriteAccumulation(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+
+	// Write 3 chunks of 100 bytes each.
+	for i := 0; i < 3; i++ {
+		data := bytes.Repeat([]byte{byte(i)}, 100)
+		n, err := fd.Write(data)
+		if err != nil {
+			t.Fatalf("Write chunk %d: %v", i, err)
+		}
+		if n != 100 {
+			t.Fatalf("Write chunk %d: n = %d, want 100", i, n)
+		}
+	}
+
+	fd.mu.Lock()
+	gotLen := len(fd.curBlock)
+	gotIdx := fd.curIdx
+	gotSize := fd.fileSize
+	fd.mu.Unlock()
+
+	if gotLen != 300 {
+		t.Fatalf("curBlock len = %d, want 300", gotLen)
+	}
+	if gotIdx != 0 {
+		t.Fatalf("curIdx = %d, want 0", gotIdx)
+	}
+	if gotSize != 300 {
+		t.Fatalf("fileSize = %d, want 300", gotSize)
+	}
+}
+
+// TestFDReadOnlyRejectsWrite creates a read FD and verifies Write returns EBADF.
+func TestFDReadOnlyRejectsWrite(t *testing.T) {
+	fd := newTestFD(t, make([]byte, 64))
+
+	_, err := fd.Write([]byte("hello"))
+	if !errors.Is(err, syscall.EBADF) {
+		t.Fatalf("Write on read FD: got %v, want syscall.EBADF", err)
+	}
+}
+
+// TestFDReadOnlyRejectsWriteAt creates a read FD and verifies WriteAt returns EBADF.
+func TestFDReadOnlyRejectsWriteAt(t *testing.T) {
+	fd := newTestFD(t, make([]byte, 64))
+
+	_, err := fd.WriteAt([]byte("hello"), 0)
+	if !errors.Is(err, syscall.EBADF) {
+		t.Fatalf("WriteAt on read FD: got %v, want syscall.EBADF", err)
+	}
+}
+
+// TestFDCloseIdempotentWrite verifies Close on a write FD can be called
+// twice without error (no data written, so no crypto needed).
+func TestFDCloseIdempotentWrite(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+
+	if err := fd.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	if err := fd.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+}
+
+// TestFDTruncateUpdatesFileSize writes data, truncates to a smaller size,
+// and verifies fileSize is updated.
+func TestFDTruncateUpdatesFileSize(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+
+	// Write 500 bytes.
+	data := make([]byte, 500)
+	if _, err := fd.Write(data); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	fd.mu.Lock()
+	before := fd.fileSize
+	fd.mu.Unlock()
+	if before != 500 {
+		t.Fatalf("fileSize before truncate = %d, want 500", before)
+	}
+
+	// Truncate to 200.
+	if err := fd.Truncate(200); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+
+	fd.mu.Lock()
+	after := fd.fileSize
+	fd.mu.Unlock()
+	if after != 200 {
+		t.Fatalf("fileSize after truncate = %d, want 200", after)
+	}
+}
+
+// TestFDTruncateOnReadFDReturnsEBADF verifies Truncate on a read FD fails.
+func TestFDTruncateOnReadFDReturnsEBADF(t *testing.T) {
+	fd := newTestFD(t, make([]byte, 64))
+
+	err := fd.Truncate(32)
+	if !errors.Is(err, syscall.EBADF) {
+		t.Fatalf("Truncate on read FD: got %v, want syscall.EBADF", err)
+	}
+}
+
+// TestFDTruncateOnClosedFDReturnsErrClosed verifies Truncate after Close fails.
+func TestFDTruncateOnClosedFDReturnsErrClosed(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+	_ = fd.Close()
+
+	err := fd.Truncate(0)
+	if !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("Truncate on closed FD: got %v, want os.ErrClosed", err)
+	}
+}
+
+// TestFDWriteOnClosedFDReturnsErrClosed verifies Write after Close fails.
+func TestFDWriteOnClosedFDReturnsErrClosed(t *testing.T) {
+	fd, _ := newWriteTestFD(t)
+	_ = fd.Close()
+
+	_, err := fd.Write([]byte("hello"))
+	if !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("Write on closed FD: got %v, want os.ErrClosed", err)
+	}
+}
+
+// TestFDSyncOnReadFDReturnsEBADF verifies Sync on a read FD fails.
+func TestFDSyncOnReadFDReturnsEBADF(t *testing.T) {
+	fd := newTestFD(t, make([]byte, 64))
+
+	err := fd.Sync()
+	if !errors.Is(err, syscall.EBADF) {
+		t.Fatalf("Sync on read FD: got %v, want syscall.EBADF", err)
 	}
 }
