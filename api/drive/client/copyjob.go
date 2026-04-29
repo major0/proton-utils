@@ -1,6 +1,9 @@
 package client
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+)
 
 // BlockReader reads blocks from a source. Implementations carry their
 // own state (file path, link, session key, etc.).
@@ -56,26 +59,25 @@ type TransferOpts struct {
 }
 
 // blockMap tracks block assignment for a single CopyJob. Workers claim
-// blocks sequentially via an advancing counter — no bitmap needed since
-// blocks are never released or reordered.
+// blocks sequentially via an atomic counter — safe for concurrent use
+// without external synchronization.
 type blockMap struct {
 	job   *CopyJob
-	total int
-	next  int // next block to claim; caller holds pipeline mutex
+	total int32
+	next  atomic.Int32
 }
 
 // newBlockMap creates a blockMap for a CopyJob.
 func newBlockMap(job *CopyJob) *blockMap {
-	return &blockMap{job: job, total: job.Src.BlockCount()}
+	return &blockMap{job: job, total: int32(job.Src.BlockCount())} //nolint:gosec // BlockCount is always small and positive
 }
 
 // claim returns the index of the next unclaimed block, or -1 if all
-// blocks have been claimed. Caller must hold the pipeline mutex.
+// blocks have been claimed. Safe for concurrent use.
 func (m *blockMap) claim() int {
-	if m.next >= m.total {
+	idx := m.next.Add(1) - 1 // atomic post-increment; first caller gets 0
+	if idx >= m.total {
 		return -1
 	}
-	idx := m.next
-	m.next++
-	return idx
+	return int(idx)
 }
