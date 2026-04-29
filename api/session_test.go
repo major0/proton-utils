@@ -1225,3 +1225,82 @@ func TestDoJSONCookie_APIError(t *testing.T) {
 		t.Fatalf("Code = %d, want 9100", apiErr.Code)
 	}
 }
+
+// TestNeedsCookieRefresh verifies the cookie refresh threshold.
+func TestNeedsCookieRefresh(t *testing.T) {
+	tests := []struct {
+		name        string
+		lastRefresh time.Time
+		want        bool
+	}{
+		{"zero always refreshes", time.Time{}, true},
+		{"recent does not refresh", time.Now().Add(-30 * time.Minute), false},
+		{"old refreshes", time.Now().Add(-2 * time.Hour), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NeedsCookieRefresh(tt.lastRefresh)
+			if got != tt.want {
+				t.Fatalf("NeedsCookieRefresh(%v) = %v, want %v",
+					tt.lastRefresh, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestShouldFork verifies the fork-decision logic.
+func TestShouldFork(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name      string
+		svcConfig *SessionConfig
+		svcErr    error
+		acctCfg   *SessionConfig
+		service   string
+		want      bool
+	}{
+		{
+			name:    "missing session triggers fork",
+			svcErr:  ErrKeyNotFound,
+			acctCfg: &SessionConfig{LastRefresh: now},
+			service: "drive",
+			want:    true,
+		},
+		{
+			name:      "wildcard fallback triggers fork",
+			svcConfig: &SessionConfig{Service: "other", LastRefresh: now},
+			acctCfg:   &SessionConfig{LastRefresh: now},
+			service:   "drive",
+			want:      true,
+		},
+		{
+			name:      "empty service field triggers fork",
+			svcConfig: &SessionConfig{Service: "", LastRefresh: now},
+			acctCfg:   &SessionConfig{LastRefresh: now},
+			service:   "drive",
+			want:      true,
+		},
+		{
+			name:      "stale session triggers fork",
+			svcConfig: &SessionConfig{Service: "drive", LastRefresh: now.Add(-2 * time.Hour)},
+			acctCfg:   &SessionConfig{LastRefresh: now},
+			service:   "drive",
+			want:      true,
+		},
+		{
+			name:      "fresh session does not fork",
+			svcConfig: &SessionConfig{Service: "drive", LastRefresh: now},
+			acctCfg:   &SessionConfig{LastRefresh: now},
+			service:   "drive",
+			want:      false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldFork(tt.svcConfig, tt.svcErr, tt.acctCfg, tt.service)
+			if got != tt.want {
+				t.Fatalf("shouldFork() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
