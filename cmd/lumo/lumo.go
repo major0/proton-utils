@@ -33,7 +33,20 @@ func init() {
 }
 
 // restoreClient restores the session and creates a Lumo client.
+// Lumo requires cookie-based authentication; Bearer sessions are rejected.
 func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
+	rc := cli.GetContext(cmd)
+
+	// Lumo requires cookie auth. Check the account config before
+	// attempting the (expensive) session restore + fork.
+	acctCfg, err := rc.AccountStore.Load()
+	if err != nil {
+		return nil, fmt.Errorf("no active session (run 'proton account login' first): %w", err)
+	}
+	if !acctCfg.CookieAuth {
+		return nil, fmt.Errorf("lumo requires cookie-based authentication; current session uses Bearer auth (re-login with 'proton account login --browser')")
+	}
+
 	session, err := cli.RestoreSession(cmd.Context())
 	if err != nil {
 		return nil, fmt.Errorf("no active session (run 'proton account login' first): %w", err)
