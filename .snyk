@@ -1,0 +1,11 @@
+# Snyk (https://snyk.io) policy file
+# Excludes test files from Snyk Code scanning.
+#
+# All 55 findings are false positives in test-only code:
+# - Hardcoded passwords: test fixtures with fake values for SRP/fork protocol tests
+# - Cookie HttpOnly/Secure: mock httptest servers that never leave the process
+---
+exclude:
+  global:
+    # Exclude all Go test files
+    - "*_test.go"
