@@ -220,6 +220,10 @@ func TestFDPropertyClosedRejectsOps(t *testing.T) {
 // TestFDSequentialReadAcrossBlocks creates a file spanning 2+ blocks, reads
 // the entire thing in small chunks, and verifies the data matches.
 func TestFDSequentialReadAcrossBlocks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: 10 MB PGP encrypt/decrypt takes ~48 s")
+	}
+
 	// 2.5 blocks worth of data.
 	size := int(drive.BlockSize*2 + drive.BlockSize/2)
 	plaintext := make([]byte, size)

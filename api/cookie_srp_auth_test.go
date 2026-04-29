@@ -69,6 +69,10 @@ func srpAuthResponse(serverProofB64 string) map[string]any {
 //
 // **Validates: Requirements 1.4, 2.1**
 func TestPropertyServerProofMismatchRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: SRP key derivation is expensive (~3 s)")
+	}
+
 	rapid.Check(t, func(t *rapid.T) {
 		// Generate arbitrary bytes for the wrong ServerProof.
 		// Use 1–512 bytes to cover various lengths including the correct
@@ -141,6 +145,10 @@ func (r *errReader) Read([]byte) (int, error) { return 0, r.err }
 //
 // **Validates: Requirements 6.1, 6.2, 6.3, 6.4**
 func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: SRP key derivation is expensive (~5 s)")
+	}
+
 	// Step 1: auth/info DoJSON error — arbitrary error message from server.
 	// Req 6.1: prefix "cookie srp: auth info:"
 	t.Run("step1_auth_info", func(t *testing.T) {
