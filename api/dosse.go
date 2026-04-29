@@ -60,7 +60,7 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 
 	slog.Debug("doSSE.request", "url", reqURL, "appversion", appVer)
 
-	httpClient := &http.Client{Jar: s.cookieJar}
+	httpClient := s.initHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("doSSE: POST %s: %w", path, err)

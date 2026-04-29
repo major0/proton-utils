@@ -132,8 +132,9 @@ type Session struct {
 	UserAgent  string // User-Agent header value for DoJSON requests
 	manager    *proton.Manager
 
-	cookieJar http.CookieJar
-	authMu    sync.Mutex // serializes auth handler updates
+	cookieJar  http.CookieJar
+	httpClient *http.Client // reused across doRequest/DoSSE calls; see initHTTPClient
+	authMu     sync.Mutex   // serializes auth handler updates
 
 	// cachedAuthInfo holds the AuthInfo from the initial login attempt.
 	// It is reused on HV retry so the SRP session matches the solved CAPTCHA.
@@ -147,6 +148,21 @@ type Session struct {
 
 	user        proton.User
 	UserKeyRing *crypto.KeyRing
+}
+
+// initHTTPClient returns the session's shared http.Client, creating it
+// on first call. The client uses the session's cookie jar and no explicit
+// Transport — it inherits http.DefaultTransport, which is shared with
+// Resty (via go-proton-api). This is critical: Go's h2 transport
+// multiplexes all requests to the same host over a single TCP connection.
+// Creating a separate http.Transport would fork the connection pool and
+// break HTTP/2 stream multiplexing between our DoJSON calls and Resty's
+// block upload/download calls.
+func (s *Session) initHTTPClient() *http.Client {
+	if s.httpClient == nil {
+		s.httpClient = &http.Client{Jar: s.cookieJar}
+	}
+	return s.httpClient
 }
 
 // SessionFromCredentials initializes a new session from the provided config.
@@ -375,7 +391,7 @@ func (s *Session) doRequest(ctx context.Context, method, path string, body, resu
 		}
 	}
 
-	httpClient := &http.Client{Jar: s.cookieJar}
+	httpClient := s.initHTTPClient()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s: %s %s: %w", label, method, path, err)
