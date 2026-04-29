@@ -305,6 +305,21 @@ type apiEnvelope struct {
 // as the request body. If result is non-nil the response body is JSON-decoded
 // into it. Returns an *Error on non-success API responses.
 func (s *Session) DoJSON(ctx context.Context, method, path string, body, result any) error {
+	return s.doRequest(ctx, method, path, body, result, "doJSON")
+}
+
+// DoJSONCookie executes an authenticated JSON API request using cookie-based
+// auth. Instead of the Authorization: Bearer header, auth is provided via the
+// AUTH-<uid>=<token> cookie in the session's cookie jar. The x-pm-uid header
+// is still sent. The x-pm-appversion is resolved from the target URL's host.
+func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, result any) error {
+	return s.doRequest(ctx, method, path, body, result, "doJSONCookie")
+}
+
+// doRequest is the shared implementation for DoJSON and DoJSONCookie.
+// The label parameter is used in error messages and log prefixes to
+// distinguish callers in debug output.
+func (s *Session) doRequest(ctx context.Context, method, path string, body, result any, label string) error {
 	reqURL := path
 	if !strings.HasPrefix(path, "http") {
 		base := s.BaseURL
@@ -318,14 +333,14 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("doJSON: marshal body: %w", err)
+			return fmt.Errorf("%s: marshal body: %w", label, err)
 		}
 		bodyReader = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
 	if err != nil {
-		return fmt.Errorf("doJSON: new request: %w", err)
+		return fmt.Errorf("%s: new request: %w", label, err)
 	}
 
 	req.Header.Set("x-pm-uid", s.Auth.UID)
@@ -346,9 +361,9 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 	}
 	req.Header.Set("Accept", ProtonAccept)
 
-	slog.Debug("doJSON.request", "method", method, "url", reqURL, "appversion", appVer)
+	slog.Debug(label+".request", "method", method, "url", reqURL, "appversion", appVer)
 
-	// Log outgoing cookie names for debugging.
+	// Log outgoing cookie names for debugging (never values).
 	if s.cookieJar != nil {
 		if reqParsed, parseErr := url.Parse(reqURL); parseErr == nil {
 			outCookies := s.cookieJar.Cookies(reqParsed)
@@ -356,14 +371,14 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 			for i, c := range outCookies {
 				names[i] = c.Name
 			}
-			slog.Debug("doJSON.sending-cookies", "url", reqURL, "cookies", names)
+			slog.Debug(label+".sending-cookies", "url", reqURL, "cookies", names)
 		}
 	}
 
 	httpClient := &http.Client{Jar: s.cookieJar}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("doJSON: %s %s: %w", method, path, err)
+		return fmt.Errorf("%s: %s %s: %w", label, method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -377,22 +392,22 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 				names[i] = sc[:min(20, len(sc))]
 			}
 		}
-		slog.Debug("doJSON.set-cookie", "url", reqURL, "cookies", names)
+		slog.Debug(label+".set-cookie", "url", reqURL, "cookies", names)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("doJSON: read response: %w", err)
+		return fmt.Errorf("%s: read response: %w", label, err)
 	}
 
 	// Parse the envelope to check the API-level error code.
 	var envelope apiEnvelope
 	if err := json.Unmarshal(respBody, &envelope); err != nil {
-		return fmt.Errorf("doJSON: unmarshal envelope: %w", err)
+		return fmt.Errorf("%s: unmarshal envelope: %w", label, err)
 	}
 
 	if envelope.Code != 1000 && envelope.Code != 1001 {
-		slog.Debug("doJSON.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
+		slog.Debug(label+".error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 		return &Error{
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
@@ -403,116 +418,7 @@ func (s *Session) DoJSON(ctx context.Context, method, path string, body, result 
 
 	if result != nil {
 		if err := json.Unmarshal(respBody, result); err != nil {
-			return fmt.Errorf("doJSON: unmarshal result: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// DoJSONCookie executes an authenticated JSON API request using cookie-based
-// auth. Instead of the Authorization: Bearer header, auth is provided via the
-// AUTH-<uid>=<token> cookie in the session's cookie jar. The x-pm-uid header
-// is still sent. The x-pm-appversion is resolved from the target URL's host.
-func (s *Session) DoJSONCookie(ctx context.Context, method, path string, body, result any) error {
-	reqURL := path
-	if !strings.HasPrefix(path, "http") {
-		base := s.BaseURL
-		if base == "" {
-			base = proton.DefaultHostURL
-		}
-		reqURL = base + path
-	}
-
-	var bodyReader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("doJSONCookie: marshal body: %w", err)
-		}
-		bodyReader = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
-	if err != nil {
-		return fmt.Errorf("doJSONCookie: new request: %w", err)
-	}
-
-	req.Header.Set("x-pm-uid", s.Auth.UID)
-	// Prefer cookie auth (AUTH-<uid>=<token>) but fall back to Bearer.
-	// The AUTH cookie is set by POST /core/v4/auth/cookies. If not present,
-	// Bearer auth works but grants restricted scopes. Cookie-mode sessions
-	// have empty AccessToken.
-	if s.Auth.AccessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
-	}
-	appVer := s.resolveAppVersion(reqURL)
-	if appVer != "" {
-		req.Header.Set("x-pm-appversion", appVer)
-	}
-	if s.UserAgent != "" {
-		req.Header.Set("User-Agent", s.UserAgent)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Accept", ProtonAccept)
-
-	slog.Debug("doJSONCookie.request", "method", method, "url", reqURL, "appversion", appVer)
-
-	// Log cookies being sent.
-	if reqParsed, err := url.Parse(reqURL); err == nil {
-		outCookies := s.cookieJar.Cookies(reqParsed)
-		names := make([]string, len(outCookies))
-		for i, c := range outCookies {
-			names[i] = c.Name
-		}
-		slog.Debug("doJSONCookie.sending-cookies", "url", reqURL, "cookies", names)
-	}
-
-	httpClient := &http.Client{Jar: s.cookieJar}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("doJSONCookie: %s %s: %w", method, path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Log Set-Cookie headers from the response.
-	if setCookies := resp.Header.Values("Set-Cookie"); len(setCookies) > 0 {
-		names := make([]string, len(setCookies))
-		for i, sc := range setCookies {
-			if idx := strings.Index(sc, "="); idx > 0 {
-				names[i] = sc[:idx]
-			} else {
-				names[i] = sc[:min(20, len(sc))]
-			}
-		}
-		slog.Debug("doJSONCookie.set-cookie", "url", reqURL, "cookies", names)
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("doJSONCookie: read response: %w", err)
-	}
-
-	var envelope apiEnvelope
-	if err := json.Unmarshal(respBody, &envelope); err != nil {
-		return fmt.Errorf("doJSONCookie: unmarshal envelope: %w", err)
-	}
-
-	if envelope.Code != 1000 && envelope.Code != 1001 {
-		slog.Debug("doJSONCookie.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
-		return &Error{
-			Status:  resp.StatusCode,
-			Code:    envelope.Code,
-			Message: envelope.Error,
-			Details: envelope.Details,
-		}
-	}
-
-	if result != nil {
-		if err := json.Unmarshal(respBody, result); err != nil {
-			return fmt.Errorf("doJSONCookie: unmarshal result: %w", err)
+			return fmt.Errorf("%s: unmarshal result: %w", label, err)
 		}
 	}
 
