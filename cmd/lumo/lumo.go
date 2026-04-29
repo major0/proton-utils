@@ -44,7 +44,7 @@ func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
 		return nil, fmt.Errorf("no active session (run 'proton account login' first): %w", err)
 	}
 	if !acctCfg.CookieAuth {
-		return nil, fmt.Errorf("lumo requires cookie-based authentication; current session uses Bearer auth (re-login with 'proton account login --browser')")
+		return nil, fmt.Errorf("lumo requires cookie-based authentication; current session uses Bearer auth (re-login with 'proton account login --cookie-session')")
 	}
 
 	session, err := cli.RestoreSession(cmd.Context())
