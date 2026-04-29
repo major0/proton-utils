@@ -20,7 +20,7 @@ var lumoCmd = &cobra.Command{
 				return err
 			}
 		}
-		cli.SetService("lumo")
+		cli.SetServiceCmd(cmd, "lumo")
 		return nil
 	},
 	Run: func(cmd *cobra.Command, _ []string) {
