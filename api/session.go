@@ -592,6 +592,37 @@ func shouldFork(svcConfig *SessionConfig, svcErr error, acctConfig *SessionConfi
 // RestoreServiceSession restores or creates a service-specific session.
 // If no session exists for the service, it forks from the account session.
 // If no account session exists, it returns ErrNotLoggedIn.
+// forkUnlockAndSave completes the post-fork sequence: fetch user, save
+// session, fetch addresses, unlock keyrings, register auth/deauth handlers.
+// Used by both the cookie-fork and bearer-fork paths.
+func forkUnlockAndSave(ctx context.Context, child *Session, childKeyPass []byte, store SessionStore, service string) error {
+	childUser, err := child.Client.GetUser(ctx)
+	if err != nil {
+		return fmt.Errorf("restore service session %q: get user: %w", service, err)
+	}
+	child.user = childUser
+
+	if err := SessionSave(store, child, childKeyPass); err != nil {
+		return fmt.Errorf("restore service session %q: save fork: %w", service, err)
+	}
+
+	addrs, err := child.Client.GetAddresses(ctx)
+	if err != nil {
+		return fmt.Errorf("restore service session %q: get addresses: %w", service, err)
+	}
+	slog.Debug("fork.unlock", "service", service, "child_uid", child.Auth.UID, "keypass_len", len(childKeyPass), "num_addresses", len(addrs))
+	if err := child.Unlock(childKeyPass, addrs); err != nil {
+		return fmt.Errorf("restore service session %q: unlock: %w", service, err)
+	}
+
+	child.AddAuthHandler(NewAuthHandler(store, child))
+	child.AddDeauthHandler(NewDeauthHandler())
+	return nil
+}
+
+// RestoreServiceSession restores or creates a service-specific session.
+// If no session exists for the service, it forks from the account session.
+// If no account session exists, it returns ErrNotLoggedIn.
 //
 // The flow:
 //  1. Load account session config from accountStore.
@@ -642,26 +673,9 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
 		}
 
-		childUser, err := child.Client.GetUser(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
+		if err := forkUnlockAndSave(ctx, child, childKeyPass, store, service); err != nil {
+			return nil, err
 		}
-		child.user = childUser
-
-		if err := SessionSave(store, child, childKeyPass); err != nil {
-			return nil, fmt.Errorf("restore service session %q: save fork: %w", service, err)
-		}
-
-		addrs, err := child.Client.GetAddresses(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
-		}
-		if err := child.Unlock(childKeyPass, addrs); err != nil {
-			return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
-		}
-
-		child.AddAuthHandler(NewAuthHandler(store, child))
-		child.AddDeauthHandler(NewDeauthHandler())
 
 		return child, nil
 	}
@@ -739,30 +753,9 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
 		}
 
-		// Fetch the user for the child session (needed for key unlock).
-		childUser, err := child.Client.GetUser(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
+		if err := forkUnlockAndSave(ctx, child, childKeyPass, store, service); err != nil {
+			return nil, err
 		}
-		child.user = childUser
-
-		// Save the forked session.
-		if err := SessionSave(store, child, childKeyPass); err != nil {
-			return nil, fmt.Errorf("restore service session %q: save fork: %w", service, err)
-		}
-
-		// Unlock the child session.
-		addrs, err := child.Client.GetAddresses(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
-		}
-		slog.Debug("fork.unlock", "service", service, "child_uid", child.Auth.UID, "keypass_len", len(childKeyPass), "num_addresses", len(addrs))
-		if err := child.Unlock(childKeyPass, addrs); err != nil {
-			return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
-		}
-
-		child.AddAuthHandler(NewAuthHandler(store, child))
-		child.AddDeauthHandler(NewDeauthHandler())
 
 		return child, nil
 	}
