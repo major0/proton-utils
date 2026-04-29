@@ -564,14 +564,39 @@ func proactiveRefresh(ctx context.Context, session *Session, config *SessionConf
 	return nil
 }
 
-// RestoreServiceSession loads and unlocks a session for the given service.
+// shouldFork determines whether a service session needs to be forked from
+// the account session. Returns true when the service session is missing,
+// is a wildcard fallback, has no Service field (legacy), or is stale
+// relative to the account session.
+func shouldFork(svcConfig *SessionConfig, svcErr error, acctConfig *SessionConfig, service string) bool {
+	if svcErr != nil {
+		slog.Debug("service session not found, will fork", "service", service)
+		return true
+	}
+	if svcConfig.Service != service && svcConfig.Service != "" {
+		slog.Debug("service session is wildcard fallback, will fork", "service", service, "found_service", svcConfig.Service)
+		return true
+	}
+	if svcConfig.Service == "" {
+		slog.Debug("service session has no service field, will fork", "service", service)
+		return true
+	}
+	if IsStale(acctConfig.LastRefresh, svcConfig.LastRefresh) {
+		slog.Debug("service session is stale, will re-fork", "service", service)
+		return true
+	}
+	slog.Debug("service session is fresh", "service", service, "uid", svcConfig.UID, "svc_service", svcConfig.Service, "svc_last_refresh", svcConfig.LastRefresh, "acct_last_refresh", acctConfig.LastRefresh)
+	return false
+}
+
+// RestoreServiceSession restores or creates a service-specific session.
 // If no session exists for the service, it forks from the account session.
 // If no account session exists, it returns ErrNotLoggedIn.
 //
 // The flow:
-//  1. Look up ServiceConfig for the requested service.
-//  2. Load session from store (service-specific store).
-//  3. Load account session from accountStore.
+//  1. Load account session config from accountStore.
+//  2. If CookieAuth=true, use cookie fork path (CookieSessionRestore → cookieFork).
+//  3. Otherwise, build account session from credentials.
 //  4. If account session age > ProactiveRefreshAge, trigger proactive refresh.
 //  5. If service session missing or stale (account LastRefresh > service LastRefresh),
 //     fork from account session via ForkSessionWithKeyPass.
@@ -674,29 +699,11 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 
 	// Try loading the service session.
 	svcConfig, svcErr := store.Load()
-
-	needsFork := false
-	switch {
-	case svcErr != nil:
-		if !errors.Is(svcErr, ErrKeyNotFound) {
-			return nil, fmt.Errorf("restore service session %q: %w", service, svcErr)
-		}
-		slog.Debug("service session not found, will fork", "service", service)
-		needsFork = true
-	case svcConfig.Service != service && svcConfig.Service != "":
-		// The store returned a wildcard fallback, not a service-specific session.
-		slog.Debug("service session is wildcard fallback, will fork", "service", service, "found_service", svcConfig.Service)
-		needsFork = true
-	case svcConfig.Service == "":
-		// Legacy session without Service field — treat as wildcard.
-		slog.Debug("service session has no service field, will fork", "service", service)
-		needsFork = true
-	case IsStale(acctConfig.LastRefresh, svcConfig.LastRefresh):
-		slog.Debug("service session is stale, will re-fork", "service", service)
-		needsFork = true
-	default:
-		slog.Debug("service session is fresh", "service", service, "uid", svcConfig.UID, "svc_service", svcConfig.Service, "svc_last_refresh", svcConfig.LastRefresh, "acct_last_refresh", acctConfig.LastRefresh)
+	if svcErr != nil && !errors.Is(svcErr, ErrKeyNotFound) {
+		return nil, fmt.Errorf("restore service session %q: %w", service, svcErr)
 	}
+
+	needsFork := shouldFork(svcConfig, svcErr, acctConfig, service)
 
 	if needsFork {
 		// Decrypt account keypass for fork blob.
