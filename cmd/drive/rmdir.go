@@ -27,7 +27,7 @@ var driveRmdirCmd = &cobra.Command{
 
 func init() {
 	driveCmd.AddCommand(driveRmdirCmd)
-	cli.BoolFlag(driveRmdirCmd.Flags(), &rmdirFlags.verbose, "verbose", false, "Print each directory as it is removed")
+	cli.BoolFlagP(driveRmdirCmd.Flags(), &rmdirFlags.verbose, "verbose", "v", false, "Print each directory as it is removed")
 	cli.BoolFlag(driveRmdirCmd.Flags(), &rmdirFlags.permanent, "permanent", false, "Permanently delete instead of moving to trash")
 }
 

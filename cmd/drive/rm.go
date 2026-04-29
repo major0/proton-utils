@@ -35,7 +35,7 @@ var driveTrashEmptyCmd = &cobra.Command{
 func init() {
 	driveCmd.AddCommand(driveRmCmd)
 	cli.BoolFlagP(driveRmCmd.Flags(), &rmFlags.recursive, "recursive", "r", false, "Remove directories and their contents recursively")
-	cli.BoolFlag(driveRmCmd.Flags(), &rmFlags.verbose, "verbose", false, "Print each removal")
+	cli.BoolFlagP(driveRmCmd.Flags(), &rmFlags.verbose, "verbose", "v", false, "Print each removal")
 	cli.BoolFlag(driveRmCmd.Flags(), &rmFlags.permanent, "permanent", false, "Permanently delete instead of moving to trash")
 
 	driveCmd.AddCommand(driveTrashEmptyCmd)

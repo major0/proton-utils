@@ -27,7 +27,7 @@ var driveMvCmd = &cobra.Command{
 
 func init() {
 	driveCmd.AddCommand(driveMvCmd)
-	cli.BoolFlag(driveMvCmd.Flags(), &mvFlags.verbose, "verbose", false, "Print each move operation")
+	cli.BoolFlagP(driveMvCmd.Flags(), &mvFlags.verbose, "verbose", "v", false, "Print each move operation")
 }
 
 func runMv(cmd *cobra.Command, args []string) error {

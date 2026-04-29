@@ -52,7 +52,7 @@ func init() {
 	cli.BoolFlagP(f, &cpFlags.archive, "archive", "a", false, "Archive mode: -r -d --preserve=mode,timestamps")
 	cli.BoolFlagP(f, &cpFlags.dereference, "dereference", "L", false, "Follow symbolic links")
 	cli.BoolFlagP(f, &cpFlags.noDeref, "no-dereference", "d", false, "Skip symbolic links (default; explicit for -a)")
-	cli.BoolFlag(f, &cpFlags.verbose, "verbose", false, "Print each file as it completes")
+	cli.BoolFlagP(f, &cpFlags.verbose, "verbose", "v", false, "Print each file as it completes")
 	cli.BoolFlag(f, &cpFlags.progress, "progress", false, "Show aggregate transfer progress")
 	f.StringVar(&cpFlags.preserve, "preserve", "", "Preserve attributes: mode,timestamps")
 	f.StringVarP(&cpFlags.targetDir, "target-directory", "t", "", "Copy all sources into this directory")
