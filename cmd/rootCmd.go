@@ -28,37 +28,43 @@ type rootParamsType struct {
 
 var (
 	// Timeout holds the global request timeout duration.
+	// Migration: subcommands should use GetContext(cmd).Timeout instead.
 	Timeout time.Duration
 
 	// DebugHTTP is true when verbosity >= 3, enabling HTTP debug logging.
+	// Migration: subcommands should use GetContext(cmd).DebugHTTP instead.
 	DebugHTTP bool
 
 	// ProtonOpts holds the base Proton API options (app version, user agent).
+	// Migration: subcommands should use GetContext(cmd).ProtonOpts instead.
 	ProtonOpts []proton.Option
 
 	// SessionStoreVar handles loading/saving session data.
+	// Migration: subcommands should use GetContext(cmd).SessionStore instead.
 	SessionStoreVar common.SessionStore
 
 	// AccountStoreVar handles loading/saving the account session data.
-	// Used by RestoreServiceSession as the fork source.
+	// Migration: subcommands should use GetContext(cmd).AccountStore instead.
 	AccountStoreVar common.SessionStore
 
 	// CookieStoreVar handles loading/saving cookie-based session data.
-	// Used by RestoreServiceSession for cookie auth persistence.
+	// Migration: subcommands should use GetContext(cmd).CookieStore instead.
 	CookieStoreVar common.SessionStore
 
 	// Account holds the current --account flag value.
+	// Migration: subcommands should use GetContext(cmd).Account instead.
 	Account string
 
 	// ServiceName holds the current service context. Default is "*" (wildcard).
-	// Subcommand PersistentPreRunE hooks call SetService to override this.
+	// Migration: subcommands should use GetContext(cmd).ServiceName instead.
 	ServiceName string
 
-	// AppVersionOverride holds the --app-version flag value. When non-empty,
-	// it overrides the version string for the current invocation.
+	// AppVersionOverride holds the --app-version flag value.
+	// Migration: subcommands should use GetContext(cmd).AppVersionOverride instead.
 	AppVersionOverride string
 
-	// ConfigVar holds the loaded application config. Available to all subcommands.
+	// ConfigVar holds the loaded application config.
+	// Migration: subcommands should use GetContext(cmd).Config instead.
 	ConfigVar *common.Config
 
 	// Private variables below this point
@@ -171,10 +177,8 @@ func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
-// SetService configures the CLI for a specific service. Called by subcommand
-// group PersistentPreRunE hooks. It rebuilds the session store with a
-// service-specific store and rebuilds ProtonOpts with the service's host.
-// Updates both the RuntimeContext and the deprecated globals.
+// SetService configures the CLI for a specific service.
+// Migration: use SetServiceCmd instead.
 func SetService(service string) {
 	ServiceName = service
 	svc, _ := common.LookupService(service)
