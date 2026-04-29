@@ -761,6 +761,12 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 	}
 
 	// Restore existing service session.
+	return restoreExistingService(ctx, options, svcConfig, store, svc, service, managerHook)
+}
+
+// restoreExistingService restores a service session from persisted credentials.
+// Used when the service session exists and is not stale.
+func restoreExistingService(ctx context.Context, options []proton.Option, svcConfig *SessionConfig, store SessionStore, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
 	session, err := SessionFromCredentials(ctx, options, svcConfig, managerHook)
 	if err != nil {
 		return nil, fmt.Errorf("restore service session %q: credentials: %w", service, err)
@@ -782,7 +788,6 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
 	}
 
-	// Set service-specific BaseURL and AppVersion.
 	session.BaseURL = svc.Host
 	session.AppVersion = svc.AppVersion("")
 
