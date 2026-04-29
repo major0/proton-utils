@@ -73,7 +73,7 @@ var (
 		Use:   "proton [options] <command>",
 		Short: "proton is a command line interface for Proton services",
 		Long:  `proton is a command line interface for managing Proton services (Drive, Mail, etc.)`,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// Start profiling if --profile was set (no-op without build tag).
 			stopProfile := StartProfile()
 			cobra.OnFinalize(stopProfile)
@@ -114,25 +114,16 @@ var (
 				rootParams.SessionFile = xdgConfigPath("sessions.db")
 			}
 
-			Timeout = rootParams.Timeout
-			DebugHTTP = rootParams.Verbose >= 3 || strings.EqualFold(rootParams.LogLevel, "debug") || strings.EqualFold(rootParams.LogLevel, "trace")
-			Account = rootParams.Account
+			debugHTTP := rootParams.Verbose >= 3 || strings.EqualFold(rootParams.LogLevel, "debug") || strings.EqualFold(rootParams.LogLevel, "trace")
 
-			// Rebuild proton options based on verbosity.
-			ProtonOpts = []proton.Option{
+			opts := []proton.Option{
 				proton.WithHostURL(APIHost),
 				proton.WithAppVersion(AppVersion),
 				proton.WithUserAgent(UserAgent),
 			}
-
-			if DebugHTTP {
-				ProtonOpts = append(ProtonOpts, proton.WithDebug(true))
+			if debugHTTP {
+				opts = append(opts, proton.WithDebug(true))
 			}
-
-			SessionStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{})
-			AccountStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "account", internal.SystemKeyring{})
-			CookieStoreVar = internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "cookie", internal.SystemKeyring{})
-			ServiceName = "*"
 
 			// Load application config.
 			cfg, err := common.LoadConfig(rootParams.ConfigFile)
@@ -140,7 +131,32 @@ var (
 				slog.Warn("config load failed, using defaults", "error", err)
 				cfg = common.DefaultConfig()
 			}
-			ConfigVar = cfg
+
+			rc := &RuntimeContext{
+				Timeout:            rootParams.Timeout,
+				DebugHTTP:          debugHTTP,
+				ProtonOpts:         opts,
+				SessionStore:       internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{}),
+				AccountStore:       internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "account", internal.SystemKeyring{}),
+				CookieStore:        internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "cookie", internal.SystemKeyring{}),
+				Account:            rootParams.Account,
+				ServiceName:        "*",
+				AppVersionOverride: AppVersionOverride,
+				Config:             cfg,
+				SessionFile:        rootParams.SessionFile,
+			}
+			SetContext(cmd, rc)
+
+			// Sync deprecated globals from RuntimeContext.
+			Timeout = rc.Timeout
+			DebugHTTP = rc.DebugHTTP
+			ProtonOpts = rc.ProtonOpts
+			SessionStoreVar = rc.SessionStore
+			AccountStoreVar = rc.AccountStore
+			CookieStoreVar = rc.CookieStore
+			Account = rc.Account
+			ServiceName = rc.ServiceName
+			ConfigVar = rc.Config
 
 			return nil
 		},
@@ -156,11 +172,9 @@ func AddCommand(cmd *cobra.Command) {
 }
 
 // SetService configures the CLI for a specific service. Called by subcommand
-// group PersistentPreRunE hooks. It rebuilds SessionStoreVar with a
+// group PersistentPreRunE hooks. It rebuilds the session store with a
 // service-specific store and rebuilds ProtonOpts with the service's host.
-// The Resty client (used by go-proton-api for login, GetUser, etc.) uses
-// the global AppVersion. DoJSON/DoSSE resolve per-host versions via
-// resolveAppVersion.
+// Updates both the RuntimeContext and the deprecated globals.
 func SetService(service string) {
 	ServiceName = service
 	svc, _ := common.LookupService(service)
@@ -178,6 +192,31 @@ func SetService(service string) {
 	if DebugHTTP {
 		ProtonOpts = append(ProtonOpts, proton.WithDebug(true))
 	}
+}
+
+// SetServiceCmd is the context-aware version of SetService. Subcommands
+// should migrate to this once they use GetContext.
+func SetServiceCmd(cmd *cobra.Command, service string) {
+	rc := GetContext(cmd)
+	rc.ServiceName = service
+	svc, _ := common.LookupService(service)
+
+	rc.SessionStore = internal.NewSessionStore(
+		rc.SessionFile, rc.Account, service, internal.SystemKeyring{},
+	)
+
+	rc.ProtonOpts = []proton.Option{
+		proton.WithHostURL(svc.Host),
+		proton.WithAppVersion(AppVersion),
+		proton.WithUserAgent(UserAgent),
+	}
+
+	if rc.DebugHTTP {
+		rc.ProtonOpts = append(rc.ProtonOpts, proton.WithDebug(true))
+	}
+
+	// Sync deprecated globals.
+	SetService(service)
 }
 
 // resolveVersion returns the app version string for a service, checking
