@@ -201,18 +201,20 @@ func (bc *bufferCache) Invalidate(linkID string) {
 	}
 }
 
-// evictLocked removes the least-recently-used clean slot. Returns true
-// if a slot was evicted, false if no clean slot is available. Caller
-// must hold bc.mu.
+// evictLocked removes the least-recently-used slot. Returns true if a
+// slot was evicted, false if the LRU list is empty. Caller must hold
+// bc.mu.
+//
+// Only clean slots are in the LRU list — fetching slots have elem==nil
+// and are never added to the list (see Reserve). So the tail is always
+// safe to evict without a state check.
 func (bc *bufferCache) evictLocked() bool {
-	// Walk from back (least recent) to front looking for a clean slot.
-	for e := bc.lru.Back(); e != nil; e = e.Prev() {
-		slot := e.Value.(*cacheSlot)
-		if slot.state == slotClean {
-			bc.lru.Remove(e)
-			delete(bc.slots, slot.key)
-			return true
-		}
+	e := bc.lru.Back()
+	if e == nil {
+		return false
 	}
-	return false
+	slot := e.Value.(*cacheSlot)
+	bc.lru.Remove(e)
+	delete(bc.slots, slot.key)
+	return true
 }
