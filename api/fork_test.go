@@ -45,7 +45,7 @@ func TestForkResponseToSessionMapping_Property(t *testing.T) {
 			Version:  version,
 		}
 
-		session := SessionFromForkPull(pull, svc, version)
+		session := SessionFromForkPull(context.Background(), pull, svc, version)
 		defer session.Stop()
 
 		// Verify UID mapping.
@@ -330,7 +330,7 @@ func TestForkSessionEndToEnd(t *testing.T) {
 	}
 
 	// Build child session.
-	child := SessionFromForkPull(pullResp, targetSvc, DefaultVersion)
+	child := SessionFromForkPull(context.Background(), pullResp, targetSvc, DefaultVersion)
 	defer child.Stop()
 
 	if child.Auth.UID != "child-uid-123" {
@@ -364,7 +364,7 @@ func TestBuildChildSession(t *testing.T) {
 		Version:  "5.2.0",
 	}
 
-	session := SessionFromForkPull(pull, svc, "1.2.3.4")
+	session := SessionFromForkPull(context.Background(), pull, svc, "1.2.3.4")
 	defer session.Stop()
 
 	if session.Auth.UID != "uid-abc" {
@@ -381,6 +381,12 @@ func TestBuildChildSession(t *testing.T) {
 	}
 	if session.cookieJar == nil {
 		t.Fatal("cookieJar is nil")
+	}
+	if session.Pool == nil {
+		t.Fatal("Pool is nil")
+	}
+	if session.Throttle == nil {
+		t.Fatal("Throttle is nil")
 	}
 }
 

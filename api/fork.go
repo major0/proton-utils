@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api/pool"
 )
 
 // ErrForkFailed indicates that the session fork protocol failed.
@@ -116,7 +117,7 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 	}
 
 	// Build the child session.
-	child := SessionFromForkPull(pullResp, targetService, version)
+	child := SessionFromForkPull(ctx, pullResp, targetService, version)
 
 	return child, []byte(decryptedBlob.KeyPassword), nil
 }
@@ -172,7 +173,7 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService 
 		return nil, nil, fmt.Errorf("%w: decrypt blob: %w", ErrForkFailed, err)
 	}
 
-	child := SessionFromForkPull(pullResp, targetService, version)
+	child := SessionFromForkPull(ctx, pullResp, targetService, version)
 
 	return child, []byte(decryptedBlob.KeyPassword), nil
 }
@@ -268,9 +269,11 @@ func forkPull(ctx context.Context, parent *Session, host, selector, appVersion s
 // SessionFromForkPull constructs a Session from a ForkPullResp and
 // ServiceConfig. The version string is passed through for backward
 // compatibility but the service's own app version is used for all requests.
-func SessionFromForkPull(pull *ForkPullResp, svc ServiceConfig, _ string) *Session {
+func SessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc ServiceConfig, _ string) *Session {
 	jar, _ := cookiejar.New(nil)
 	appVersion := svc.AppVersion("")
+
+	throttle := NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
 
 	manager := proton.New(
 		proton.WithHostURL(svc.Host),
@@ -291,6 +294,8 @@ func SessionFromForkPull(pull *ForkPullResp, svc ServiceConfig, _ string) *Sessi
 		AppVersion: appVersion,
 		manager:    manager,
 		cookieJar:  jar,
+		Throttle:   throttle,
+		Pool:       pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(throttle)),
 	}
 }
 
@@ -298,8 +303,10 @@ func SessionFromForkPull(pull *ForkPullResp, svc ServiceConfig, _ string) *Sessi
 // instead of Bearer auth. The provided cookie jar must contain the AUTH-<uid>
 // cookie. CookieTransport strips the Bearer header that Resty adds, so the
 // server only sees cookie auth.
-func CookieSessionFromForkPull(pull *ForkPullResp, svc ServiceConfig, cookieJar http.CookieJar) *Session {
+func CookieSessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc ServiceConfig, cookieJar http.CookieJar) *Session {
 	appVersion := svc.AppVersion("")
+
+	throttle := NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
 
 	manager := proton.New(
 		proton.WithHostURL(svc.Host),
@@ -321,6 +328,8 @@ func CookieSessionFromForkPull(pull *ForkPullResp, svc ServiceConfig, cookieJar 
 		AppVersion: appVersion,
 		manager:    manager,
 		cookieJar:  cookieJar,
+		Throttle:   throttle,
+		Pool:       pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(throttle)),
 	}
 }
 
@@ -445,7 +454,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 	// The fork pull returns Bearer tokens for the child session. Like the
 	// browser, we must transition the child to cookies via auth/cookies on
 	// the target service host. This gives us AUTH-<child-uid> cookies.
-	childBearer := SessionFromForkPull(pullResp, targetService, "")
+	childBearer := SessionFromForkPull(ctx, pullResp, targetService, "")
 	childBearer.BaseURL = targetService.Host
 	childBearer.AppVersion = targetService.AppVersion("")
 
@@ -458,7 +467,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 
 	// Build the final child session with CookieTransport using the child's
 	// own cookie jar (has AUTH-<child-uid> for the target service).
-	child := CookieSessionFromForkPull(pullResp, targetService, childCookieSess.cookieJar)
+	child := CookieSessionFromForkPull(ctx, pullResp, targetService, childCookieSess.cookieJar)
 
 	// Clear Bearer tokens — after cookie transition, auth is provided
 	// exclusively via cookies. Services like Lumo reject Bearer auth
