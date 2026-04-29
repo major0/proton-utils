@@ -19,6 +19,9 @@ import (
 //   - proton://{id}/path                → share="{id}" (resolved by share ID), path="path"
 //   - proton://                         → error: no share specified
 //
+// Path normalization may collapse the path to empty (e.g. "proton:///test1/.."
+// normalizes to the share root). This is silent — no error is returned.
+//
 // The proton:// prefix is a cmd/ concern — the api/ layer never sees it.
 func parseProtonURI(rawPath string) (sharePart, pathPart string, err error) {
 	if !strings.HasPrefix(rawPath, "proton://") {

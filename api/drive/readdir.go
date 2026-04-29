@@ -136,6 +136,11 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 // Lookup finds a child by name in this folder. Returns nil if not found.
 // Handles "." (self) and ".." (parent) directly without scanning children.
 // Cancels remaining work as soon as the match is found.
+//
+// Note: Lookup fetches all children from the API via Readdir because the
+// Proton Drive API has no server-side name lookup. The context is cancelled
+// on first match to limit decryption work, but the initial ListChildren
+// API call returns the full child list regardless.
 func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 	// Fast path for . and ..
 	switch name {
