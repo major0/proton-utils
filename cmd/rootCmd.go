@@ -245,7 +245,7 @@ func ConfigFilePath() string {
 }
 
 func init() {
-	// cobra.OnInitialize(initConfig) // TODO
+	// Config is loaded in PersistentPreRunE via LoadConfig.
 	logopts := &slog.HandlerOptions{
 		Level: logLevel,
 	}

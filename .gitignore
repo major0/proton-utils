@@ -34,3 +34,6 @@ go.work.sum
 
 # Empty placeholder directories
 tmp/
+
+# Debug artifacts
+concurrent-cp.log

@@ -406,7 +406,7 @@ func (m *writeMemBlockStore) UploadBlock(_ context.Context, _ string, index int,
 // newWriteTestFD creates a write-mode FileDescriptor without real PGP
 // keyrings. Suitable for testing buffer accumulation, mode checks, and
 // Close idempotency — anything that doesn't invoke flushBlock's crypto.
-func newWriteTestFD(t testing.TB) (*FileDescriptor, *writeMemBlockStore) {
+func newWriteTestFD(t testing.TB) (*FileDescriptor, *writeMemBlockStore) { //nolint:unparam // store return used by future tests
 	t.Helper()
 
 	sessionKey, err := crypto.GenerateSessionKey()
@@ -714,7 +714,7 @@ func TestFDConcurrentReadAndReadAt(t *testing.T) {
 			buf := make([]byte, 512)
 			for i := 0; i < 20; i++ {
 				_, err := fd.Read(buf)
-				if err != nil && err != io.EOF {
+				if err != nil && !errors.Is(err, io.EOF) {
 					errs <- fmt.Errorf("reader %d iter %d: %w", id, i, err)
 					return
 				}
@@ -738,7 +738,7 @@ func TestFDConcurrentReadAndReadAt(t *testing.T) {
 				}
 				buf := make([]byte, readLen)
 				n, err := fd.ReadAt(buf, off)
-				if err != nil && err != io.EOF {
+				if err != nil && !errors.Is(err, io.EOF) {
 					errs <- fmt.Errorf("readat %d iter %d: %w", id, i, err)
 					return
 				}
@@ -776,7 +776,7 @@ func TestFDConcurrentWrite(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			data := bytes.Repeat([]byte{byte(id)}, chunkSize)
+			data := bytes.Repeat([]byte{byte(id % 256)}, chunkSize) //nolint:gosec // id ranges 0-7, modulo guarantees [0,255]
 			for i := 0; i < writesPerGoroutine; i++ {
 				n, err := fd.Write(data)
 				if err != nil {
