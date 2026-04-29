@@ -27,10 +27,11 @@ func init() {
 	shareDelCmd.Flags().BoolVar(&delFlags.force, "force", false, "Force delete even if members exist")
 }
 
-func runShareDel(_ *cobra.Command, args []string) error {
+func runShareDel(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := restoreSessionFn(ctx)
@@ -55,7 +56,7 @@ func runShareDel(_ *cobra.Command, args []string) error {
 	}
 
 	// Remove cache config entry if present.
-	cfg := cli.ConfigVar
+	cfg := rc.Config
 	if cfg != nil {
 		if _, ok := cfg.Shares[name]; ok {
 			delete(cfg.Shares, name)

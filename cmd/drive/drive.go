@@ -16,7 +16,7 @@ var driveCmd = &cobra.Command{
 				return err
 			}
 		}
-		cli.SetService("drive")
+		cli.SetServiceCmd(cmd, "drive")
 		return nil
 	},
 	Run: func(cmd *cobra.Command, _ []string) {

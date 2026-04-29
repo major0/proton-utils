@@ -541,13 +541,14 @@ func listRecursive(ctx context.Context, prefix string, entries []listEntry, opts
 	return nil
 }
 
-func runList(_ *cobra.Command, args []string) error {
+func runList(cmd *cobra.Command, args []string) error {
 	opts, err := resolveOpts()
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

@@ -30,8 +30,9 @@ func init() {
 	cli.BoolFlag(driveMvCmd.Flags(), &mvFlags.verbose, "verbose", false, "Print each move operation")
 }
 
-func runMv(_ *cobra.Command, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runMv(cmd *cobra.Command, args []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

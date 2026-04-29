@@ -31,8 +31,9 @@ func init() {
 	cli.BoolFlag(driveMkdirCmd.Flags(), &mkdirFlags.verbose, "verbose", false, "Print each directory as it is created")
 }
 
-func runMkdir(_ *cobra.Command, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runMkdir(cmd *cobra.Command, args []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

@@ -87,8 +87,9 @@ func printVolumeRows(volumes []drive.Volume, nameIndex map[string]string, shareI
 	}
 }
 
-func runDf(_ *cobra.Command, _ []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runDf(cmd *cobra.Command, _ []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

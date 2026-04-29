@@ -61,7 +61,7 @@ func init() {
 	cli.BoolFlag(f, &cpFlags.backup, "backup", false, "Backup existing local files as <name>~")
 }
 
-func runCp(_ *cobra.Command, args []string) error {
+func runCp(cmd *cobra.Command, args []string) error {
 	// Validate mutually exclusive flags.
 	if cpFlags.removeDest && cpFlags.backup {
 		return fmt.Errorf("cp: --remove-destination and --backup are mutually exclusive")
@@ -129,7 +129,8 @@ func runCp(_ *cobra.Command, args []string) error {
 
 	// Create context — the global timeout applies to session setup, not
 	// the bulk transfer which can run for minutes on large files.
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer setupCancel()
 
 	var dc *driveClient.Client

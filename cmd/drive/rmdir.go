@@ -31,8 +31,9 @@ func init() {
 	cli.BoolFlag(driveRmdirCmd.Flags(), &rmdirFlags.permanent, "permanent", false, "Permanently delete instead of moving to trash")
 }
 
-func runRmdir(_ *cobra.Command, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runRmdir(cmd *cobra.Command, args []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

@@ -41,8 +41,9 @@ func init() {
 	driveCmd.AddCommand(driveTrashEmptyCmd)
 }
 
-func runRm(_ *cobra.Command, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runRm(cmd *cobra.Command, args []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)
@@ -95,8 +96,9 @@ func rmOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 	return nil
 }
 
-func runEmptyTrash(_ *cobra.Command, _ []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runEmptyTrash(cmd *cobra.Command, _ []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

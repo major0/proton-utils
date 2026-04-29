@@ -62,16 +62,30 @@ func SetContext(cmd *cobra.Command, rc *RuntimeContext) {
 }
 
 // GetContext retrieves the RuntimeContext from a cobra command's context.
-// Panics if the context is missing — this indicates a programming error
-// (PersistentPreRunE was not called).
+// During the migration period, if no RuntimeContext is found (e.g. tests
+// that call RunE directly without PersistentPreRunE), a fallback is
+// constructed from the deprecated package-level globals. This will be
+// removed when the globals are deleted (task 27).
 func GetContext(cmd *cobra.Command) *RuntimeContext {
-	ctx := cmd.Context()
-	if ctx == nil {
-		panic("proton-cli: command has no context (PersistentPreRunE not called)")
+	if cmd != nil {
+		if ctx := cmd.Context(); ctx != nil {
+			if rc, ok := ctx.Value(contextKey{}).(*RuntimeContext); ok && rc != nil {
+				return rc
+			}
+		}
 	}
-	rc, ok := ctx.Value(contextKey{}).(*RuntimeContext)
-	if !ok || rc == nil {
-		panic("proton-cli: RuntimeContext not found in command context")
+	// Fallback: build from deprecated globals so existing tests that
+	// call RunE directly (sometimes with a nil cmd) continue to work.
+	return &RuntimeContext{
+		Timeout:            Timeout,
+		DebugHTTP:          DebugHTTP,
+		ProtonOpts:         ProtonOpts,
+		SessionStore:       SessionStoreVar,
+		AccountStore:       AccountStoreVar,
+		CookieStore:        CookieStoreVar,
+		Account:            Account,
+		ServiceName:        ServiceName,
+		AppVersionOverride: AppVersionOverride,
+		Config:             ConfigVar,
 	}
-	return rc
 }

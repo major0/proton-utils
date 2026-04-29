@@ -32,7 +32,7 @@ func parsePermissions(s string) (int, error) {
 	}
 }
 
-func runShareInvite(_ *cobra.Command, args []string) error {
+func runShareInvite(cmd *cobra.Command, args []string) error {
 	shareName := args[0]
 	email := args[1]
 
@@ -41,7 +41,8 @@ func runShareInvite(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := restoreSessionFn(ctx)

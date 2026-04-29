@@ -17,10 +17,11 @@ func init() {
 	shareShowCmd.RunE = runShareShow
 }
 
-func runShareShow(_ *cobra.Command, args []string) error {
+func runShareShow(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := restoreSessionFn(ctx)

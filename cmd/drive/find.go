@@ -131,8 +131,9 @@ func matchAll(preds []findPredicate, p string, l *drive.Link, depth int, entryNa
 	return true
 }
 
-func runFind(_ *cobra.Command, args []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+func runFind(cmd *cobra.Command, args []string) error {
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := cli.RestoreSession(ctx)

@@ -23,10 +23,11 @@ func init() {
 	shareCmd.AddCommand(shareAddCmd)
 }
 
-func runShareAdd(_ *cobra.Command, args []string) error {
+func runShareAdd(cmd *cobra.Command, args []string) error {
 	protonPath := args[0]
 
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := restoreSessionFn(ctx)

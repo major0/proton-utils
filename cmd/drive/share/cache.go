@@ -45,11 +45,12 @@ func prohibitedShareType(st proton.ShareType) bool {
 	return st != proton.ShareTypeStandard
 }
 
-func runShareCache(_ *cobra.Command, args []string) error {
+func runShareCache(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
 	// Resolve the share to check its type.
-	ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	rc := cli.GetContext(cmd)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 	defer cancel()
 
 	session, err := restoreSessionFn(ctx)
@@ -72,7 +73,7 @@ func runShareCache(_ *cobra.Command, args []string) error {
 			name, drive.FormatShareType(resolved.Metadata().Type))
 	}
 
-	cfg := cli.ConfigVar
+	cfg := rc.Config
 	if cfg == nil {
 		cfg = api.DefaultConfig()
 	}
