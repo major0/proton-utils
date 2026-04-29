@@ -629,3 +629,49 @@ func TestDfVolState(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterEntries_DuplicateNames_WithAlmostAll verifies that when -A is
+// set, filterEntries retains both an active and a trashed entry with the
+// same name. This is the regression test for the bug where `ls -A <file>`
+// only showed one of the two entries because Lookup stopped on the first
+// match. The fix is in resolveEntries which now scans the parent directory
+// for all name matches when -a/-A is set.
+func TestFilterEntries_DuplicateNames_WithAlmostAll(t *testing.T) {
+	makeEntry := func(name, id string, state proton.LinkState) listEntry {
+		pl := &proton.Link{
+			LinkID: id,
+			Type:   proton.LinkTypeFile,
+			State:  state,
+		}
+		l := drive.NewTestLink(pl, nil, nil, nil, name)
+		return listEntry{entry: drive.DirEntry{Link: l}, name: name}
+	}
+
+	entries := []listEntry{
+		makeEntry(".acidriprc", "active-id", proton.LinkStateActive),
+		makeEntry(".acidriprc", "trashed-id", proton.LinkStateTrashed),
+	}
+
+	// With -A: both should pass through.
+	got := filterEntries(entries, listOpts{almostAll: true})
+	if len(got) != 2 {
+		names := make([]string, len(got))
+		for i, e := range got {
+			names[i] = e.entry.Link.LinkID()
+		}
+		t.Fatalf("-A filter: got %d entries %v, want 2 (active + trashed)", len(got), names)
+	}
+
+	// Without -a/-A: only the active one should pass (trashed is hidden,
+	// and dot-files are hidden).
+	got = filterEntries(entries, listOpts{})
+	if len(got) != 0 {
+		t.Fatalf("default filter: got %d entries, want 0 (dot-file hidden)", len(got))
+	}
+
+	// With --trash: only the trashed one.
+	got = filterEntries(entries, listOpts{trash: true})
+	if len(got) != 1 || got[0].entry.Link.LinkID() != "trashed-id" {
+		t.Fatalf("--trash filter: got %d entries, want 1 (trashed only)", len(got))
+	}
+}

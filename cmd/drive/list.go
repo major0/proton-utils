@@ -263,13 +263,37 @@ func resolveEntries(ctx context.Context, dc *driveClient.Client, args []string, 
 			return nil, fmt.Errorf("%s: %w", arg, err)
 		}
 
-		if link.Type() == proton.LinkTypeFolder {
+		switch {
+		case link.Type() == proton.LinkTypeFolder:
 			dirEntries, err := collectEntries(ctx, link, opts)
 			if err != nil {
 				return nil, err
 			}
 			entries = append(entries, dirEntries...)
-		} else {
+
+		case opts.all || opts.almostAll:
+			// With -a/-A, a file argument may match multiple links
+			// with the same name (e.g. an active file and a trashed
+			// file). Scan the parent directory for all matches.
+			name, err := link.Name()
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", arg, err)
+			}
+			parent := link.Parent()
+			for de := range parent.Readdir(ctx) {
+				if de.Err != nil {
+					return nil, de.Err
+				}
+				entryName, err := de.EntryName()
+				if err != nil {
+					return nil, err
+				}
+				if entryName == name {
+					entries = append(entries, listEntry{entry: de, name: entryName})
+				}
+			}
+
+		default:
 			name, err := link.Name()
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", arg, err)
