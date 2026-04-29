@@ -76,9 +76,10 @@ var (
 	rootParams rootParamsType
 
 	rootCmd = &cobra.Command{
-		Use:   "proton [options] <command>",
-		Short: "proton is a command line interface for Proton services",
-		Long:  `proton is a command line interface for managing Proton services (Drive, Mail, etc.)`,
+		Use:              "proton [options] <command>",
+		Short:            "proton is a command line interface for Proton services",
+		Long:             `proton is a command line interface for managing Proton services (Drive, Mail, etc.)`,
+		TraverseChildren: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// Start profiling if --profile was set (no-op without build tag).
 			stopProfile := StartProfile()
