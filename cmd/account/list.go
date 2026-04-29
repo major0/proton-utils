@@ -13,8 +13,9 @@ var accountListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List stored accounts",
 	Long:  `List all accounts in the session store`,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		accounts, err := common.SessionList(cli.SessionStoreVar)
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		rc := cli.GetContext(cmd)
+		accounts, err := common.SessionList(rc.SessionStore)
 		if err != nil {
 			return err
 		}

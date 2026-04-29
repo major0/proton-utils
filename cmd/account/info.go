@@ -47,8 +47,9 @@ var accountInfoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "report account information",
 	Long:  `report information about currently logged in user`,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		rc := cli.GetContext(cmd)
+		ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 		defer cancel()
 
 		session, err := cli.RestoreSession(ctx)

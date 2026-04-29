@@ -103,17 +103,18 @@ func buildServiceStatus(svc api.ServiceConfig, cfg *api.SessionConfig, acctRefre
 	return ss
 }
 
-func runAccountStatus(_ *cobra.Command, _ []string) error {
+func runAccountStatus(cmd *cobra.Command, _ []string) error {
+	rc := cli.GetContext(cmd)
 	sessionFile := cli.ConfigFilePath()
 	if sessionFile != "" {
 		sessionFile = sessionFile[:len(sessionFile)-len("config.yaml")] + "sessions.db"
 	}
 
 	kr := internal.SystemKeyring{}
-	verbose := cli.DebugHTTP || false // verbose when -vv or higher
+	verbose := rc.DebugHTTP || false // verbose when -vv or higher
 
 	// Check if any account exists.
-	idx := internal.NewSessionStore(sessionFile, cli.Account, "*", kr)
+	idx := internal.NewSessionStore(sessionFile, rc.Account, "*", kr)
 	accounts, err := idx.List()
 	if err != nil {
 		return fmt.Errorf("reading session index: %w", err)
@@ -125,12 +126,12 @@ func runAccountStatus(_ *cobra.Command, _ []string) error {
 	}
 
 	// Load account session for staleness comparison.
-	acctStore := internal.NewSessionStore(sessionFile, cli.Account, "account", kr)
+	acctStore := internal.NewSessionStore(sessionFile, rc.Account, "account", kr)
 	acctCfg, _ := acctStore.Load()
 
 	// Also try wildcard for backward compat.
 	if acctCfg == nil {
-		wildcardStore := internal.NewSessionStore(sessionFile, cli.Account, "*", kr)
+		wildcardStore := internal.NewSessionStore(sessionFile, rc.Account, "*", kr)
 		acctCfg, _ = wildcardStore.Load()
 	}
 
@@ -159,7 +160,7 @@ func runAccountStatus(_ *cobra.Command, _ []string) error {
 			svc, _ = api.LookupService(svcName)
 		}
 
-		store := internal.NewSessionStore(sessionFile, cli.Account, svcName, kr)
+		store := internal.NewSessionStore(sessionFile, rc.Account, svcName, kr)
 		cfg, loadErr := store.Load()
 		if loadErr != nil {
 			cfg = nil
@@ -176,7 +177,7 @@ func runAccountStatus(_ *cobra.Command, _ []string) error {
 	}
 
 	// Human-readable output.
-	fmt.Fprintf(os.Stderr, "Account: %s\n\n", cli.Account)
+	fmt.Fprintf(os.Stderr, "Account: %s\n\n", rc.Account)
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %-40s  %-15s  %s\n",

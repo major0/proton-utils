@@ -27,8 +27,9 @@ var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Logout of Proton",
 	Long:  `Logout of Proton`,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		rc := cli.GetContext(cmd)
+		ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 		defer cancel()
 
 		session, err := cli.RestoreSession(ctx)
@@ -36,7 +37,7 @@ var authLogoutCmd = &cobra.Command{
 			return err
 		}
 
-		if err := common.SessionRevoke(ctx, session, cli.SessionStoreVar, authLogoutForce); err != nil {
+		if err := common.SessionRevoke(ctx, session, rc.SessionStore, authLogoutForce); err != nil {
 			return err
 		}
 

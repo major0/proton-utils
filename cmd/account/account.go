@@ -16,7 +16,7 @@ var accountCmd = &cobra.Command{
 				return err
 			}
 		}
-		cli.SetService("account")
+		cli.SetServiceCmd(cmd, "account")
 		return nil
 	},
 	Run: func(cmd *cobra.Command, _ []string) {

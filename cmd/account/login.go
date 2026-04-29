@@ -41,13 +41,14 @@ var authLoginCmd = &cobra.Command{
 	Use:   "login [options]",
 	Short: "login to Proton",
 	Long:  `login to Proton`,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		rc := cli.GetContext(cmd)
 		username, password, err := promptCredentials()
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), cli.Timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 		defer cancel()
 
 		if authLoginParams.cookieSession {
