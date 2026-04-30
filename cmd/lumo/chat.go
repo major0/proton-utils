@@ -8,6 +8,8 @@ import (
 
 	"github.com/major0/proton-cli/api/lumo"
 	lumoClient "github.com/major0/proton-cli/api/lumo/client"
+	"github.com/major0/proton-cli/api/shortid"
+	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -104,7 +106,11 @@ func runChatResume(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	convID := args[0]
+	convID, err := resolveConversationID(ctx, client, args[0])
+	if err != nil {
+		return err
+	}
+
 	conv, err := client.GetConversation(ctx, convID)
 	if err != nil {
 		return fmt.Errorf("loading conversation: %w", err)
@@ -199,22 +205,25 @@ func init() {
 }
 
 func runChatList(cmd *cobra.Command, _ []string) error {
+	rc := cli.GetContext(cmd)
 	ctx := cmd.Context()
 	client, err := restoreClient(cmd)
 	if err != nil {
 		return err
 	}
 
+	verbose := rc.Verbose >= 1
+
 	// When --space is set, list conversations in that space only.
 	// Otherwise, list all conversations across all spaces.
 	if chatSpaceFlag != "" {
-		return runChatListSpace(ctx, client, chatSpaceFlag)
+		return runChatListSpace(ctx, client, chatSpaceFlag, verbose)
 	}
-	return runChatListAll(ctx, client)
+	return runChatListAll(ctx, client, verbose)
 }
 
 // runChatListSpace lists conversations in a single space.
-func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID string) error {
+func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID string, verbose bool) error {
 	convs, err := client.ListConversations(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("listing conversations: %w", err)
@@ -227,10 +236,24 @@ func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID st
 		return fmt.Errorf("loading space: %w", err)
 	}
 
+	// Compute short conversation IDs.
+	short := map[string]string{}
+	if !verbose {
+		ids := make([]string, len(active))
+		for i, c := range active {
+			ids[i] = c.ID
+		}
+		short = shortid.Format(ids)
+	}
+
 	rows := make([]ConversationRow, len(active))
 	for i, c := range active {
+		displayID := c.ID
+		if s, ok := short[c.ID]; ok {
+			displayID = s
+		}
 		rows[i] = ConversationRow{
-			ID:         c.ID,
+			ID:         displayID,
 			Title:      decryptConversationTitle(c, dek, space.SpaceTag),
 			CreateTime: c.CreateTime,
 		}
@@ -241,7 +264,7 @@ func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID st
 }
 
 // runChatListAll lists conversations across all simple (non-project) spaces.
-func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
+func runChatListAll(ctx context.Context, client *lumoClient.Client, verbose bool) error {
 	pairs, err := client.ListAllConversations(ctx)
 	if err != nil {
 		return fmt.Errorf("listing conversations: %w", err)
@@ -288,6 +311,20 @@ func runChatListAll(ctx context.Context, client *lumoClient.Client) error {
 			Title:      decryptConversationTitle(conv, dek, p.Space.SpaceTag),
 			CreateTime: conv.CreateTime,
 		})
+	}
+
+	// Apply short IDs to rows.
+	if !verbose && len(rows) > 0 {
+		ids := make([]string, len(rows))
+		for i := range rows {
+			ids[i] = rows[i].ID
+		}
+		short := shortid.Format(ids)
+		for i := range rows {
+			if s, ok := short[rows[i].ID]; ok {
+				rows[i].ID = s
+			}
+		}
 	}
 
 	_, _ = fmt.Fprint(os.Stdout, FormatConversationList(rows))
@@ -337,10 +374,21 @@ func runChatDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	convID := args[0]
-
 	// Find the parent space so we can clean it up if it's a simple 1:1 space.
 	spaces, _ := client.ListSpaces(ctx)
+
+	// Resolve short conversation ID against all conversations.
+	var allConvIDs []string
+	for _, s := range spaces {
+		for _, c := range s.Conversations {
+			allConvIDs = append(allConvIDs, c.ID)
+		}
+	}
+	convID, err := shortid.Resolve(allConvIDs, args[0])
+	if err != nil {
+		return fmt.Errorf("resolving conversation: %w", err)
+	}
+
 	var parentSpace *lumo.Space
 	for i := range spaces {
 		for _, c := range spaces[i].Conversations {
@@ -370,4 +418,24 @@ func runChatDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// resolveConversationID resolves a short or full conversation ID against
+// all conversations across all spaces.
+func resolveConversationID(ctx context.Context, client *lumoClient.Client, input string) (string, error) {
+	pairs, err := client.ListAllConversations(ctx)
+	if err != nil {
+		return "", fmt.Errorf("loading conversations: %w", err)
+	}
+
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.Conversation.ID
+	}
+
+	resolved, err := shortid.Resolve(ids, input)
+	if err != nil {
+		return "", fmt.Errorf("resolving conversation: %w", err)
+	}
+	return resolved, nil
 }

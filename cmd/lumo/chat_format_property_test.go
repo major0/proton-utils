@@ -77,19 +77,20 @@ func TestFormatConversationList_Property(t *testing.T) {
 			rows[i] = ConversationRow{
 				ID:         rapid.StringMatching(`[a-zA-Z0-9]{8,16}`).Draw(t, "id"),
 				Title:      rapid.StringMatching(`[a-zA-Z0-9 ]{0,20}`).Draw(t, "title"),
-				CreateTime: rapid.StringMatching(`2024-0[1-9]-[012][0-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
+				CreateTime: rapid.StringMatching(`2024-0[1-9]-[0][1-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
 			}
 		}
 
 		result := FormatConversationList(rows)
 
-		// Each row's ID and creation time must appear.
+		// Each row's ID and creation time must appear (formatted to local time).
 		for _, r := range rows {
 			if !strings.Contains(result, r.ID) {
 				t.Fatalf("output missing ID %q", r.ID)
 			}
-			if !strings.Contains(result, r.CreateTime) {
-				t.Fatalf("output missing CreateTime %q", r.CreateTime)
+			formatted := fmtLocalTime(r.CreateTime)
+			if !strings.Contains(result, formatted) {
+				t.Fatalf("output missing formatted CreateTime %q (from %q)", formatted, r.CreateTime)
 			}
 			title := r.Title
 			if title == "" {
@@ -148,11 +149,11 @@ func TestFilterDeletedConversations_Property(t *testing.T) {
 				ID:              rapid.StringMatching(`[a-zA-Z0-9]{8,16}`).Draw(t, "id"),
 				SpaceID:         rapid.StringMatching(`[a-zA-Z0-9]{8}`).Draw(t, "space_id"),
 				ConversationTag: rapid.StringMatching(`[a-zA-Z0-9]{8}`).Draw(t, "tag"),
-				CreateTime:      rapid.StringMatching(`2024-0[1-9]-[012][0-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
+				CreateTime:      rapid.StringMatching(`2024-0[1-9]-[0][1-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
 			}
 			// Randomly mark some as deleted.
 			if rapid.Bool().Draw(t, "deleted") {
-				convs[i].DeleteTime = rapid.StringMatching(`2024-0[1-9]-[012][0-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "delete_time")
+				convs[i].DeleteTime = rapid.StringMatching(`2024-0[1-9]-[0][1-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "delete_time")
 			}
 		}
 
@@ -203,7 +204,7 @@ func TestFormatHistory_Property(t *testing.T) {
 				ConversationID: rapid.StringMatching(`[a-zA-Z0-9]{8}`).Draw(t, "conv_id"),
 				MessageTag:     rapid.StringMatching(`[a-zA-Z0-9]{8}`).Draw(t, "tag"),
 				Role:           role,
-				CreateTime:     rapid.StringMatching(`2024-0[1-9]-[012][0-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
+				CreateTime:     rapid.StringMatching(`2024-0[1-9]-[0][1-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(t, "create_time"),
 			}
 			contents[i] = content
 		}

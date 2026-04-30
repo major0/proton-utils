@@ -21,7 +21,7 @@ func TestFormatSpaceList_Property(t *testing.T) {
 		for i := range rows {
 			rows[i] = SpaceRow{
 				ID:         rapid.StringMatching(`[a-zA-Z0-9]{4,16}`).Draw(rt, "id"),
-				CreateTime: rapid.StringMatching(`2024-0[1-9]-[012][0-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(rt, "create_time"),
+				CreateTime: rapid.StringMatching(`2024-0[1-9]-[0][1-9]T[01][0-9]:[0-5][0-9]:[0-5][0-9]Z`).Draw(rt, "create_time"),
 				ConvCount:  rapid.IntRange(0, 100).Draw(rt, "conv_count"),
 				Name:       rapid.StringMatching(`[a-zA-Z0-9 ]{1,16}`).Draw(rt, "name"),
 			}
@@ -29,13 +29,15 @@ func TestFormatSpaceList_Property(t *testing.T) {
 
 		output := FormatSpaceList(rows)
 
-		// Every row's ID, CreateTime, and Name must appear in the output.
+		// Every row's ID and Name must appear in the output.
+		// CreateTime is formatted to local time, so check the formatted form.
 		for _, r := range rows {
 			if !strings.Contains(output, r.ID) {
 				rt.Fatalf("output missing ID %q", r.ID)
 			}
-			if !strings.Contains(output, r.CreateTime) {
-				rt.Fatalf("output missing CreateTime %q", r.CreateTime)
+			formatted := fmtLocalTime(r.CreateTime)
+			if !strings.Contains(output, formatted) {
+				rt.Fatalf("output missing formatted CreateTime %q (from %q)", formatted, r.CreateTime)
 			}
 			if !strings.Contains(output, r.Name) {
 				rt.Fatalf("output missing Name %q", r.Name)
@@ -50,16 +52,25 @@ func TestFormatSpaceList_Property(t *testing.T) {
 			rt.Fatalf("got %d data lines, want %d", len(dataLines), n)
 		}
 
-		// Extract CreateTime from each data line — it's the second
-		// column, starting at a fixed offset after the 36-char ID + 2 spaces.
+		// Extract CreateTime from each data line. The ID column width
+		// is dynamic — compute it from the longest ID in the set.
+		maxIDLen := 2
+		for _, r := range rows {
+			if len(r.ID) > maxIDLen {
+				maxIDLen = len(r.ID)
+			}
+		}
+		idOffset := maxIDLen + 2 // ID column + 2 spaces
+
+		// Extract formatted CreateTime from each data line.
+		// The ID column width is dynamic, followed by 2 spaces,
+		// then the 19-char formatted timestamp.
 		var times []string
 		for _, line := range dataLines {
-			// ID is padded to 36 chars + 2 spaces = offset 38.
-			// CreateTime is padded to 20 chars.
-			if len(line) < 58 {
+			if len(line) < idOffset+19 {
 				rt.Fatalf("line too short: %q", line)
 			}
-			ct := strings.TrimSpace(line[38:58])
+			ct := strings.TrimSpace(line[idOffset : idOffset+19])
 			times = append(times, ct)
 		}
 		for i := 1; i < len(times); i++ {

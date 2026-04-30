@@ -4,10 +4,22 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/major0/proton-cli/api/lumo"
 	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 )
+
+// fmtLocalTime parses an ISO 8601 timestamp and formats it in the
+// user's local timezone as "YYYY-MM-DD HH:MM:SS". Returns the raw
+// string unchanged if parsing fails.
+func fmtLocalTime(iso string) string {
+	t, err := time.Parse(time.RFC3339, iso)
+	if err != nil {
+		return iso
+	}
+	return t.Local().Format("2006-01-02 15:04:05")
+}
 
 // ConversationRow is a display-only struct for the conversation list table.
 // Title is decrypted on demand and discarded after rendering.
@@ -81,14 +93,22 @@ func FormatConversationList(rows []ConversationRow) string {
 		return sorted[i].CreateTime > sorted[j].CreateTime
 	})
 
+	// Compute ID column width from the longest ID in the set.
+	idWidth := 2 // minimum "ID" header
+	for _, r := range sorted {
+		if len(r.ID) > idWidth {
+			idWidth = len(r.ID)
+		}
+	}
+
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-36s  %-20s  %s\n", "ID", "CREATED", "TITLE")
+	fmt.Fprintf(&b, "%-*s  %-19s  %s\n", idWidth, "ID", "CREATED", "TITLE")
 	for _, r := range sorted {
 		title := r.Title
 		if title == "" {
 			title = "Untitled"
 		}
-		fmt.Fprintf(&b, "%-36s  %-20s  %s\n", r.ID, r.CreateTime, title)
+		fmt.Fprintf(&b, "%-*s  %-19s  %s\n", idWidth, r.ID, fmtLocalTime(r.CreateTime), title)
 	}
 	return b.String()
 }

@@ -9,6 +9,8 @@ import (
 
 	"github.com/major0/proton-cli/api/lumo"
 	lumoClient "github.com/major0/proton-cli/api/lumo/client"
+	"github.com/major0/proton-cli/api/shortid"
+	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +50,7 @@ func init() {
 }
 
 func runSpaceList(cmd *cobra.Command, _ []string) error {
+	rc := cli.GetContext(cmd)
 	ctx := cmd.Context()
 	client, err := restoreClient(cmd)
 	if err != nil {
@@ -88,6 +91,21 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 	}
 
 	rows := buildSpaceRows(ctx, client, spaces)
+
+	// Apply short IDs.
+	if rc.Verbose < 1 && len(rows) > 0 {
+		ids := make([]string, len(rows))
+		for i := range rows {
+			ids[i] = rows[i].ID
+		}
+		short := shortid.Format(ids)
+		for i := range rows {
+			if s, ok := short[rows[i].ID]; ok {
+				rows[i].ID = s
+			}
+		}
+	}
+
 	_, _ = fmt.Fprint(os.Stdout, FormatSpaceList(rows))
 	return nil
 }
@@ -153,9 +171,9 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 	})
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-12s  %-20s  %s\n", "TYPE", "CREATED", "ID")
+	fmt.Fprintf(&b, "%-12s  %-19s  %s\n", "TYPE", "CREATED", "ID")
 	for _, v := range verified {
-		fmt.Fprintf(&b, "%-12s  %-20s  %s\n", v.spaceType, v.space.CreateTime, v.space.ID)
+		fmt.Fprintf(&b, "%-12s  %-19s  %s\n", v.spaceType, fmtLocalTime(v.space.CreateTime), v.space.ID)
 	}
 	fmt.Fprintf(&b, "\n%d empty spaces found out of %d total.\n", len(verified), total)
 
@@ -346,10 +364,18 @@ func FormatSpaceList(rows []SpaceRow) string {
 		return sorted[i].CreateTime > sorted[j].CreateTime
 	})
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "%-36s  %-20s  %5s  %s\n", "ID", "CREATED", "CONVS", "NAME")
+	// Compute ID column width from the longest ID in the set.
+	idWidth := 2 // minimum "ID" header
 	for _, r := range sorted {
-		fmt.Fprintf(&b, "%-36s  %-20s  %5d  %s\n", r.ID, r.CreateTime, r.ConvCount, r.Name)
+		if len(r.ID) > idWidth {
+			idWidth = len(r.ID)
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-*s  %-19s  %5s  %s\n", idWidth, "ID", "CREATED", "CONVS", "NAME")
+	for _, r := range sorted {
+		fmt.Fprintf(&b, "%-*s  %-19s  %5d  %s\n", idWidth, r.ID, fmtLocalTime(r.CreateTime), r.ConvCount, r.Name)
 	}
 	return b.String()
 }
@@ -376,15 +402,24 @@ func runSpaceDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var spaces []lumo.Space
-	if !spaceForceDelete {
-		spaces, err = client.ListSpaces(ctx)
-		if err != nil {
-			return fmt.Errorf("checking spaces: %w", err)
-		}
+	// Always load spaces for short ID resolution.
+	spaces, err := client.ListSpaces(ctx)
+	if err != nil {
+		return fmt.Errorf("listing spaces: %w", err)
 	}
 
-	for _, spaceID := range args {
+	// Build ID set for short ID resolution.
+	spaceIDs := make([]string, len(spaces))
+	for i, s := range spaces {
+		spaceIDs[i] = s.ID
+	}
+
+	for _, arg := range args {
+		spaceID, resolveErr := shortid.Resolve(spaceIDs, arg)
+		if resolveErr != nil {
+			return fmt.Errorf("resolving space: %w", resolveErr)
+		}
+
 		if !spaceForceDelete {
 			for _, s := range spaces {
 				if s.ID == spaceID {
@@ -475,6 +510,17 @@ func runSpaceConfig(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("listing spaces: %w", err)
 	}
+
+	// Resolve short ID.
+	spaceIDs := make([]string, len(spaces))
+	for i, s := range spaces {
+		spaceIDs[i] = s.ID
+	}
+	spaceID, err = shortid.Resolve(spaceIDs, spaceID)
+	if err != nil {
+		return fmt.Errorf("resolving space: %w", err)
+	}
+
 	var space *lumo.Space
 	for i := range spaces {
 		if spaces[i].ID == spaceID {
