@@ -2,11 +2,13 @@ package driveCmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
+	"github.com/major0/proton-cli/api/shortid"
 )
 
 // parseProtonURI parses a proton:// URI into its share and path components.
@@ -98,6 +100,22 @@ func ResolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath stri
 
 	share, err := dc.ResolveShareComponent(ctx, sharePart)
 	if err != nil {
+		// Fallback: try short ID prefix resolution against share IDs.
+		if errors.Is(err, drive.ErrFileNotFound) {
+			share, fallbackErr := resolveShareByShortID(ctx, dc, sharePart)
+			if fallbackErr == nil {
+				err = nil
+				_ = err
+				if pathPart == "" {
+					return share.Link, share, nil
+				}
+				link, linkErr := share.Link.ResolvePath(ctx, pathPart, true)
+				if linkErr != nil {
+					return nil, nil, fmt.Errorf("resolve %s: %w", rawPath, linkErr)
+				}
+				return link, share, nil
+			}
+		}
 		return nil, nil, err
 	}
 
@@ -111,4 +129,26 @@ func ResolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath stri
 	}
 
 	return link, share, nil
+}
+
+// resolveShareByShortID attempts to resolve a share component as a short
+// ID prefix. Loads all share metadata, collects share IDs, and uses
+// shortid.Resolve to find the unique match.
+func resolveShareByShortID(ctx context.Context, dc *driveClient.Client, prefix string) (*drive.Share, error) {
+	metas, err := dc.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]string, len(metas))
+	for i, m := range metas {
+		ids[i] = m.ShareID
+	}
+
+	fullID, err := shortid.Resolve(ids, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	return dc.GetShare(ctx, fullID)
 }

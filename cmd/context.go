@@ -50,6 +50,10 @@ type RuntimeContext struct {
 
 	// SessionFile is the resolved path to the sessions.db file.
 	SessionFile string
+
+	// Verbose is the -v count from the root command. 0 = default (short IDs),
+	// >= 1 = verbose output (full IDs, extra detail).
+	Verbose int
 }
 
 // SetContext stores a RuntimeContext on the cobra command's context.
@@ -87,5 +91,6 @@ func GetContext(cmd *cobra.Command) *RuntimeContext {
 		ServiceName:        ServiceName,
 		AppVersionOverride: AppVersionOverride,
 		Config:             ConfigVar,
+		Verbose:            rootParams.Verbose,
 	}
 }

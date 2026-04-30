@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -42,11 +43,26 @@ func runShareList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Collect share IDs for short ID formatting.
+	ids := make([]string, len(shares))
+	for i := range shares {
+		ids[i] = shares[i].Metadata().ShareID
+	}
+	short := map[string]string{}
+	if rc.Verbose < 1 {
+		short = shortid.Format(ids)
+	}
+
 	for i := range shares {
 		name, _ := shares[i].GetName(ctx)
 		meta := shares[i].Metadata()
-		fmt.Printf("%-8s  %s  %s\n",
+		displayID := meta.ShareID
+		if s, ok := short[meta.ShareID]; ok {
+			displayID = s
+		}
+		fmt.Printf("%-8s  %-10s  %s  %s\n",
 			drive.FormatShareType(meta.Type),
+			displayID,
 			fmtTime(meta.CreationTime),
 			name,
 		)

@@ -151,6 +151,7 @@ var (
 				AppVersionOverride: AppVersionOverride,
 				Config:             cfg,
 				SessionFile:        rootParams.SessionFile,
+				Verbose:            rootParams.Verbose,
 			}
 			SetContext(cmd, rc)
 

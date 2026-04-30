@@ -10,6 +10,7 @@ import (
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
+	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -45,14 +46,16 @@ func buildNameIndex(ctx context.Context, dc *driveClient.Client, volumes []drive
 }
 
 // printVolumeRows prints the df-style table rows for each volume.
-func printVolumeRows(volumes []drive.Volume, nameIndex map[string]string, shareIndex map[string]proton.ShareMetadata) {
+func printVolumeRows(volumes []drive.Volume, nameIndex map[string]string, shareIndex map[string]proton.ShareMetadata, shortIDs map[string]string) {
 	for _, v := range volumes {
 		label := nameIndex[v.ProtonVolume.VolumeID]
 		if label == "" {
 			if s, ok := shareIndex[v.ProtonVolume.Share.ShareID]; ok {
 				label = drive.FormatShareType(s.Type)
+			} else if s, ok := shortIDs[v.ProtonVolume.VolumeID]; ok {
+				label = s
 			} else {
-				label = v.ProtonVolume.VolumeID[:12] + "..."
+				label = v.ProtonVolume.VolumeID
 			}
 		}
 
@@ -119,6 +122,16 @@ func runDf(cmd *cobra.Command, _ []string) error {
 
 	nameIndex := buildNameIndex(ctx, dc, volumes)
 
+	// Compute short volume IDs for fallback labels.
+	volIDs := make([]string, len(volumes))
+	for i, v := range volumes {
+		volIDs[i] = v.ProtonVolume.VolumeID
+	}
+	shortVolIDs := map[string]string{}
+	if rc.Verbose < 1 {
+		shortVolIDs = shortid.Format(volIDs)
+	}
+
 	// Account-level quota from the user object.
 	acct := account.NewClient(session)
 	user, err := acct.GetUser(ctx)
@@ -129,7 +142,7 @@ func runDf(cmd *cobra.Command, _ []string) error {
 	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
 		"Volume", "Size", "Used", "Avail", "Use%", "Down", "Up", "State")
 
-	printVolumeRows(volumes, nameIndex, shareIndex)
+	printVolumeRows(volumes, nameIndex, shareIndex, shortVolIDs)
 
 	// Account total line.
 	acctSize := units.BytesSize(float64(user.MaxSpace))

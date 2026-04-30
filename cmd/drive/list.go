@@ -13,6 +13,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
+	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -69,6 +70,7 @@ type listOpts struct {
 	trash     bool
 	classify  bool
 	inode     bool
+	shortIDs  map[string]string // full LinkID → short display ID; nil = use full IDs
 }
 
 var listFlags struct {
@@ -434,11 +436,19 @@ func rawName(name string, l *drive.Link, classify bool) string {
 	return name
 }
 
+// displayID returns the short ID for a link if available, otherwise the full LinkID.
+func displayID(linkID string, opts listOpts) string {
+	if s, ok := opts.shortIDs[linkID]; ok {
+		return s
+	}
+	return linkID
+}
+
 func printLong(e listEntry, opts listOpts) {
 	l := e.entry.Link
 	prefix := ""
 	if opts.inode {
-		prefix = fmt.Sprintf("%s ", l.LinkID())
+		prefix = fmt.Sprintf("%s ", displayID(l.LinkID(), opts))
 	}
 	fmt.Printf("%s%c%-9s %8s %s %s\n",
 		prefix,
@@ -460,7 +470,7 @@ func printEntries(entries []listEntry, opts listOpts) {
 		for _, e := range entries {
 			prefix := ""
 			if opts.inode {
-				prefix = fmt.Sprintf("%s ", e.entry.Link.LinkID())
+				prefix = fmt.Sprintf("%s ", displayID(e.entry.Link.LinkID(), opts))
 			}
 			fmt.Println(prefix + colorName(e.name, e.entry.Link, opts.color, opts.classify))
 		}
@@ -486,11 +496,11 @@ func printEntryColumns(entries []listEntry, across bool, opts listOpts) {
 	for i, e := range entries {
 		raw := rawName(e.name, e.entry.Link, opts.classify)
 		if opts.inode {
-			raw = e.entry.Link.LinkID() + " " + raw
+			raw = displayID(e.entry.Link.LinkID(), opts) + " " + raw
 		}
 		display := colorName(e.name, e.entry.Link, opts.color, opts.classify)
 		if opts.inode {
-			display = e.entry.Link.LinkID() + " " + display
+			display = displayID(e.entry.Link.LinkID(), opts) + " " + display
 		}
 		cols[i] = colEntry{raw: raw, display: display}
 		if len(raw) > maxLen {
@@ -594,6 +604,16 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	entries = filterEntries(entries, opts)
 	sortEntries(entries, opts)
+
+	// Compute short IDs for inode display when not verbose.
+	if opts.inode && rc.Verbose < 1 {
+		ids := make([]string, len(entries))
+		for i, e := range entries {
+			ids[i] = e.entry.Link.LinkID()
+		}
+		opts.shortIDs = shortid.Format(ids)
+	}
+
 	printEntries(entries, opts)
 
 	if opts.recursive {

@@ -172,7 +172,7 @@ func TestPrintVolumeRows(t *testing.T) {
 	nameIndex := map[string]string{"vol-123456789012": "My Drive"}
 	shareIndex := map[string]proton.ShareMetadata{}
 
-	printVolumeRows(volumes, nameIndex, shareIndex)
+	printVolumeRows(volumes, nameIndex, shareIndex, nil)
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -216,7 +216,7 @@ func TestPrintVolumeRowsUnlimited(t *testing.T) {
 		"share-2": {ShareID: "share-2", Type: proton.ShareTypeMain},
 	}
 
-	printVolumeRows(volumes, nameIndex, shareIndex)
+	printVolumeRows(volumes, nameIndex, shareIndex, nil)
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -254,7 +254,7 @@ func TestPrintVolumeRowsFallbackLabel(t *testing.T) {
 	nameIndex := map[string]string{}
 	shareIndex := map[string]proton.ShareMetadata{}
 
-	printVolumeRows(volumes, nameIndex, shareIndex)
+	printVolumeRows(volumes, nameIndex, shareIndex, nil)
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -263,9 +263,9 @@ func TestPrintVolumeRowsFallbackLabel(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
-	// Should contain truncated volume ID.
-	if !contains(output, "vol-abcdef12...") {
-		t.Errorf("output should contain truncated volume ID: %q", output)
+	// Should contain full volume ID (no short ID map provided).
+	if !contains(output, "vol-abcdef123456789") {
+		t.Errorf("output should contain full volume ID: %q", output)
 	}
 }
 
