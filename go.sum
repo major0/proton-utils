@@ -98,8 +98,8 @@ github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80 h1:6Yzfa6GP0rIo/kUL
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
 github.com/leodido/go-urn v1.4.0 h1:WT9HwE9SGECu3lg4d/dIA+jxlljEa1/ffXKmRjqdmIQ=
 github.com/leodido/go-urn v1.4.0/go.mod h1:bvxc+MVxLKB4z00jd1z+Dvzr47oO32F/QSNjSBOlFxI=
-github.com/major0/go-proton-api v0.0.0-20260420145158-f2e3436a5a33 h1:HdStx1XBT+aINI7mWMJnehtkS/s8/t6nmgzaYzEaHCg=
-github.com/major0/go-proton-api v0.0.0-20260420145158-f2e3436a5a33/go.mod h1:6h4srnnpuLArROyfFDIfL+gQsXHqBUrukQN2i7WS04k=
+github.com/major0/go-proton-api v0.4.1-0.20260425213554-b80ed834ca79 h1:3dDTpLKBuJFERnhZ+LoQKMZR8nJXdegpWrKViIZI47w=
+github.com/major0/go-proton-api v0.4.1-0.20260425213554-b80ed834ca79/go.mod h1:HZwQZFL5eTm8JglUXwooEW0EgSjxC9rb866FJPCxR1Q=
 github.com/major0/optargs v0.4.2 h1:+oDmQfrqilO6rMnqBODqh7xUfOpdLowdQm08a/r1MLM=
 github.com/major0/optargs v0.4.2/go.mod h1:umQbh05Y+3FKzyeJMORwEXRATO3cvSS8lZdCQJwBFJY=
 github.com/major0/optargs/pflag v0.5.0 h1:8BLWBx0dZIARc56AtfNzbZPSN+S4E55sJ3M4xx1WQng=

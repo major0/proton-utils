@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/ProtonMail/go-proton-api v0.4.0
+	github.com/ProtonMail/go-srp v0.0.7
 	github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
 	github.com/chromedp/chromedp v0.15.1
 	github.com/docker/go-units v0.5.0
@@ -14,7 +15,6 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.49.0
-	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
 	pgregory.net/rapid v1.2.0
@@ -25,7 +25,6 @@ require (
 	github.com/ProtonMail/gluon v0.17.1-0.20260225115619-c0f05c033a4a // indirect
 	github.com/ProtonMail/go-crypto v1.4.1-proton // indirect
 	github.com/ProtonMail/go-mime v0.0.0-20230322103455-7d82a3887f2f // indirect
-	github.com/ProtonMail/go-srp v0.0.7 // indirect
 	github.com/PuerkitoBio/goquery v1.12.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bradenaw/juniper v0.15.3 // indirect
@@ -51,13 +50,14 @@ require (
 	gitlab.com/c0b/go-ordered-json v0.0.0-20201030195603-febf46534d5a // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 )
 
 replace (
 	github.com/ProtonMail/go-crypto => github.com/ProtonMail/go-crypto v1.1.5-proton
-	github.com/ProtonMail/go-proton-api => ../go-proton-api.git
+	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.4.1-0.20260425213554-b80ed834ca79
 	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
 	github.com/go-resty/resty/v2 => github.com/LBeernaertProton/resty/v2 v2.0.0-20231129100320-dddf8030d93a
 	github.com/spf13/pflag => github.com/major0/optargs/pflag v0.5.0
