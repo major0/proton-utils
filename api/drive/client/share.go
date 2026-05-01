@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -104,7 +103,7 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 		return nil, err
 	}
 
-	pLink, err := c.Session.Client.GetLink(ctx, pShare.ShareID, pShare.LinkID)
+	pLink, err := c.GetCachedLink(ctx, pShare.ShareID, pShare.LinkID)
 	if err != nil {
 		return nil, err
 	}
@@ -119,12 +118,6 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 
 	// Apply per-share cache config (may construct objectCache).
 	c.applyShareConfig(share)
-
-	// Populate objectCache with the root link (best-effort, no-op when nil).
-	// Done after applyShareConfig so the diskv instance exists.
-	if data, err := json.Marshal(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, sanitizeKey(pLink.LinkID), data)
-	}
 
 	return share, nil
 }

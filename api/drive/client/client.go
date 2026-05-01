@@ -115,6 +115,34 @@ func (c *Client) getLink(linkID string) *drive.Link {
 	return c.linkTable[linkID]
 }
 
+// GetCachedLink fetches a raw proton.Link by ID, checking the object cache
+// first and populating it on a miss. This is the single chokepoint for
+// all link fetches from the API — every code path that needs a
+// proton.Link should call this instead of c.Session.Client.GetLink.
+func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (proton.Link, error) {
+	// ObjectCache hit — return without API call.
+	if data, err := objectCacheRead(c.objectCache, sanitizeKey(linkID)); err == nil && data != nil {
+		var pLink proton.Link
+		if err := json.Unmarshal(data, &pLink); err == nil {
+			return pLink, nil
+		}
+		// Unmarshal failed — fall through to API fetch.
+	}
+
+	// API fetch.
+	pLink, err := c.Session.Client.GetLink(ctx, shareID, linkID)
+	if err != nil {
+		return proton.Link{}, err
+	}
+
+	// Populate objectCache (no-op when nil).
+	if data, err := json.Marshal(pLink); err == nil {
+		_ = objectCacheWrite(c.objectCache, sanitizeKey(linkID), data)
+	}
+
+	return pLink, nil
+}
+
 // putLink inserts a *Link into the table. Takes an exclusive write lock.
 // Lazily initializes the table if needed (for Clients not constructed
 // via NewClient, e.g. in tests).
