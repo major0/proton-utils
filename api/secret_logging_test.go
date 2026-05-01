@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -122,10 +123,10 @@ func TestSecretLogging_LogCookies(t *testing.T) {
 	defer cleanup()
 
 	jar, _ := cookiejar.New(nil)
-	apiURL := apiCookieURL()
-	jar.SetCookies(apiURL, []*http.Cookie{
-		{Name: "Session-Id", Value: sentinelCookie},
-		{Name: "AUTH", Value: sentinelAccess},
+	protonURL, _ := url.Parse("https://proton.me/")
+	jar.SetCookies(protonURL, []*http.Cookie{
+		{Name: "Session-Id", Value: sentinelCookie, Domain: "proton.me", Path: "/"},
+		{Name: "AUTH", Value: sentinelAccess, Domain: "proton.me", Path: "/api/"},
 	})
 
 	session := &Session{cookieJar: jar}

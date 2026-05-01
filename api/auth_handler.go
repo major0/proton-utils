@@ -30,7 +30,7 @@ func NewAuthHandler(store SessionStore, session *Session) proton.AuthHandler {
 		config.UID = auth.UID
 		config.AccessToken = auth.AccessToken
 		config.RefreshToken = auth.RefreshToken
-		config.Cookies = serializeCookies(session.cookieJar, apiCookieURL())
+		config.Cookies = serializeCookies(session.cookieJar, cookieQueryURL(session.BaseURL))
 		config.LastRefresh = time.Now()
 
 		if err := store.Save(config); err != nil {

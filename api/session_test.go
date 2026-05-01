@@ -546,9 +546,13 @@ func TestSessionList(t *testing.T) {
 // TestSessionSave verifies that SessionSave persists credentials and cookies.
 func TestSessionSave(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
-	apiURL := apiCookieURL()
-	jar.SetCookies(apiURL, []*http.Cookie{
-		{Name: "Session-Id", Value: "abc123"},
+	// Set cookies via the proton.me root so they match any *.proton.me query,
+	// mirroring how loadProtonCookies injects cookies in production.
+	protonURL, _ := url.Parse("https://proton.me/")
+	jar.SetCookies(protonURL, []*http.Cookie{
+		{Name: "Session-Id", Value: "abc123", Domain: "proton.me", Path: "/"},
+		{Name: "AUTH-uid1", Value: "authval", Domain: "proton.me", Path: "/api/"},
+		{Name: "REFRESH-uid1", Value: "refval", Domain: "proton.me", Path: "/api/auth/refresh"},
 	})
 
 	session := &Session{
@@ -557,6 +561,7 @@ func TestSessionSave(t *testing.T) {
 			AccessToken:  "at-1",
 			RefreshToken: "rt-1",
 		},
+		BaseURL:   "https://account.proton.me/api",
 		cookieJar: jar,
 	}
 
@@ -584,6 +589,17 @@ func TestSessionSave(t *testing.T) {
 	}
 	if len(cfg.Cookies) == 0 {
 		t.Fatal("Cookies should be persisted")
+	}
+	// Verify REFRESH cookie is included (it has path=/api/auth/refresh).
+	hasRefresh := false
+	for _, c := range cfg.Cookies {
+		if c.Name == "REFRESH-uid1" {
+			hasRefresh = true
+			break
+		}
+	}
+	if !hasRefresh {
+		t.Fatal("REFRESH cookie should be persisted")
 	}
 }
 
