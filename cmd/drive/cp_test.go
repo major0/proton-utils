@@ -387,6 +387,71 @@ func TestResolvedEndpointBasename(t *testing.T) {
 	}
 }
 
+// TestProtonDestNameResolution verifies that when copying a local file
+// to an explicit Proton destination name, the destination filename comes
+// from the user-specified path, not the source basename.
+//
+// Regression: cp ../tmp/test-file-128M.bin proton://test1/testfile-1.bin
+// was using "test-file-128M.bin" instead of "testfile-1.bin" because
+// isDir() returned true for the parent directory link.
+func TestProtonDestNameResolution(t *testing.T) {
+	tests := []struct {
+		name     string
+		dstRaw   string
+		dstIsDir bool
+		srcBase  string
+		wantName string
+	}{
+		{
+			name:     "explicit dest filename uses dest basename",
+			dstRaw:   "proton://test1/testfile-1.bin",
+			dstIsDir: false,
+			srcBase:  "test-file-128M.bin",
+			wantName: "testfile-1.bin",
+		},
+		{
+			name:     "dest is existing directory uses source basename",
+			dstRaw:   "proton://test1",
+			dstIsDir: true,
+			srcBase:  "test-file-128M.bin",
+			wantName: "test-file-128M.bin",
+		},
+		{
+			name:     "dest is directory with trailing slash",
+			dstRaw:   "proton://test1/",
+			dstIsDir: true,
+			srcBase:  "myfile.txt",
+			wantName: "myfile.txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dstEp := &resolvedEndpoint{
+				pathType:  PathProton,
+				raw:       tt.dstRaw,
+				destIsDir: tt.dstIsDir,
+			}
+
+			// Simulate what runCp does: if dest is a directory,
+			// append source basename to raw.
+			if dstEp.isDir() {
+				dstEp = &resolvedEndpoint{
+					pathType:  dstEp.pathType,
+					raw:       dstEp.raw + "/" + tt.srcBase,
+					destIsDir: false,
+				}
+			}
+
+			// buildCopyJob uses filepath.Base(dst.raw) for the name.
+			got := filepath.Base(dstEp.raw)
+			if got != tt.wantName {
+				t.Errorf("dest name = %q, want %q", got, tt.wantName)
+			}
+		})
+	}
+}
+
 func TestConflictHandling(t *testing.T) {
 	t.Run("default refuses to overwrite existing file", func(t *testing.T) {
 		resetFlags()

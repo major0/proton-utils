@@ -72,7 +72,20 @@ func TestResolvedEndpointIsDirProton(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "proton folder link",
+			name: "proton folder link with destIsDir",
+			ep: resolvedEndpoint{
+				pathType:  PathProton,
+				destIsDir: true,
+				link: drive.NewTestLink(&proton.Link{
+					LinkID: "dir-1",
+					Type:   proton.LinkTypeFolder,
+					State:  proton.LinkStateActive,
+				}, nil, nil, nil, "docs"),
+			},
+			want: true,
+		},
+		{
+			name: "proton folder link without destIsDir (parent of non-existent dest)",
 			ep: resolvedEndpoint{
 				pathType: PathProton,
 				link: drive.NewTestLink(&proton.Link{
@@ -81,7 +94,7 @@ func TestResolvedEndpointIsDirProton(t *testing.T) {
 					State:  proton.LinkStateActive,
 				}, nil, nil, nil, "docs"),
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "proton file link",

@@ -26,7 +26,8 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 			// Dest exists.
 			ep.localPath = arg.raw
 			ep.localInfo = info
-			if multiSource && !info.IsDir() {
+			ep.destIsDir = info.IsDir()
+			if multiSource && !ep.destIsDir {
 				return nil, fmt.Errorf("cp: %s: not a directory", arg.raw)
 			}
 			return ep, nil
@@ -56,7 +57,8 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 			// Dest exists.
 			ep.link = link
 			ep.share = share
-			if multiSource && link.Type() != proton.LinkTypeFolder {
+			ep.destIsDir = link.Type() == proton.LinkTypeFolder
+			if multiSource && !ep.destIsDir {
 				return nil, fmt.Errorf("cp: %s: not a directory", arg.raw)
 			}
 			return ep, nil

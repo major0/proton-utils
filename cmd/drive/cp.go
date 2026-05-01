@@ -172,10 +172,11 @@ func runCp(cmd *cobra.Command, args []string) error {
 		// Compute the effective destination for this source.
 		fileDst := dstEp
 		if dstEp.isDir() {
+			srcName := srcEp.basename()
 			fileDst = &resolvedEndpoint{
 				pathType:  dstEp.pathType,
-				raw:       dstEp.raw,
-				localPath: filepath.Join(dstEp.localPath, srcEp.basename()),
+				raw:       dstEp.raw + "/" + srcName,
+				localPath: filepath.Join(dstEp.localPath, srcName),
 				localInfo: nil,
 				link:      dstEp.link,
 				share:     dstEp.share,
@@ -300,9 +301,6 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		job.Dst = driveClient.NewLocalWriter(dst.localPath)
 	case PathProton:
 		name := filepath.Base(dst.raw)
-		if src.pathType == PathLocal {
-			name = filepath.Base(src.localPath)
-		}
 		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
 		if err != nil {
 			switch {

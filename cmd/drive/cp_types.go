@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -50,8 +49,9 @@ func classifyPath(arg string) PathType {
 // resolvedEndpoint holds the result of resolving a source or destination path.
 // Exactly one variant is populated based on pathType.
 type resolvedEndpoint struct {
-	pathType PathType
-	raw      string // original argument string
+	pathType  PathType
+	raw       string // original argument string
+	destIsDir bool   // true only when the destination was resolved to an existing directory
 
 	// Local path resolution (pathType == PathLocal)
 	localPath string      // cleaned absolute path
@@ -62,12 +62,18 @@ type resolvedEndpoint struct {
 	share *drive.Share
 }
 
-// isDir returns true if the resolved endpoint is a directory.
+// isDir returns true if the resolved endpoint is an existing directory.
+// For destinations where the path doesn't exist (link points to the
+// parent directory), this returns false — the caller should use the
+// explicit destination name from raw, not the source basename.
 func (r *resolvedEndpoint) isDir() bool {
+	if r.destIsDir {
+		return true
+	}
 	if r.pathType == PathLocal {
 		return r.localInfo != nil && r.localInfo.IsDir()
 	}
-	return r.link != nil && r.link.Type() == proton.LinkTypeFolder
+	return false
 }
 
 // basename returns the name of the resolved endpoint.
