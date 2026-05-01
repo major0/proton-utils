@@ -3,6 +3,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -72,9 +73,15 @@ func (c *Client) NewChildLink(_ context.Context, parent *drive.Link, pLink *prot
 		return existing
 	}
 
-	// Table miss: construct, insert, return.
+	// Table miss: construct, insert into table, populate objectCache.
 	link := drive.NewLink(pLink, parent, parent.Share(), c)
 	c.putLink(pLink.LinkID, link)
+
+	// Best-effort write to objectCache (no-op when nil).
+	if data, err := json.Marshal(pLink); err == nil {
+		_ = objectCacheWrite(c.objectCache, pLink.LinkID, data)
+	}
+
 	return link
 }
 

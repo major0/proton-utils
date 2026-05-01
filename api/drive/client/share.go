@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -118,8 +119,14 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 	// Insert root link into the Link Table for pointer identity.
 	c.putLink(pLink.LinkID, link)
 
-	// Apply per-share cache config.
+	// Apply per-share cache config (may construct objectCache).
 	c.applyShareConfig(share)
+
+	// Populate objectCache with the root link (best-effort, no-op when nil).
+	// Done after applyShareConfig so the diskv instance exists.
+	if data, err := json.Marshal(pLink); err == nil {
+		_ = objectCacheWrite(c.objectCache, pLink.LinkID, data)
+	}
 
 	return share, nil
 }
