@@ -1,8 +1,11 @@
 package client
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/major0/proton-cli/api"
 	"github.com/peterbourgon/diskv/v3"
 )
 
@@ -10,8 +13,8 @@ import (
 // layout (one file per key) and an optional in-memory LRU cache.
 //
 // basePath is the root directory for on-disk storage, typically
-// $XDG_RUNTIME_DIR/proton/<service>/<namespace>. cacheSizeBytes controls the
-// in-memory LRU cache size in bytes; 0 disables the in-memory cache.
+// $XDG_RUNTIME_DIR/proton/drive/. cacheSizeBytes controls the in-memory
+// LRU cache size in bytes; 0 disables the in-memory cache.
 //
 // Atomic writes are enabled via a TempDir on the same filesystem as basePath,
 // so os.Rename is guaranteed to work.
@@ -27,6 +30,43 @@ func NewObjectCache(basePath string, cacheSizeBytes uint64) *diskv.Diskv {
 		CacheSizeMax: cacheSizeBytes,
 		TempDir:      filepath.Join(basePath, ".tmp"),
 	})
+}
+
+// sanitizeKey strips '=' padding from a Proton ID for use as a diskv key.
+// Proton IDs are base64-encoded and may contain '=' padding which can
+// cause issues with filesystem path construction.
+func sanitizeKey(id string) string {
+	return strings.TrimRight(id, "=")
+}
+
+// InitObjectCache constructs the shared diskv instance if the config
+// has any share with disk_cache: objectstore and $XDG_RUNTIME_DIR is
+// set. The cache is a single flat namespace at
+// $XDG_RUNTIME_DIR/proton/drive/ — shared across all shares because
+// LinkIDs are globally unique and shares are windows into the same
+// volume system.
+func (c *Client) InitObjectCache() {
+	if c.Config == nil {
+		return
+	}
+
+	needDisk := false
+	for _, sc := range c.Config.Shares {
+		if sc.DiskCache == api.DiskCacheObjectStore {
+			needDisk = true
+			break
+		}
+	}
+	if !needDisk {
+		return
+	}
+
+	xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if xdgRuntimeDir == "" {
+		return
+	}
+
+	c.objectCache = NewObjectCache(filepath.Join(xdgRuntimeDir, "proton", "drive"), 0)
 }
 
 // objectCacheRead reads a value from the cache. When d is nil (e.g.

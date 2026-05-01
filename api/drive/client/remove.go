@@ -72,7 +72,7 @@ func (c *Client) Remove(ctx context.Context, share *drive.Share, link *drive.Lin
 	// Invalidate affected Link Table entries and on-disk cache.
 	c.deleteLink(linkID)
 	c.deleteLink(link.ParentLink().ProtonLink().LinkID)
-	_ = objectCacheErase(c.objectCache, linkID)
+	_ = objectCacheErase(c.objectCache, sanitizeKey(linkID))
 
 	return nil
 }

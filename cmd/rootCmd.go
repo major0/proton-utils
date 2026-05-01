@@ -274,6 +274,7 @@ func NewDriveClient(ctx context.Context, session *common.Session) (*driveClient.
 		return nil, err
 	}
 	dc.Config = ConfigVar
+	dc.InitObjectCache()
 	return dc, nil
 }
 

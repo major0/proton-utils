@@ -23,7 +23,7 @@ func (c *Client) StatLink(ctx context.Context, share *drive.Share, parentLink *d
 	}
 
 	// 2. ObjectCache hit — unmarshal, construct *Link, insert into table.
-	if data, err := objectCacheRead(c.objectCache, linkID); err == nil && data != nil {
+	if data, err := objectCacheRead(c.objectCache, sanitizeKey(linkID)); err == nil && data != nil {
 		var pLink proton.Link
 		if err := json.Unmarshal(data, &pLink); err == nil {
 			link := drive.NewLink(&pLink, parentLink, share, c)
@@ -44,7 +44,7 @@ func (c *Client) StatLink(ctx context.Context, share *drive.Share, parentLink *d
 
 	// Write to objectCache (no-op when nil).
 	if data, err := json.Marshal(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, linkID, data)
+		_ = objectCacheWrite(c.objectCache, sanitizeKey(linkID), data)
 	}
 
 	return link, nil

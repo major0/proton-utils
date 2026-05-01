@@ -79,7 +79,7 @@ func (c *Client) NewChildLink(_ context.Context, parent *drive.Link, pLink *prot
 
 	// Best-effort write to objectCache (no-op when nil).
 	if data, err := json.Marshal(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, pLink.LinkID, data)
+		_ = objectCacheWrite(c.objectCache, sanitizeKey(pLink.LinkID), data)
 	}
 
 	return link

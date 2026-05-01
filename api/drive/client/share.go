@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -125,7 +123,7 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 	// Populate objectCache with the root link (best-effort, no-op when nil).
 	// Done after applyShareConfig so the diskv instance exists.
 	if data, err := json.Marshal(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, pLink.LinkID, data)
+		_ = objectCacheWrite(c.objectCache, sanitizeKey(pLink.LinkID), data)
 	}
 
 	return share, nil
@@ -133,8 +131,7 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 
 // applyShareConfig sets cache levels on a share based on the loaded config.
 // Root and photos shares are always forced to disabled. Looks up the share
-// by its decrypted root link name. When disk_cache is objectstore, constructs
-// a diskv instance with BasePath at $XDG_RUNTIME_DIR/proton/drive/<ShortID>.
+// by its decrypted root link name.
 func (c *Client) applyShareConfig(share *drive.Share) {
 	// Root and photos shares: caching prohibited.
 	st := share.ProtonShare().Type
@@ -161,16 +158,6 @@ func (c *Client) applyShareConfig(share *drive.Share) {
 
 	share.MemoryCacheLevel = sc.MemoryCache
 	share.DiskCacheLevel = sc.DiskCache
-
-	// Construct the diskv instance when disk_cache is objectstore and
-	// $XDG_RUNTIME_DIR is available.
-	if sc.DiskCache == api.DiskCacheObjectStore {
-		xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
-		if xdgRuntimeDir != "" {
-			basePath := filepath.Join(xdgRuntimeDir, "proton", "drive", share.ProtonShare().ShareID)
-			c.objectCache = NewObjectCache(basePath, 0)
-		}
-	}
 }
 
 // ResolveShareByType finds a share by its type (Main, Photos, etc.)
