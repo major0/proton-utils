@@ -10,15 +10,22 @@ import (
 )
 
 // StatLink resolves a single link ID within a share into a Link.
-// The returned Link is lazily decrypted — call Name(), KeyRing(), etc.
-// to trigger decryption on demand.
+// Checks the Link Table first for pointer identity. On a table miss,
+// fetches from the API, inserts into the table, and returns.
 func (c *Client) StatLink(ctx context.Context, share *drive.Share, parentLink *drive.Link, linkID string) (*drive.Link, error) {
+	// Table hit — return existing pointer.
+	if existing := c.getLink(linkID); existing != nil {
+		return existing, nil
+	}
+
 	pLink, err := c.Session.Client.GetLink(ctx, share.ProtonShare().ShareID, linkID)
 	if err != nil {
 		return nil, fmt.Errorf("stat %s: %w", linkID, err)
 	}
 
-	return drive.NewLink(&pLink, parentLink, share, c), nil
+	link := drive.NewLink(&pLink, parentLink, share, c)
+	c.putLink(linkID, link)
+	return link, nil
 }
 
 // StatLinks resolves a batch of link IDs concurrently using the

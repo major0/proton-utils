@@ -113,6 +113,9 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 	// Set the link on the share after construction to break the circular reference.
 	share.Link = link
 
+	// Insert root link into the Link Table for pointer identity.
+	c.putLink(pLink.LinkID, link)
+
 	// Apply per-share cache config.
 	c.applyShareConfig(share)
 
