@@ -12,18 +12,14 @@ import (
 )
 
 var cacheFlags struct {
-	enableDirent    bool
-	disableDirent   bool
-	enableMetadata  bool
-	disableMetadata bool
-	enableOnDisk    bool
-	disableOnDisk   bool
+	memoryCache string
+	diskCache   string
 }
 
 var shareCacheCmd = &cobra.Command{
 	Use:   "cache <share-name>",
 	Short: "View or modify per-share cache settings",
-	Long:  "View or modify the dirent, metadata, and on-disk cache settings for a share",
+	Long:  "View or modify the memory and disk cache settings for a share",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runShareCache,
 }
@@ -31,12 +27,8 @@ var shareCacheCmd = &cobra.Command{
 func init() {
 	shareCmd.AddCommand(shareCacheCmd)
 	f := shareCacheCmd.Flags()
-	f.BoolVar(&cacheFlags.enableDirent, "enable-dirent", false, "Enable dirent name cache")
-	f.BoolVar(&cacheFlags.disableDirent, "disable-dirent", false, "Disable dirent name cache")
-	f.BoolVar(&cacheFlags.enableMetadata, "enable-metadata", false, "Enable metadata cache")
-	f.BoolVar(&cacheFlags.disableMetadata, "disable-metadata", false, "Disable metadata cache")
-	f.BoolVar(&cacheFlags.enableOnDisk, "enable-on-disk", false, "Enable on-disk block cache")
-	f.BoolVar(&cacheFlags.disableOnDisk, "disable-on-disk", false, "Disable on-disk block cache")
+	f.StringVar(&cacheFlags.memoryCache, "memory-cache", "", "Set memory cache level (disabled, linkname, metadata)")
+	f.StringVar(&cacheFlags.diskCache, "disk-cache", "", "Set disk cache level (disabled, objectstore)")
 }
 
 // prohibitedShareType returns true for any share type that is not
@@ -78,9 +70,7 @@ func runShareCache(cmd *cobra.Command, args []string) error {
 		cfg = api.DefaultConfig()
 	}
 
-	hasToggle := cacheFlags.enableDirent || cacheFlags.disableDirent ||
-		cacheFlags.enableMetadata || cacheFlags.disableMetadata ||
-		cacheFlags.enableOnDisk || cacheFlags.disableOnDisk
+	hasToggle := cacheFlags.memoryCache != "" || cacheFlags.diskCache != ""
 
 	if !hasToggle {
 		// Show current state.
@@ -89,26 +79,31 @@ func runShareCache(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Update toggles.
+	// Update settings.
 	sc := cfg.Shares[name] // zero value if absent
 
-	if cacheFlags.enableDirent {
-		sc.DirentCacheEnabled = true
+	if cacheFlags.memoryCache != "" {
+		switch cacheFlags.memoryCache {
+		case "disabled":
+			sc.MemoryCache = api.CacheDisabled
+		case "linkname":
+			sc.MemoryCache = api.CacheLinkName
+		case "metadata":
+			sc.MemoryCache = api.CacheMetadata
+		default:
+			return fmt.Errorf("share cache: invalid memory-cache value %q (use disabled, linkname, metadata)", cacheFlags.memoryCache)
+		}
 	}
-	if cacheFlags.disableDirent {
-		sc.DirentCacheEnabled = false
-	}
-	if cacheFlags.enableMetadata {
-		sc.MetadataCacheEnabled = true
-	}
-	if cacheFlags.disableMetadata {
-		sc.MetadataCacheEnabled = false
-	}
-	if cacheFlags.enableOnDisk {
-		sc.DiskCacheEnabled = true
-	}
-	if cacheFlags.disableOnDisk {
-		sc.DiskCacheEnabled = false
+
+	if cacheFlags.diskCache != "" {
+		switch cacheFlags.diskCache {
+		case "disabled":
+			sc.DiskCache = api.DiskCacheDisabled
+		case "objectstore":
+			sc.DiskCache = api.DiskCacheObjectStore
+		default:
+			return fmt.Errorf("share cache: invalid disk-cache value %q (use disabled, objectstore)", cacheFlags.diskCache)
+		}
 	}
 
 	if cfg.Shares == nil {
@@ -128,14 +123,6 @@ func runShareCache(cmd *cobra.Command, args []string) error {
 
 func printCacheState(name string, sc api.ShareConfig) {
 	fmt.Printf("Share: %s\n", name)
-	fmt.Printf("  dirent:   %s\n", boolState(sc.DirentCacheEnabled))
-	fmt.Printf("  metadata: %s\n", boolState(sc.MetadataCacheEnabled))
-	fmt.Printf("  on-disk:  %s\n", boolState(sc.DiskCacheEnabled))
-}
-
-func boolState(b bool) string {
-	if b {
-		return "enabled"
-	}
-	return "disabled"
+	fmt.Printf("  memory:   %s\n", sc.MemoryCache)
+	fmt.Printf("  disk:     %s\n", sc.DiskCache)
 }

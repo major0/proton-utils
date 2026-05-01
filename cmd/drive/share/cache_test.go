@@ -28,34 +28,26 @@ func TestProhibitedShareType(t *testing.T) {
 	}
 }
 
-func TestBoolState(t *testing.T) {
-	if boolState(true) != "enabled" {
-		t.Fatal("true should be 'enabled'")
-	}
-	if boolState(false) != "disabled" {
-		t.Fatal("false should be 'disabled'")
-	}
-}
-
 // TestShareCacheToggleRoundTrip_Property verifies that toggling cache
-// flags via config save/load produces the expected state.
+// settings via config save/load produces the expected state.
 //
 // **Property 5: Share cache toggle round-trip**
-// **Validates: Requirements 4.2, 4.3, 4.5**
+// **Validates: Requirements 4.1, 4.2**
 func TestShareCacheToggleRoundTrip_Property(t *testing.T) {
 	dir := t.TempDir()
 
+	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{api.CacheDisabled, api.CacheLinkName, api.CacheMetadata})
+	diskLevelGen := rapid.SampledFrom([]api.DiskCacheLevel{api.DiskCacheDisabled, api.DiskCacheObjectStore})
+
 	rapid.Check(t, func(t *rapid.T) {
 		name := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{2,15}`).Draw(t, "name")
-		dirent := rapid.Bool().Draw(t, "dirent")
-		metadata := rapid.Bool().Draw(t, "metadata")
-		disk := rapid.Bool().Draw(t, "disk")
+		memory := memoryLevelGen.Draw(t, "memory")
+		disk := diskLevelGen.Draw(t, "disk")
 
 		cfg := api.DefaultConfig()
 		cfg.Shares[name] = api.ShareConfig{
-			DirentCacheEnabled:   dirent,
-			MetadataCacheEnabled: metadata,
-			DiskCacheEnabled:     disk,
+			MemoryCache: memory,
+			DiskCache:   disk,
 		}
 
 		path := filepath.Join(dir, rapid.StringMatching(`[a-z]{8}`).Draw(t, "file")+".yaml")
@@ -69,14 +61,11 @@ func TestShareCacheToggleRoundTrip_Property(t *testing.T) {
 		}
 
 		sc := loaded.Shares[name]
-		if sc.DirentCacheEnabled != dirent {
-			t.Fatalf("dirent: got %v, want %v", sc.DirentCacheEnabled, dirent)
+		if sc.MemoryCache != memory {
+			t.Fatalf("memory: got %v, want %v", sc.MemoryCache, memory)
 		}
-		if sc.MetadataCacheEnabled != metadata {
-			t.Fatalf("metadata: got %v, want %v", sc.MetadataCacheEnabled, metadata)
-		}
-		if sc.DiskCacheEnabled != disk {
-			t.Fatalf("disk: got %v, want %v", sc.DiskCacheEnabled, disk)
+		if sc.DiskCache != disk {
+			t.Fatalf("disk: got %v, want %v", sc.DiskCache, disk)
 		}
 	})
 }
@@ -93,19 +82,19 @@ func TestPrintCacheState(t *testing.T) {
 			"all disabled",
 			"test-share",
 			api.ShareConfig{},
-			[]string{"Share: test-share", "dirent:   disabled", "metadata: disabled", "on-disk:  disabled"},
+			[]string{"Share: test-share", "memory:   disabled", "disk:     disabled"},
 		},
 		{
-			"all enabled",
+			"metadata/objectstore",
 			"my-share",
-			api.ShareConfig{DirentCacheEnabled: true, MetadataCacheEnabled: true, DiskCacheEnabled: true},
-			[]string{"Share: my-share", "dirent:   enabled", "metadata: enabled", "on-disk:  enabled"},
+			api.ShareConfig{MemoryCache: api.CacheMetadata, DiskCache: api.DiskCacheObjectStore},
+			[]string{"Share: my-share", "memory:   metadata", "disk:     objectstore"},
 		},
 		{
+			"linkname/disabled",
 			"mixed",
-			"mixed",
-			api.ShareConfig{DirentCacheEnabled: true, MetadataCacheEnabled: false, DiskCacheEnabled: true},
-			[]string{"dirent:   enabled", "metadata: disabled", "on-disk:  enabled"},
+			api.ShareConfig{MemoryCache: api.CacheLinkName, DiskCache: api.DiskCacheDisabled},
+			[]string{"memory:   linkname", "disk:     disabled"},
 		},
 	}
 

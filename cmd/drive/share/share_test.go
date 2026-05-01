@@ -620,12 +620,8 @@ func TestShareCacheCmd_ToggleFlags(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	cacheFlags.enableDirent = true
-	cacheFlags.disableDirent = false
-	cacheFlags.enableMetadata = true
-	cacheFlags.disableMetadata = false
-	cacheFlags.enableOnDisk = false
-	cacheFlags.disableOnDisk = false
+	cacheFlags.memoryCache = "metadata"
+	cacheFlags.diskCache = ""
 
 	// The SaveConfig call will use cli.ConfigFilePath() which returns
 	// rootParams.ConfigFile. Since we can't set that, the save may fail.
@@ -634,11 +630,8 @@ func TestShareCacheCmd_ToggleFlags(t *testing.T) {
 
 	// Verify the in-memory config was updated.
 	sc := cfg.Shares["Shared Folder"]
-	if !sc.DirentCacheEnabled {
-		t.Error("expected dirent cache enabled")
-	}
-	if !sc.MetadataCacheEnabled {
-		t.Error("expected metadata cache enabled")
+	if sc.MemoryCache != api.CacheMetadata {
+		t.Error("expected memory cache metadata")
 	}
 }
 
@@ -710,29 +703,21 @@ func TestShareCacheCmd_DisableFlags(t *testing.T) {
 
 	cfg := api.DefaultConfig()
 	cfg.Shares["Test Share"] = api.ShareConfig{
-		DirentCacheEnabled:   true,
-		MetadataCacheEnabled: true,
-		DiskCacheEnabled:     true,
+		MemoryCache: api.CacheMetadata,
+		DiskCache:   api.DiskCacheObjectStore,
 	}
 	cli.ConfigVar = cfg
 
-	cacheFlags.enableDirent = false
-	cacheFlags.disableDirent = true
-	cacheFlags.enableMetadata = false
-	cacheFlags.disableMetadata = true
-	cacheFlags.enableOnDisk = false
-	cacheFlags.disableOnDisk = true
+	cacheFlags.memoryCache = "disabled"
+	cacheFlags.diskCache = "disabled"
 
 	_ = shareCacheCmd.RunE(shareCacheCmd, []string{"Test Share"})
 
 	sc := cfg.Shares["Test Share"]
-	if sc.DirentCacheEnabled {
-		t.Error("expected dirent cache disabled")
+	if sc.MemoryCache != api.CacheDisabled {
+		t.Error("expected memory cache disabled")
 	}
-	if sc.MetadataCacheEnabled {
-		t.Error("expected metadata cache disabled")
-	}
-	if sc.DiskCacheEnabled {
+	if sc.DiskCache != api.DiskCacheDisabled {
 		t.Error("expected disk cache disabled")
 	}
 }
@@ -751,18 +736,14 @@ func TestShareCacheCmd_OnDiskToggle(t *testing.T) {
 
 	cli.ConfigVar = api.DefaultConfig()
 
-	cacheFlags.enableDirent = false
-	cacheFlags.disableDirent = false
-	cacheFlags.enableMetadata = false
-	cacheFlags.disableMetadata = false
-	cacheFlags.enableOnDisk = true
-	cacheFlags.disableOnDisk = false
+	cacheFlags.memoryCache = ""
+	cacheFlags.diskCache = "objectstore"
 
 	_ = shareCacheCmd.RunE(shareCacheCmd, []string{"Disk Share"})
 
 	sc := cli.ConfigVar.Shares["Disk Share"]
-	if !sc.DiskCacheEnabled {
-		t.Error("expected disk cache enabled")
+	if sc.DiskCache != api.DiskCacheObjectStore {
+		t.Error("expected disk cache objectstore")
 	}
 }
 
@@ -790,7 +771,7 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	t.Cleanup(func() { cli.ConfigVar = origConfig })
 
 	cfg := api.DefaultConfig()
-	cfg.Shares["Shared Folder"] = api.ShareConfig{DirentCacheEnabled: true}
+	cfg.Shares["Shared Folder"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
 	cli.ConfigVar = cfg
 
 	deleteShareFn = func(_ context.Context, _ *driveClient.Client, _ string, _ bool) error {
@@ -1002,12 +983,8 @@ func TestShareCacheCmd_SaveConfigError(t *testing.T) {
 
 	cli.ConfigVar = api.DefaultConfig()
 
-	cacheFlags.enableDirent = true
-	cacheFlags.disableDirent = false
-	cacheFlags.enableMetadata = false
-	cacheFlags.disableMetadata = false
-	cacheFlags.enableOnDisk = false
-	cacheFlags.disableOnDisk = false
+	cacheFlags.memoryCache = "linkname"
+	cacheFlags.diskCache = ""
 
 	// ConfigFilePath() returns empty string, so SaveConfig will fail.
 	// The error should be returned.

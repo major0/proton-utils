@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 )
 
 // TestLink_NameNotCached_WhenDisabled verifies that Link.Name() does NOT
-// cache the decrypted name when MetadataCacheEnabled is false.
+// cache the decrypted name when MemoryCacheLevel is CacheDisabled.
 // This is a security compliance test.
 //
 // **Validates: Requirement 3.1**
@@ -31,7 +32,7 @@ func TestLink_NameNotCached_WhenDisabled(t *testing.T) {
 }
 
 // TestDirEntry_NameNotCached_WhenDisabled verifies EntryName() does not
-// cache when DirentCacheEnabled is false.
+// cache when MemoryCacheLevel is CacheDisabled.
 //
 // **Validates: Requirement 3.2**
 func TestDirEntry_NameNotCached_WhenDisabled(t *testing.T) {
@@ -42,7 +43,7 @@ func TestDirEntry_NameNotCached_WhenDisabled(t *testing.T) {
 	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
 	root := NewTestLink(rootPLink, nil, nil, resolver, "root")
 	share := NewShare(pShare, nil, root, resolver, "")
-	share.DirentCacheEnabled = false
+	share.MemoryCacheLevel = api.CacheDisabled
 	root = NewTestLink(rootPLink, nil, share, resolver, "root")
 	share.Link = root
 
@@ -74,7 +75,7 @@ func TestDirEntry_NameNotCached_WhenDisabled(t *testing.T) {
 }
 
 // TestLink_StatNotCached_WhenDisabled verifies Stat() does not cache
-// when MetadataCacheEnabled is false.
+// when MemoryCacheLevel is CacheDisabled.
 //
 // **Validates: Requirement 3.3**
 func TestLink_StatNotCached_WhenDisabled(t *testing.T) {
@@ -83,7 +84,7 @@ func TestLink_StatNotCached_WhenDisabled(t *testing.T) {
 
 	pShare := &proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}}
 	share := NewShare(pShare, nil, nil, resolver, "")
-	share.MetadataCacheEnabled = false
+	share.MemoryCacheLevel = api.CacheDisabled
 	link := NewTestLink(pLink, nil, share, resolver, "test.txt")
 
 	// Call Stat twice.
@@ -92,7 +93,7 @@ func TestLink_StatNotCached_WhenDisabled(t *testing.T) {
 
 	// cachedStat should be nil.
 	if link.cachedStat != nil {
-		t.Fatal("cachedStat should be nil when MetadataCacheEnabled is false")
+		t.Fatal("cachedStat should be nil when MemoryCacheLevel is CacheDisabled")
 	}
 
 	// Both calls should return consistent data.

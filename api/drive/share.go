@@ -40,19 +40,13 @@ type Share struct {
 	resolver    LinkResolver
 	volumeID    string // volume this share belongs to
 
-	// DirentCacheEnabled controls whether DirEntry.EntryName() caches
-	// the decrypted name on the entry. Disabled by default — opt-in
-	// per share via config-store.
-	DirentCacheEnabled bool
+	// MemoryCacheLevel controls in-memory caching of decrypted data on
+	// Link objects. Default: CacheDisabled. Set via config-store.
+	MemoryCacheLevel api.MemoryCacheLevel
 
-	// MetadataCacheEnabled controls whether Link.Stat() caches the
-	// FileInfo result. Disabled by default — opt-in per share.
-	MetadataCacheEnabled bool
-
-	// DiskCacheEnabled controls whether the BlockStore writes encrypted
-	// blocks and link metadata to disk. Disabled by default — opt-in
-	// per share. Handled in api/drive/client/.
-	DiskCacheEnabled bool
+	// DiskCacheLevel controls on-disk caching of encrypted API objects.
+	// Default: DiskCacheDisabled. Handled in api/drive/client/.
+	DiskCacheLevel api.DiskCacheLevel
 }
 
 // GetName returns the decrypted name of the share's root link.

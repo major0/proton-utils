@@ -30,7 +30,7 @@ type Link struct {
 	testName string
 
 	// cachedStat caches the FileInfo result when the share's
-	// MetadataCacheEnabled is true. Nil when caching is disabled.
+	// MemoryCacheLevel is CacheMetadata. Nil when caching is disabled.
 	cachedStat *FileInfo
 }
 
@@ -70,7 +70,7 @@ func (l *Link) MIMEType() string { return l.protonLink.MIMEType }
 func (l *Link) LinkID() string { return l.protonLink.LinkID }
 
 // Stat returns file metadata without decrypting content. When the share's
-// MetadataCacheEnabled is true, the result is cached for subsequent calls.
+// MemoryCacheLevel is CacheMetadata, the result is cached for subsequent calls.
 // BlockSizes is nil — it requires decrypting the revision XAttr which is
 // a client-layer operation.
 func (l *Link) Stat() FileInfo {
@@ -88,7 +88,7 @@ func (l *Link) Stat() FileInfo {
 		IsDir:      l.protonLink.Type == proton.LinkTypeFolder,
 	}
 
-	if l.share != nil && l.share.MetadataCacheEnabled {
+	if l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
 		l.cachedStat = &fi
 	}
 

@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 )
 
 // TestDirEntryNoCacheWhenDisabled verifies that DirEntry.EntryName()
-// does NOT populate the name field when DirentCacheEnabled is false.
+// does NOT populate the name field when MemoryCacheLevel is CacheDisabled.
 // Each call should trigger a fresh decrypt (via testName in this case).
 func TestDirEntryNoCacheWhenDisabled(t *testing.T) {
 	resolver := &readdirResolver{children: []proton.Link{
@@ -22,7 +23,7 @@ func TestDirEntryNoCacheWhenDisabled(t *testing.T) {
 		nil, root, resolver, "",
 	)
 	// Caching disabled (default).
-	share.DirentCacheEnabled = false
+	share.MemoryCacheLevel = api.CacheDisabled
 	root = NewTestLink(rootPLink, nil, share, resolver, "root")
 	share.Link = root
 
@@ -55,7 +56,7 @@ func TestDirEntryNoCacheWhenDisabled(t *testing.T) {
 }
 
 // TestDirEntryCacheWhenEnabled verifies that DirEntry.EntryName()
-// DOES populate the name field when DirentCacheEnabled is true.
+// DOES populate the name field when MemoryCacheLevel is CacheLinkName.
 func TestDirEntryCacheWhenEnabled(t *testing.T) {
 	resolver := &readdirResolver{children: []proton.Link{
 		{LinkID: "child-1", Type: proton.LinkTypeFile},
@@ -67,7 +68,7 @@ func TestDirEntryCacheWhenEnabled(t *testing.T) {
 		&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
 		nil, root, resolver, "",
 	)
-	share.DirentCacheEnabled = true
+	share.MemoryCacheLevel = api.CacheLinkName
 	root = NewTestLink(rootPLink, nil, share, resolver, "root")
 	share.Link = root
 
@@ -91,7 +92,7 @@ func TestDirEntryCacheWhenEnabled(t *testing.T) {
 }
 
 // TestStatNoCacheWhenDisabled verifies that Link.Stat() does NOT
-// retain cachedStat when MetadataCacheEnabled is false.
+// retain cachedStat when MemoryCacheLevel is CacheDisabled.
 func TestStatNoCacheWhenDisabled(t *testing.T) {
 	resolver := &mockLinkResolver{}
 	pLink := &proton.Link{LinkID: "test", Type: proton.LinkTypeFile, MIMEType: "text/plain"}
@@ -99,19 +100,19 @@ func TestStatNoCacheWhenDisabled(t *testing.T) {
 		&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
 		nil, nil, resolver, "",
 	)
-	share.MetadataCacheEnabled = false
+	share.MemoryCacheLevel = api.CacheDisabled
 	link := NewTestLink(pLink, nil, share, resolver, "test.txt")
 
 	_ = link.Stat()
 
 	// cachedStat should be nil.
 	if link.cachedStat != nil {
-		t.Fatal("cachedStat should be nil when MetadataCacheEnabled is false")
+		t.Fatal("cachedStat should be nil when MemoryCacheLevel is CacheDisabled")
 	}
 }
 
 // TestStatCacheWhenEnabled verifies that Link.Stat() retains cachedStat
-// when MetadataCacheEnabled is true.
+// when MemoryCacheLevel is CacheMetadata.
 func TestStatCacheWhenEnabled(t *testing.T) {
 	resolver := &mockLinkResolver{}
 	pLink := &proton.Link{LinkID: "test", Type: proton.LinkTypeFile, MIMEType: "text/plain"}
@@ -119,14 +120,14 @@ func TestStatCacheWhenEnabled(t *testing.T) {
 		&proton.Share{ShareMetadata: proton.ShareMetadata{ShareID: "s"}},
 		nil, nil, resolver, "",
 	)
-	share.MetadataCacheEnabled = true
+	share.MemoryCacheLevel = api.CacheMetadata
 	link := NewTestLink(pLink, nil, share, resolver, "test.txt")
 
 	fi1 := link.Stat()
 	fi2 := link.Stat()
 
 	if link.cachedStat == nil {
-		t.Fatal("cachedStat should be populated when MetadataCacheEnabled is true")
+		t.Fatal("cachedStat should be populated when MemoryCacheLevel is CacheMetadata")
 	}
 	if fi1.LinkID != fi2.LinkID {
 		t.Fatal("cached Stat should return same data")
@@ -157,14 +158,11 @@ func TestRootPhotosProhibitCaching_Property(t *testing.T) {
 			nil, root, resolver, "",
 		)
 
-		if share.DirentCacheEnabled {
-			t.Fatalf("share type %d: DirentCacheEnabled should be false", st)
+		if share.MemoryCacheLevel != api.CacheDisabled {
+			t.Fatalf("share type %d: MemoryCacheLevel should be CacheDisabled", st)
 		}
-		if share.MetadataCacheEnabled {
-			t.Fatalf("share type %d: MetadataCacheEnabled should be false", st)
-		}
-		if share.DiskCacheEnabled {
-			t.Fatalf("share type %d: DiskCacheEnabled should be false", st)
+		if share.DiskCacheLevel != api.DiskCacheDisabled {
+			t.Fatalf("share type %d: DiskCacheLevel should be DiskCacheDisabled", st)
 		}
 	}
 }

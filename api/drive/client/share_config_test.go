@@ -9,6 +9,7 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
+	"pgregory.net/rapid"
 )
 
 func testShare(name string, st proton.ShareType) *drive.Share {
@@ -48,9 +49,8 @@ func TestApplyShareConfig_MatchingName(t *testing.T) {
 		Config: &api.Config{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {
-					DirentCacheEnabled:   true,
-					MetadataCacheEnabled: true,
-					DiskCacheEnabled:     true,
+					MemoryCache: api.CacheMetadata,
+					DiskCache:   api.DiskCacheObjectStore,
 				},
 			},
 		},
@@ -58,14 +58,34 @@ func TestApplyShareConfig_MatchingName(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if !share.DirentCacheEnabled {
-		t.Fatal("DirentCacheEnabled should be true")
+	if share.MemoryCacheLevel != api.CacheMetadata {
+		t.Fatalf("MemoryCacheLevel: got %v, want metadata", share.MemoryCacheLevel)
 	}
-	if !share.MetadataCacheEnabled {
-		t.Fatal("MetadataCacheEnabled should be true")
+	if share.DiskCacheLevel != api.DiskCacheObjectStore {
+		t.Fatalf("DiskCacheLevel: got %v, want objectstore", share.DiskCacheLevel)
 	}
-	if !share.DiskCacheEnabled {
-		t.Fatal("DiskCacheEnabled should be true")
+}
+
+func TestApplyShareConfig_LinkNameLevel(t *testing.T) {
+	share := testShare("MyFolder", proton.ShareTypeStandard)
+	c := &Client{
+		Config: &api.Config{
+			Shares: map[string]api.ShareConfig{
+				"MyFolder": {
+					MemoryCache: api.CacheLinkName,
+					DiskCache:   api.DiskCacheDisabled,
+				},
+			},
+		},
+	}
+
+	c.applyShareConfig(share)
+
+	if share.MemoryCacheLevel != api.CacheLinkName {
+		t.Fatalf("MemoryCacheLevel: got %v, want linkname", share.MemoryCacheLevel)
+	}
+	if share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatalf("DiskCacheLevel: got %v, want disabled", share.DiskCacheLevel)
 	}
 }
 
@@ -74,28 +94,30 @@ func TestApplyShareConfig_NoMatch(t *testing.T) {
 	c := &Client{
 		Config: &api.Config{
 			Shares: map[string]api.ShareConfig{
-				"MyFolder": {DirentCacheEnabled: true},
+				"MyFolder": {MemoryCache: api.CacheMetadata},
 			},
 		},
 	}
 
 	c.applyShareConfig(share)
 
-	if share.DirentCacheEnabled {
-		t.Fatal("DirentCacheEnabled should be false for unmatched share")
+	if share.MemoryCacheLevel != api.CacheDisabled {
+		t.Fatal("MemoryCacheLevel should be disabled for unmatched share")
+	}
+	if share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("DiskCacheLevel should be disabled for unmatched share")
 	}
 }
 
 func TestApplyShareConfig_RootForced(t *testing.T) {
 	share := testShare("root", proton.ShareTypeMain)
-	// Even with config enabling everything, root should be forced false.
+	// Even with config enabling everything, root should be forced disabled.
 	c := &Client{
 		Config: &api.Config{
 			Shares: map[string]api.ShareConfig{
 				"root": {
-					DirentCacheEnabled:   true,
-					MetadataCacheEnabled: true,
-					DiskCacheEnabled:     true,
+					MemoryCache: api.CacheMetadata,
+					DiskCache:   api.DiskCacheObjectStore,
 				},
 			},
 		},
@@ -103,8 +125,8 @@ func TestApplyShareConfig_RootForced(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.DirentCacheEnabled || share.MetadataCacheEnabled || share.DiskCacheEnabled {
-		t.Fatal("root share should have all caches forced false")
+	if share.MemoryCacheLevel != api.CacheDisabled || share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("root share should have all caches forced disabled")
 	}
 }
 
@@ -114,9 +136,8 @@ func TestApplyShareConfig_PhotosForced(t *testing.T) {
 		Config: &api.Config{
 			Shares: map[string]api.ShareConfig{
 				"Photos": {
-					DirentCacheEnabled:   true,
-					MetadataCacheEnabled: true,
-					DiskCacheEnabled:     true,
+					MemoryCache: api.CacheMetadata,
+					DiskCache:   api.DiskCacheObjectStore,
 				},
 			},
 		},
@@ -124,8 +145,8 @@ func TestApplyShareConfig_PhotosForced(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.DirentCacheEnabled || share.MetadataCacheEnabled || share.DiskCacheEnabled {
-		t.Fatal("photos share should have all caches forced false")
+	if share.MemoryCacheLevel != api.CacheDisabled || share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("photos share should have all caches forced disabled")
 	}
 }
 
@@ -135,15 +156,15 @@ func TestApplyShareConfig_NilConfig(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.DirentCacheEnabled || share.MetadataCacheEnabled || share.DiskCacheEnabled {
-		t.Fatal("nil config should leave all caches false")
+	if share.MemoryCacheLevel != api.CacheDisabled || share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("nil config should leave all caches disabled")
 	}
 }
 
 func TestBlockStoreNilCache_NoDiskWrites(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a BlockStore with nil cache (DiskCacheEnabled=false).
+	// Create a BlockStore with nil cache (DiskCacheLevel=disabled).
 	// Verify no files are written to the cache directory.
 	store := NewBlockStore(nil, nil, nil)
 	_ = store // store with nil cache won't write to disk
@@ -153,4 +174,56 @@ func TestBlockStoreNilCache_NoDiskWrites(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("expected empty dir, got %d entries", len(entries))
 	}
+}
+
+// TestPropertyRootPhotosDisabled verifies that regardless of user
+// configuration, Root (main) and Photos shares always have both caches
+// forced to disabled after applyShareConfig.
+//
+// **Property 10: Root and Photos shares forced disabled**
+// **Validates: Requirement 4.6**
+func TestPropertyRootPhotosDisabled(t *testing.T) {
+	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{
+		api.CacheDisabled, api.CacheLinkName, api.CacheMetadata,
+	})
+	diskLevelGen := rapid.SampledFrom([]api.DiskCacheLevel{
+		api.DiskCacheDisabled, api.DiskCacheObjectStore,
+	})
+	shareTypeGen := rapid.SampledFrom([]proton.ShareType{
+		proton.ShareTypeMain, drive.ShareTypePhotos,
+	})
+
+	rapid.Check(t, func(t *rapid.T) {
+		st := shareTypeGen.Draw(t, "shareType")
+		memLevel := memoryLevelGen.Draw(t, "memoryLevel")
+		diskLevel := diskLevelGen.Draw(t, "diskLevel")
+		name := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{2,15}`).Draw(t, "name")
+
+		share := testShare(name, st)
+
+		// Pre-set the share to the drawn levels to simulate a share
+		// that somehow had caching enabled before applyShareConfig.
+		share.MemoryCacheLevel = memLevel
+		share.DiskCacheLevel = diskLevel
+
+		c := &Client{
+			Config: &api.Config{
+				Shares: map[string]api.ShareConfig{
+					name: {
+						MemoryCache: memLevel,
+						DiskCache:   diskLevel,
+					},
+				},
+			},
+		}
+
+		c.applyShareConfig(share)
+
+		if share.MemoryCacheLevel != api.CacheDisabled {
+			t.Fatalf("share type %d: MemoryCacheLevel = %v, want disabled", st, share.MemoryCacheLevel)
+		}
+		if share.DiskCacheLevel != api.DiskCacheDisabled {
+			t.Fatalf("share type %d: DiskCacheLevel = %v, want disabled", st, share.DiskCacheLevel)
+		}
+	})
 }

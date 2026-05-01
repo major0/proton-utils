@@ -38,7 +38,7 @@ func TestSaveConfig_CreatesParentDirs(t *testing.T) {
 	path := filepath.Join(dir, "sub", "dir", "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.Shares["test"] = ShareConfig{DirentCacheEnabled: true}
+	cfg.Shares["test"] = ShareConfig{MemoryCache: CacheLinkName}
 
 	if err := SaveConfig(path, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
@@ -55,9 +55,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Shares["MyFolder"] = ShareConfig{
-		DirentCacheEnabled:   true,
-		MetadataCacheEnabled: true,
-		DiskCacheEnabled:     false,
+		MemoryCache: CacheMetadata,
+		DiskCache:   DiskCacheDisabled,
 	}
 	cfg.Defaults["drive"] = "work"
 
@@ -83,7 +82,7 @@ func TestSaveConfig_AtomicWrite(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.Shares["test"] = ShareConfig{DiskCacheEnabled: true}
+	cfg.Shares["test"] = ShareConfig{DiskCache: DiskCacheObjectStore}
 
 	if err := SaveConfig(path, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
@@ -94,8 +93,8 @@ func TestSaveConfig_AtomicWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig after save: %v", err)
 	}
-	if !loaded.Shares["test"].DiskCacheEnabled {
-		t.Fatal("expected DiskCacheEnabled=true after save")
+	if loaded.Shares["test"].DiskCache != DiskCacheObjectStore {
+		t.Fatal("expected DiskCache=objectstore after save")
 	}
 
 	// Verify no temp file left behind.
@@ -120,6 +119,56 @@ func TestDefaultAccount(t *testing.T) {
 	}
 }
 
+func TestShareConfigDefaults(t *testing.T) {
+	var sc ShareConfig
+	if sc.MemoryCache != CacheDisabled {
+		t.Fatalf("default MemoryCache: got %v, want disabled", sc.MemoryCache)
+	}
+	if sc.DiskCache != DiskCacheDisabled {
+		t.Fatalf("default DiskCache: got %v, want disabled", sc.DiskCache)
+	}
+}
+
+func TestShareConfigYAMLRoundTrip_AllValues(t *testing.T) {
+	tests := []struct {
+		name string
+		sc   ShareConfig
+	}{
+		{"disabled/disabled", ShareConfig{CacheDisabled, DiskCacheDisabled}},
+		{"linkname/disabled", ShareConfig{CacheLinkName, DiskCacheDisabled}},
+		{"metadata/disabled", ShareConfig{CacheMetadata, DiskCacheDisabled}},
+		{"disabled/objectstore", ShareConfig{CacheDisabled, DiskCacheObjectStore}},
+		{"metadata/objectstore", ShareConfig{CacheMetadata, DiskCacheObjectStore}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+
+			cfg := DefaultConfig()
+			cfg.Shares["test"] = tt.sc
+
+			if err := SaveConfig(path, cfg); err != nil {
+				t.Fatalf("SaveConfig: %v", err)
+			}
+
+			loaded, err := LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+
+			got := loaded.Shares["test"]
+			if got.MemoryCache != tt.sc.MemoryCache {
+				t.Fatalf("MemoryCache: got %v, want %v", got.MemoryCache, tt.sc.MemoryCache)
+			}
+			if got.DiskCache != tt.sc.DiskCache {
+				t.Fatalf("DiskCache: got %v, want %v", got.DiskCache, tt.sc.DiskCache)
+			}
+		})
+	}
+}
+
 // TestConfigRoundTrip_Property verifies that for any valid Config,
 // SaveConfig + LoadConfig produces an equivalent Config.
 //
@@ -127,6 +176,9 @@ func TestDefaultAccount(t *testing.T) {
 // **Validates: Requirements 1.2, 1.4, 2.1, 2.10, 3.1**
 func TestConfigRoundTrip_Property(t *testing.T) {
 	dir := t.TempDir()
+
+	memoryLevelGen := rapid.SampledFrom([]MemoryCacheLevel{CacheDisabled, CacheLinkName, CacheMetadata})
+	diskLevelGen := rapid.SampledFrom([]DiskCacheLevel{DiskCacheDisabled, DiskCacheObjectStore})
 
 	rapid.Check(t, func(t *rapid.T) {
 		cfg := &Config{
@@ -138,9 +190,8 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 		for i := 0; i < nShares; i++ {
 			name := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{0,15}`).Draw(t, "shareName")
 			cfg.Shares[name] = ShareConfig{
-				DirentCacheEnabled:   rapid.Bool().Draw(t, "dirent"),
-				MetadataCacheEnabled: rapid.Bool().Draw(t, "metadata"),
-				DiskCacheEnabled:     rapid.Bool().Draw(t, "disk"),
+				MemoryCache: memoryLevelGen.Draw(t, "memory"),
+				DiskCache:   diskLevelGen.Draw(t, "disk"),
 			}
 		}
 
@@ -177,15 +228,17 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 // **Property 2: Unconfigured shares default to caching disabled**
 // **Validates: Requirements 2.4**
 func TestUnconfiguredShareDefaults_Property(t *testing.T) {
+	memoryLevelGen := rapid.SampledFrom([]MemoryCacheLevel{CacheDisabled, CacheLinkName, CacheMetadata})
+	diskLevelGen := rapid.SampledFrom([]DiskCacheLevel{DiskCacheDisabled, DiskCacheObjectStore})
+
 	rapid.Check(t, func(t *rapid.T) {
 		cfg := DefaultConfig()
 		nShares := rapid.IntRange(0, 5).Draw(t, "nShares")
 		for i := 0; i < nShares; i++ {
 			name := rapid.StringMatching(`[a-z]{3,8}`).Draw(t, "name")
 			cfg.Shares[name] = ShareConfig{
-				DirentCacheEnabled:   rapid.Bool().Draw(t, "d"),
-				MetadataCacheEnabled: rapid.Bool().Draw(t, "m"),
-				DiskCacheEnabled:     rapid.Bool().Draw(t, "k"),
+				MemoryCache: memoryLevelGen.Draw(t, "m"),
+				DiskCache:   diskLevelGen.Draw(t, "d"),
 			}
 		}
 
@@ -193,7 +246,7 @@ func TestUnconfiguredShareDefaults_Property(t *testing.T) {
 		absent := "ABSENT_" + rapid.StringMatching(`[A-Z]{8}`).Draw(t, "absent")
 		sc := cfg.Shares[absent] // zero value
 
-		if sc.DirentCacheEnabled || sc.MetadataCacheEnabled || sc.DiskCacheEnabled {
+		if sc.MemoryCache != CacheDisabled || sc.DiskCache != DiskCacheDisabled {
 			t.Fatal("unconfigured share should have all caches disabled")
 		}
 	})

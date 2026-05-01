@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
@@ -118,16 +119,16 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 	return share, nil
 }
 
-// applyShareConfig sets cache flags on a share based on the loaded config.
-// Root and photos shares are always forced to false. Looks up the share
-// by its decrypted root link name.
+// applyShareConfig sets cache levels on a share based on the loaded config.
+// Root and photos shares are always forced to disabled. Looks up the share
+// by its decrypted root link name. When disk_cache is objectstore, constructs
+// a diskv instance with BasePath at $XDG_RUNTIME_DIR/proton/drive/<ShortID>.
 func (c *Client) applyShareConfig(share *drive.Share) {
 	// Root and photos shares: caching prohibited.
 	st := share.ProtonShare().Type
 	if st == proton.ShareTypeMain || st == drive.ShareTypePhotos {
-		share.DirentCacheEnabled = false
-		share.MetadataCacheEnabled = false
-		share.DiskCacheEnabled = false
+		share.MemoryCacheLevel = api.CacheDisabled
+		share.DiskCacheLevel = api.DiskCacheDisabled
 		return
 	}
 
@@ -143,12 +144,11 @@ func (c *Client) applyShareConfig(share *drive.Share) {
 
 	sc, ok := c.Config.Shares[name]
 	if !ok {
-		return // defaults to false
+		return // defaults to disabled
 	}
 
-	share.DirentCacheEnabled = sc.DirentCacheEnabled
-	share.MetadataCacheEnabled = sc.MetadataCacheEnabled
-	share.DiskCacheEnabled = sc.DiskCacheEnabled
+	share.MemoryCacheLevel = sc.MemoryCache
+	share.DiskCacheLevel = sc.DiskCache
 }
 
 // ResolveShareByType finds a share by its type (Main, Photos, etc.)

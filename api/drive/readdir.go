@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+
+	"github.com/major0/proton-cli/api"
 )
 
 // DirEntry is a single entry yielded by Readdir.
@@ -25,7 +27,7 @@ func (e *DirEntry) EntryName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if e.Link.share != nil && e.Link.share.DirentCacheEnabled {
+	if e.Link.share != nil && e.Link.share.MemoryCacheLevel >= api.CacheLinkName {
 		e.name = name
 	}
 	return name, nil
