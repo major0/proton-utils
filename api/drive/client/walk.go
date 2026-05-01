@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"path"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
@@ -65,7 +64,10 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 					continue
 				}
 
-				childPath := path.Join(item.path, name)
+				childPath := item.path + name
+				if entry.Link.Type() == proton.LinkTypeFolder {
+					childPath += "/"
+				}
 				childDepth := item.depth + 1
 
 				select {
@@ -104,7 +106,10 @@ func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath 
 				continue
 			}
 
-			childPath := path.Join(linkPath, name)
+			childPath := linkPath + name
+			if entry.Link.Type() == proton.LinkTypeFolder {
+				childPath += "/"
+			}
 			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, name, results); err != nil {
 				return err
 			}
