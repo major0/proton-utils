@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -152,6 +154,16 @@ func (c *Client) applyShareConfig(share *drive.Share) {
 
 	share.MemoryCacheLevel = sc.MemoryCache
 	share.DiskCacheLevel = sc.DiskCache
+
+	// Construct the diskv instance when disk_cache is objectstore and
+	// $XDG_RUNTIME_DIR is available.
+	if sc.DiskCache == api.DiskCacheObjectStore {
+		xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
+		if xdgRuntimeDir != "" {
+			basePath := filepath.Join(xdgRuntimeDir, "proton", "drive", share.ProtonShare().ShareID)
+			c.objectCache = NewObjectCache(basePath, 0)
+		}
+	}
 }
 
 // ResolveShareByType finds a share by its type (Main, Photos, etc.)

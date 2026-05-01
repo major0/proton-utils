@@ -66,6 +66,61 @@ func TestApplyShareConfig_MatchingName(t *testing.T) {
 	}
 }
 
+func TestApplyShareConfig_ObjectStoreConstructsDiskv(t *testing.T) {
+	share := testShare("MyFolder", proton.ShareTypeStandard)
+	dir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	c := &Client{
+		Config: &api.Config{
+			Shares: map[string]api.ShareConfig{
+				"MyFolder": {
+					DiskCache: api.DiskCacheObjectStore,
+				},
+			},
+		},
+	}
+
+	c.applyShareConfig(share)
+
+	if c.objectCache == nil {
+		t.Fatal("objectCache should be constructed when disk_cache=objectstore and XDG_RUNTIME_DIR is set")
+	}
+
+	// Verify the cache is functional — write and read back.
+	if err := c.objectCache.Write("test-key", []byte("test-data")); err != nil {
+		t.Fatalf("objectCache.Write: %v", err)
+	}
+	got, err := c.objectCache.Read("test-key")
+	if err != nil {
+		t.Fatalf("objectCache.Read: %v", err)
+	}
+	if string(got) != "test-data" {
+		t.Fatalf("objectCache.Read = %q, want %q", got, "test-data")
+	}
+}
+
+func TestApplyShareConfig_ObjectStoreSkippedWithoutXDG(t *testing.T) {
+	share := testShare("MyFolder", proton.ShareTypeStandard)
+	t.Setenv("XDG_RUNTIME_DIR", "")
+
+	c := &Client{
+		Config: &api.Config{
+			Shares: map[string]api.ShareConfig{
+				"MyFolder": {
+					DiskCache: api.DiskCacheObjectStore,
+				},
+			},
+		},
+	}
+
+	c.applyShareConfig(share)
+
+	if c.objectCache != nil {
+		t.Fatal("objectCache should be nil when XDG_RUNTIME_DIR is unset")
+	}
+}
+
 func TestApplyShareConfig_LinkNameLevel(t *testing.T) {
 	share := testShare("MyFolder", proton.ShareTypeStandard)
 	c := &Client{
