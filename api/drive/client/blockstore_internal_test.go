@@ -162,13 +162,10 @@ func TestBlockStoreInvalidateClearsBufferCache(t *testing.T) {
 }
 
 // TestBlockStoreInvalidateWithDiskCache verifies Invalidate clears both
-// the buffer cache and the on-disk cache.
+// the buffer cache and the on-disk diskv cache.
 func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 	bc := newBufferCache(16)
-	dc, err := newBlockCache(t.TempDir())
-	if err != nil {
-		t.Fatalf("newBlockCache: %v", err)
-	}
+	dc := NewObjectCache(t.TempDir(), 0)
 
 	store := &httpBlockStore{
 		session:  nil,
@@ -178,8 +175,9 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 
 	// Populate both caches.
 	bc.Put("link-both", 0, []byte("buf-data"))
-	if err := dc.putBlock("link-both", 0, []byte("disk-data")); err != nil {
-		t.Fatalf("putBlock: %v", err)
+	key := blockCacheKey("link-both", 0)
+	if err := dc.Write(key, []byte("disk-data")); err != nil {
+		t.Fatalf("diskv.Write: %v", err)
 	}
 
 	store.Invalidate("link-both")
@@ -191,11 +189,7 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 	}
 
 	// Disk cache should be empty.
-	got, err = dc.getBlock("link-both", 0)
-	if err != nil {
-		t.Fatalf("getBlock: %v", err)
-	}
-	if got != nil {
+	if dc.Has(key) {
 		t.Fatal("disk cache not cleared after Invalidate")
 	}
 }
@@ -204,10 +198,7 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 // hit populates the buffer cache for subsequent fast access.
 func TestBlockStoreDiskCacheHitPopulatesBufferCache(t *testing.T) {
 	bc := newBufferCache(16)
-	dc, err := newBlockCache(t.TempDir())
-	if err != nil {
-		t.Fatalf("newBlockCache: %v", err)
-	}
+	dc := NewObjectCache(t.TempDir(), 0)
 
 	store := &httpBlockStore{
 		session:  nil, // nil — if it falls through to HTTP, it panics
@@ -216,8 +207,9 @@ func TestBlockStoreDiskCacheHitPopulatesBufferCache(t *testing.T) {
 	}
 
 	want := []byte("disk-cached-block")
-	if err := dc.putBlock("link-disk", 0, want); err != nil {
-		t.Fatalf("putBlock: %v", err)
+	key := blockCacheKey("link-disk", 0)
+	if err := dc.Write(key, want); err != nil {
+		t.Fatalf("diskv.Write: %v", err)
 	}
 
 	// GetBlock should find it in disk cache and populate buffer cache.

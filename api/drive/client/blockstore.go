@@ -8,6 +8,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
+	"github.com/peterbourgon/diskv/v3"
 )
 
 // BlockStore fetches and stores encrypted blocks. Session-aware and
@@ -35,23 +36,30 @@ type blockReader struct {
 func (b *blockReader) GetMultipartReader() io.Reader { return b.r }
 
 // httpBlockStore implements BlockStore using the session's HTTP transport,
-// an optional in-memory buffer cache, and an optional on-disk block cache.
+// an optional in-memory buffer cache, and an optional diskv-backed on-disk
+// block cache.
 type httpBlockStore struct {
 	session  *api.Session
-	cache    *blockCache  // nil when disk caching disabled
+	cache    *diskv.Diskv // nil when disk caching disabled
 	bufCache *bufferCache // nil when buffer caching disabled
 }
 
 // NewBlockStore creates a BlockStore backed by the session's HTTP transport.
-// If diskCache is non-nil, blocks are checked/populated in the on-disk cache.
-// If bufCache is non-nil, blocks are checked/populated in the in-memory cache.
-func NewBlockStore(session *api.Session, diskCache *blockCache, bufCache *bufferCache) BlockStore {
+// If diskCache is non-nil, blocks are checked/populated in the on-disk cache
+// via diskv. If bufCache is non-nil, blocks are checked/populated in the
+// in-memory buffer cache.
+func NewBlockStore(session *api.Session, diskCache *diskv.Diskv, bufCache *bufferCache) BlockStore {
 	return &httpBlockStore{session: session, cache: diskCache, bufCache: bufCache}
 }
 
+// blockCacheKey returns the diskv key for a cached block.
+func blockCacheKey(linkID string, index int) string {
+	return fmt.Sprintf("%s.block.%d", linkID, index)
+}
+
 // GetBlock fetches a raw encrypted block. Checks the buffer cache first,
-// then the disk cache, then falls through to HTTP. Populates both caches
-// on fetch.
+// then the diskv on-disk cache, then falls through to HTTP. Populates
+// both caches on fetch.
 func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
 	// 1. Buffer cache check.
 	if s.bufCache != nil {
@@ -60,15 +68,14 @@ func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int,
 		}
 	}
 
-	// 2. Disk cache check.
-	if s.cache != nil {
-		if data, err := s.cache.getBlock(linkID, index); err == nil && data != nil {
-			// Populate buffer cache on disk hit.
-			if s.bufCache != nil {
-				s.bufCache.Put(linkID, index, data)
-			}
-			return data, nil
+	// 2. Disk cache check (diskv).
+	key := blockCacheKey(linkID, index)
+	if data, err := objectCacheRead(s.cache, key); err == nil && data != nil {
+		// Populate buffer cache on disk hit.
+		if s.bufCache != nil {
+			s.bufCache.Put(linkID, index, data)
 		}
+		return data, nil
 	}
 
 	// 3. HTTP fetch.
@@ -87,9 +94,7 @@ func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int,
 	if s.bufCache != nil {
 		s.bufCache.Put(linkID, index, data)
 	}
-	if s.cache != nil {
-		_ = s.cache.putBlock(linkID, index, data)
-	}
+	_ = objectCacheWrite(s.cache, key, data)
 
 	return data, nil
 }
@@ -114,20 +119,23 @@ func (s *httpBlockStore) UploadBlock(ctx context.Context, linkID string, index i
 	if s.bufCache != nil {
 		s.bufCache.Put(linkID, index, data)
 	}
-	if s.cache != nil {
-		_ = s.cache.putBlock(linkID, index, data)
-	}
+	_ = objectCacheWrite(s.cache, blockCacheKey(linkID, index), data)
 
 	return nil
 }
 
 // Invalidate removes cached blocks for a linkID from both the buffer
-// cache and the on-disk cache.
+// cache and the on-disk diskv cache.
 func (s *httpBlockStore) Invalidate(linkID string) {
 	if s.bufCache != nil {
 		s.bufCache.Invalidate(linkID)
 	}
 	if s.cache != nil {
-		_ = s.cache.invalidate(linkID)
+		prefix := linkID + ".block."
+		for key := range s.cache.Keys(nil) {
+			if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+				_ = s.cache.Erase(key)
+			}
+		}
 	}
 }
