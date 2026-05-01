@@ -140,7 +140,7 @@ func runCp(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		dc, err = driveClient.NewClient(setupCtx, session)
+		dc, err = cli.NewDriveClient(setupCtx, session)
 		if err != nil {
 			return err
 		}

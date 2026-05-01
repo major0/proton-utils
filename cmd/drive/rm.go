@@ -51,7 +51,7 @@ func runRm(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, session)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func runEmptyTrash(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	dc, err := driveClient.NewClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, session)
 	if err != nil {
 		return err
 	}
