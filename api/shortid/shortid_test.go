@@ -321,3 +321,38 @@ func TestFormat_ShortFullID(t *testing.T) {
 		t.Fatalf("short ID = %q, want %q", s, "ABCD")
 	}
 }
+
+// TestFormat_DuplicateIDs verifies that when the same ID appears
+// multiple times (e.g. . and .. at a share root), Format still
+// produces a short prefix — duplicates of the same ID are not treated
+// as collisions.
+func TestFormat_DuplicateIDs(t *testing.T) {
+	id := "pan7_dtq6cYKw_i5rC9Zq03R4Iue52a_sL7yXD3vrF1-CVTt1QLnVR8RyPdXZmYWw1fM7zrkiyd14Asxdn8Pkw=="
+	child := "x8bSGA7ZabcdefghijklmnopqrstuvwxyzABCDEFGH=="
+
+	// Share root listing: . and .. both have the same LinkID.
+	ids := []string{id, id, child}
+	got := Format(ids)
+
+	shortRoot := got[id]
+	shortChild := got[child]
+
+	// The root ID should be shortened, not the full stripped form.
+	stripped := strip(id)
+	if shortRoot == stripped {
+		t.Fatalf("duplicate ID produced full-length prefix %q; want shortened", shortRoot)
+	}
+	if len(shortRoot) < DefaultLength {
+		t.Fatalf("short ID %q is shorter than minimum %d", shortRoot, DefaultLength)
+	}
+
+	// The child should also be shortened.
+	if len(shortChild) < DefaultLength {
+		t.Fatalf("child short ID %q is shorter than minimum %d", shortChild, DefaultLength)
+	}
+
+	// Both should be distinct from each other.
+	if shortRoot == shortChild {
+		t.Fatalf("root and child short IDs should differ: both %q", shortRoot)
+	}
+}

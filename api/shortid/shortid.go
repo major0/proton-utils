@@ -103,7 +103,7 @@ func Format(ids []string) map[string]string {
 			prefix := s[:n]
 			unique := true
 			for j, other := range stripped {
-				if j != i && strings.HasPrefix(other, prefix) {
+				if j != i && other != s && strings.HasPrefix(other, prefix) {
 					unique = false
 					break
 				}
