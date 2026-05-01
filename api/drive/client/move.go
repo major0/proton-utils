@@ -72,7 +72,19 @@ func (c *Client) Move(ctx context.Context, share *drive.Share, link *drive.Link,
 	}
 	req.NodePassphrase = newPassphrase
 
-	return c.Session.Client.MoveLink(ctx, share.ProtonShare().ShareID, link.ProtonLink().LinkID, req)
+	if err := c.Session.Client.MoveLink(ctx, share.ProtonShare().ShareID, link.ProtonLink().LinkID, req); err != nil {
+		return err
+	}
+
+	// Invalidate affected Link Table entries. The moved link, old
+	// parent, and new parent all have stale children/metadata.
+	c.deleteLink(link.ProtonLink().LinkID)
+	if link.ParentLink() != nil {
+		c.deleteLink(link.ParentLink().ProtonLink().LinkID)
+	}
+	c.deleteLink(newParent.ProtonLink().LinkID)
+
+	return nil
 }
 
 // Rename renames a link in place (same parent directory).

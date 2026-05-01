@@ -30,10 +30,11 @@ func (c *Client) Remove(ctx context.Context, share *drive.Share, link *drive.Lin
 	shareID := share.ProtonShare().ShareID
 	linkID := link.ProtonLink().LinkID
 
+	var err error
 	switch {
 	case link.State() == proton.LinkStateTrashed && opts.Permanent:
 		// Trashed links must be deleted via the trash endpoint.
-		return c.deleteTrashedLinks(ctx, share.ProtonShare().VolumeID, linkID)
+		err = c.deleteTrashedLinks(ctx, share.ProtonShare().VolumeID, linkID)
 
 	case link.State() == proton.LinkStateTrashed:
 		// Already trashed — nothing to do.
@@ -41,7 +42,7 @@ func (c *Client) Remove(ctx context.Context, share *drive.Share, link *drive.Lin
 
 	case link.State() == proton.LinkStateDraft && opts.Permanent:
 		// Drafts are deleted from the parent folder.
-		return c.Session.Client.DeleteChildren(
+		err = c.Session.Client.DeleteChildren(
 			ctx, shareID,
 			link.ParentLink().ProtonLink().LinkID,
 			linkID,
@@ -49,7 +50,7 @@ func (c *Client) Remove(ctx context.Context, share *drive.Share, link *drive.Lin
 
 	case opts.Permanent:
 		// Active links: permanent delete from parent.
-		return c.Session.Client.DeleteChildren(
+		err = c.Session.Client.DeleteChildren(
 			ctx, shareID,
 			link.ParentLink().ProtonLink().LinkID,
 			linkID,
@@ -57,12 +58,23 @@ func (c *Client) Remove(ctx context.Context, share *drive.Share, link *drive.Lin
 
 	default:
 		// Active links: move to trash.
-		return c.Session.Client.TrashChildren(
+		err = c.Session.Client.TrashChildren(
 			ctx, shareID,
 			link.ParentLink().ProtonLink().LinkID,
 			linkID,
 		)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	// Invalidate affected Link Table entries and on-disk cache.
+	c.deleteLink(linkID)
+	c.deleteLink(link.ParentLink().ProtonLink().LinkID)
+	_ = objectCacheErase(c.objectCache, linkID)
+
+	return nil
 }
 
 // deleteTrashedLinks permanently deletes trashed links via the v2

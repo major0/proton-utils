@@ -70,6 +70,10 @@ func (c *Client) MkDir(ctx context.Context, share *drive.Share, parent *drive.Li
 		return nil, fmt.Errorf("mkdir %s: %w", name, err)
 	}
 
+	// Invalidate the parent from the Link Table — its children list
+	// is now stale.
+	c.deleteLink(parent.ProtonLink().LinkID)
+
 	return c.StatLink(ctx, share, parent, res.ID)
 }
 
