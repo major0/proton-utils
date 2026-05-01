@@ -84,6 +84,9 @@ func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multi
 		parentPath := filepath.Dir(pathPart)
 		if parentPath == "." || parentPath == "" {
 			// File is directly under the share root.
+			if share.Link.Type() != proton.LinkTypeFolder {
+				return nil, fmt.Errorf("cp: %s: share root is not a directory", sharePart)
+			}
 			ep.link = share.Link
 			ep.share = share
 			return ep, nil

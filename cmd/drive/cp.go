@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -301,6 +302,38 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		job.Dst = driveClient.NewLocalWriter(dst.localPath)
 	case PathProton:
 		name := filepath.Base(dst.raw)
+
+		// When the destination already exists as a file (dst.link
+		// points to the file itself, not its parent), determine the
+		// right strategy based on the file's state.
+		if dst.link != nil && dst.link.Type() == proton.LinkTypeFile {
+			parent := dst.link.Parent()
+			pLink := dst.link.ProtonLink()
+			hasActiveRevision := pLink.FileProperties != nil &&
+				pLink.FileProperties.ActiveRevision.ID != "" &&
+				pLink.FileProperties.ActiveRevision.State == proton.RevisionStateActive
+
+			if hasActiveRevision {
+				// Healthy file — overwrite via new revision.
+				fh, err := dc.OverwriteFile(ctx, dst.share, dst.link)
+				if err == nil {
+					store := driveClient.NewBlockStore(dc.Session, nil, nil)
+					job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)
+					return &job, nil
+				}
+				// OverwriteFile failed (stale link, server-side
+				// deletion). Delete and create fresh.
+				slog.Debug("cp: overwrite failed, removing stale link", "link", dst.link.LinkID(), "error", err)
+			}
+
+			// Ghost or broken file (no active revision, or
+			// OverwriteFile failed) — delete and create fresh.
+			if delErr := dc.Remove(ctx, dst.share, dst.link, drive.RemoveOpts{Permanent: true}); delErr != nil {
+				slog.Debug("cp: remove stale link failed", "link", dst.link.LinkID(), "error", delErr)
+			}
+			dst.link = parent
+		}
+
 		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
 		if err != nil {
 			switch {
