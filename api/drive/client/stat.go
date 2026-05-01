@@ -2,22 +2,38 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
 
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 )
 
 // StatLink resolves a single link ID within a share into a Link.
 // Checks the Link Table first for pointer identity. On a table miss,
-// fetches from the API, inserts into the table, and returns.
+// checks the ObjectCache (diskv) for a cached encrypted API response.
+// On a full miss, fetches from the API and populates both the Link
+// Table and the ObjectCache.
 func (c *Client) StatLink(ctx context.Context, share *drive.Share, parentLink *drive.Link, linkID string) (*drive.Link, error) {
-	// Table hit — return existing pointer.
+	// 1. Table hit — return existing pointer.
 	if existing := c.getLink(linkID); existing != nil {
 		return existing, nil
 	}
 
+	// 2. ObjectCache hit — unmarshal, construct *Link, insert into table.
+	if data, err := objectCacheRead(c.objectCache, linkID); err == nil && data != nil {
+		var pLink proton.Link
+		if err := json.Unmarshal(data, &pLink); err == nil {
+			link := drive.NewLink(&pLink, parentLink, share, c)
+			c.putLink(linkID, link)
+			return link, nil
+		}
+		// Unmarshal failed — fall through to API fetch.
+	}
+
+	// 3. API fetch — construct *Link, insert into table + objectCache.
 	pLink, err := c.Session.Client.GetLink(ctx, share.ProtonShare().ShareID, linkID)
 	if err != nil {
 		return nil, fmt.Errorf("stat %s: %w", linkID, err)
@@ -25,6 +41,12 @@ func (c *Client) StatLink(ctx context.Context, share *drive.Share, parentLink *d
 
 	link := drive.NewLink(&pLink, parentLink, share, c)
 	c.putLink(linkID, link)
+
+	// Write to objectCache (no-op when nil).
+	if data, err := json.Marshal(pLink); err == nil {
+		_ = objectCacheWrite(c.objectCache, linkID, data)
+	}
+
 	return link, nil
 }
 
