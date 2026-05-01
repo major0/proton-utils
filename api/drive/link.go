@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -14,8 +15,9 @@ import (
 
 // Link represents a file or folder in a Proton Drive share. The raw
 // encrypted proton.Link is the canonical representation. Decrypted
-// fields (name, keyrings) are derived on demand and never cached —
-// Name() and KeyRing() decrypt on every call.
+// fields are derived on demand via accessor methods. When the share's
+// MemoryCacheLevel is enabled, accessors cache results for the session
+// using double-checked locking via cacheMu.
 type Link struct {
 	// Raw encrypted link from the API. Always populated.
 	protonLink *proton.Link
@@ -29,9 +31,21 @@ type Link struct {
 	// NewTestLink to avoid needing real crypto in tests.
 	testName string
 
+	// cacheMu protects the cached fields below. Readers take RLock
+	// to check the cache; writers take Lock for decrypt-and-store.
+	cacheMu sync.RWMutex
+
+	// cachedName caches the decrypted name when the share's
+	// MemoryCacheLevel is >= CacheLinkName. Empty when not cached.
+	cachedName string
+
 	// cachedStat caches the FileInfo result when the share's
-	// MemoryCacheLevel is CacheMetadata. Nil when caching is disabled.
+	// MemoryCacheLevel is >= CacheMetadata. Nil when not cached.
 	cachedStat *FileInfo
+
+	// cachedKeyRing caches the derived keyring when the share's
+	// MemoryCacheLevel is >= CacheMetadata. Nil when not cached.
+	cachedKeyRing *crypto.KeyRing
 }
 
 // Type returns the link type (file or folder) without decryption.
@@ -70,10 +84,20 @@ func (l *Link) MIMEType() string { return l.protonLink.MIMEType }
 func (l *Link) LinkID() string { return l.protonLink.LinkID }
 
 // Stat returns file metadata without decrypting content. When the share's
-// MemoryCacheLevel is CacheMetadata, the result is cached for subsequent calls.
+// MemoryCacheLevel is >= CacheMetadata, the result is cached for subsequent
+// calls using double-checked locking via cacheMu.
 // BlockSizes is nil — it requires decrypting the revision XAttr which is
 // a client-layer operation.
 func (l *Link) Stat() FileInfo {
+	l.cacheMu.RLock()
+	if l.cachedStat != nil {
+		defer l.cacheMu.RUnlock()
+		return *l.cachedStat
+	}
+	l.cacheMu.RUnlock()
+
+	l.cacheMu.Lock()
+	defer l.cacheMu.Unlock()
 	if l.cachedStat != nil {
 		return *l.cachedStat
 	}
@@ -101,28 +125,71 @@ func isTransient(err error) bool {
 		errors.Is(err, context.DeadlineExceeded)
 }
 
-// Name returns the decrypted name. Decrypts on every call — no state
-// is retained on the Link. For test links with testName set, returns
-// the override directly.
+// Name returns the decrypted name. When the share's MemoryCacheLevel is
+// >= CacheLinkName, the result is cached for subsequent calls using
+// double-checked locking via cacheMu. For test links with testName set,
+// returns the override directly.
 func (l *Link) Name() (string, error) {
 	if l.testName != "" {
 		return l.testName, nil
 	}
+
+	l.cacheMu.RLock()
+	if l.cachedName != "" {
+		defer l.cacheMu.RUnlock()
+		return l.cachedName, nil
+	}
+	l.cacheMu.RUnlock()
+
+	l.cacheMu.Lock()
+	defer l.cacheMu.Unlock()
+	if l.cachedName != "" {
+		return l.cachedName, nil
+	}
+
 	parentKR, err := l.getParentKeyRing()
 	if err != nil {
 		return "", fmt.Errorf("name %s: parent keyring: %w", l.protonLink.LinkID, err)
 	}
-	return l.decryptName(parentKR)
+	name, err := l.decryptName(parentKR)
+	if err != nil {
+		return "", err
+	}
+	if l.share != nil && l.share.MemoryCacheLevel >= api.CacheLinkName {
+		l.cachedName = name
+	}
+	return name, nil
 }
 
-// KeyRing returns the link's keyring. Derives on every call — no state
-// is retained on the Link.
+// KeyRing returns the link's keyring. When the share's MemoryCacheLevel
+// is >= CacheMetadata, the result is cached for subsequent calls using
+// double-checked locking via cacheMu.
 func (l *Link) KeyRing() (*crypto.KeyRing, error) {
+	l.cacheMu.RLock()
+	if l.cachedKeyRing != nil {
+		defer l.cacheMu.RUnlock()
+		return l.cachedKeyRing, nil
+	}
+	l.cacheMu.RUnlock()
+
+	l.cacheMu.Lock()
+	defer l.cacheMu.Unlock()
+	if l.cachedKeyRing != nil {
+		return l.cachedKeyRing, nil
+	}
+
 	parentKR, err := l.getParentKeyRing()
 	if err != nil {
 		return nil, fmt.Errorf("keyring %s: parent keyring: %w", l.protonLink.LinkID, err)
 	}
-	return l.deriveKeyRing(parentKR)
+	kr, err := l.deriveKeyRing(parentKR)
+	if err != nil {
+		return nil, err
+	}
+	if l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
+		l.cachedKeyRing = kr
+	}
+	return kr, nil
 }
 
 // getParentKeyRing returns the parent's keyring for decryption.
