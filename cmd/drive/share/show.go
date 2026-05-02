@@ -9,7 +9,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -17,12 +16,10 @@ func init() {
 	shareShowCmd.RunE = runShareShow
 }
 
-func runShareShow(cmd *cobra.Command, args []string) error {
+func runShareShow(_ *cobra.Command, args []string) error {
 	name := args[0]
 
-	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	ctx := context.Background()
 
 	session, err := restoreSessionFn(ctx)
 	if err != nil {

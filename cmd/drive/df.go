@@ -92,20 +92,18 @@ func printVolumeRows(volumes []drive.Volume, nameIndex map[string]string, shareI
 
 func runDf(cmd *cobra.Command, _ []string) error {
 	rc := cli.GetContext(cmd)
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer setupCancel()
-
-	session, err := cli.RestoreSession(setupCtx)
-	if err != nil {
-		return err
-	}
-
-	dc, err := cli.NewDriveClient(setupCtx, session)
-	if err != nil {
-		return err
-	}
-
 	ctx := context.Background()
+
+	session, err := cli.RestoreSession(ctx)
+	if err != nil {
+		return err
+	}
+
+	dc, err := cli.NewDriveClient(ctx, session)
+	if err != nil {
+		return err
+	}
+
 	volumes, err := dc.ListVolumes(ctx)
 	if err != nil {
 		return err

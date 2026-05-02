@@ -8,7 +8,6 @@ import (
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +31,7 @@ func parsePermissions(s string) (int, error) {
 	}
 }
 
-func runShareInvite(cmd *cobra.Command, args []string) error {
+func runShareInvite(_ *cobra.Command, args []string) error {
 	shareName := args[0]
 	email := args[1]
 
@@ -41,9 +40,7 @@ func runShareInvite(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	ctx := context.Background()
 
 	session, err := restoreSessionFn(ctx)
 	if err != nil {

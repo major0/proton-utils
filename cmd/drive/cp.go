@@ -128,28 +128,24 @@ func runCp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create context — the global timeout applies to session setup, not
-	// the bulk transfer which can run for minutes on large files.
+	// No context deadline — ResponseHeaderTimeout on the transport
+	// handles dead connections. Ctrl+C cancels via signal handling.
 	rc := cli.GetContext(cmd)
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer setupCancel()
+	_ = rc
+	ctx := context.Background()
 
 	var dc *driveClient.Client
 	if needSession {
-		session, err := cli.RestoreSession(setupCtx)
+		session, err := cli.RestoreSession(ctx)
 		if err != nil {
 			return err
 		}
 
-		dc, err = cli.NewDriveClient(setupCtx, session)
+		dc, err = cli.NewDriveClient(ctx, session)
 		if err != nil {
 			return err
 		}
 	}
-
-	// Transfer context has no timeout — individual API calls have their
-	// own timeouts. Ctrl+C cancels via signal handling.
-	ctx := context.Background()
 
 	// Resolve destination.
 	dstEp, err := resolveDest(ctx, dc, dest, len(sources) > 1)

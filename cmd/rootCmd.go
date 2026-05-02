@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	resty "github.com/go-resty/resty/v2"
 	common "github.com/major0/proton-cli/api"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/internal"
@@ -273,25 +273,17 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 // individual API calls time out even when the operation context is
 // unbounded (context.Background), and automatically retry when a
 // request times out (e.g., dead HTTP/2 connection).
-func requestTimeoutHook(m *proton.Manager) {
-	// Per-request timeout: wrap each request's context with a deadline.
-	// On retries, the previous context is cancelled — replace it with a
-	// fresh timeout and close idle connections so the retry establishes
-	// a new TCP connection instead of reusing the dead HTTP/2 stream.
-	m.AddPreRequestHook(func(c *resty.Client, req *resty.Request) error {
-		ctx := req.Context()
-		if ctx.Err() != nil {
-			// Previous attempt timed out — close the dead connection
-			// and start fresh so the retry dials a new socket.
-			c.GetClient().CloseIdleConnections()
-			ctx = context.Background()
+func requestTimeoutHook(_ *proton.Manager) {
+	// Set ResponseHeaderTimeout on the default transport. This times
+	// out waiting for response headers (catches dead connections) but
+	// does NOT affect body transfers — uploads and downloads can take
+	// as long as needed. CookieTransport uses http.DefaultTransport
+	// as its Base, so this applies to all API requests.
+	if t, ok := http.DefaultTransport.(*http.Transport); ok {
+		if t.ResponseHeaderTimeout == 0 {
+			t.ResponseHeaderTimeout = Timeout
 		}
-		if _, ok := ctx.Deadline(); !ok {
-			ctx, _ = context.WithTimeout(ctx, Timeout) //nolint:govet,gosec // cancel is handled by request lifecycle
-		}
-		req.SetContext(ctx)
-		return nil
-	})
+	}
 }
 
 // NewDriveClient creates a drive client with the loaded config applied.

@@ -131,25 +131,18 @@ func matchAll(preds []findPredicate, p string, l *drive.Link, depth int, entryNa
 	return true
 }
 
-func runFind(cmd *cobra.Command, args []string) error {
-	rc := cli.GetContext(cmd)
-
-	// Timeout applies to session setup only — the walk can take
-	// arbitrarily long depending on tree size. Ctrl+C cancels.
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer setupCancel()
-
-	session, err := cli.RestoreSession(setupCtx)
-	if err != nil {
-		return err
-	}
-
-	dc, err := cli.NewDriveClient(setupCtx, session)
-	if err != nil {
-		return err
-	}
-
+func runFind(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
+
+	session, err := cli.RestoreSession(ctx)
+	if err != nil {
+		return err
+	}
+
+	dc, err := cli.NewDriveClient(ctx, session)
+	if err != nil {
+		return err
+	}
 
 	// No args → search root share. Explicit paths → search those.
 	var roots []*drive.Link

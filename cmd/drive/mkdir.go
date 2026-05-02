@@ -31,22 +31,19 @@ func init() {
 	cli.BoolFlagP(driveMkdirCmd.Flags(), &mkdirFlags.verbose, "verbose", "v", false, "Print each directory as it is created")
 }
 
-func runMkdir(cmd *cobra.Command, args []string) error {
-	rc := cli.GetContext(cmd)
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer setupCancel()
-
-	session, err := cli.RestoreSession(setupCtx)
-	if err != nil {
-		return err
-	}
-
-	dc, err := cli.NewDriveClient(setupCtx, session)
-	if err != nil {
-		return err
-	}
-
+func runMkdir(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
+
+	session, err := cli.RestoreSession(ctx)
+	if err != nil {
+		return err
+	}
+
+	dc, err := cli.NewDriveClient(ctx, session)
+	if err != nil {
+		return err
+	}
+
 	for _, arg := range args {
 		if err := mkdirOne(ctx, dc, arg); err != nil {
 			return err

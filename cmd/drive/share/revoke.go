@@ -7,7 +7,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -72,13 +71,11 @@ func findRevokeTarget(arg string, members []drive.Member, invs []drive.Invitatio
 	}
 }
 
-func runShareRevoke(cmd *cobra.Command, args []string) error {
+func runShareRevoke(_ *cobra.Command, args []string) error {
 	shareName := args[0]
 	target := args[1]
 
-	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	ctx := context.Background()
 
 	session, err := restoreSessionFn(ctx)
 	if err != nil {

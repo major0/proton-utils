@@ -40,10 +40,8 @@ func prohibitedShareType(st proton.ShareType) bool {
 func runShareCache(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	// Resolve the share to check its type.
 	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	ctx := context.Background()
 
 	session, err := restoreSessionFn(ctx)
 	if err != nil {

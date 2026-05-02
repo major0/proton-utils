@@ -6,7 +6,6 @@ import (
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api/drive"
-	cli "github.com/major0/proton-cli/cmd"
 	driveCmd "github.com/major0/proton-cli/cmd/drive"
 	"github.com/spf13/cobra"
 )
@@ -23,12 +22,10 @@ func init() {
 	shareCmd.AddCommand(shareAddCmd)
 }
 
-func runShareAdd(cmd *cobra.Command, args []string) error {
+func runShareAdd(_ *cobra.Command, args []string) error {
 	protonPath := args[0]
 
-	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	ctx := context.Background()
 
 	session, err := restoreSessionFn(ctx)
 	if err != nil {

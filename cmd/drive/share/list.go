@@ -25,8 +25,7 @@ func init() {
 
 func runShareList(cmd *cobra.Command, _ []string) error {
 	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	ctx := context.Background()
 
 	session, err := restoreSessionFn(ctx)
 	if err != nil {
