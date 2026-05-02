@@ -43,19 +43,20 @@ func init() {
 
 func runRm(cmd *cobra.Command, args []string) error {
 	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
+	defer setupCancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.RestoreSession(setupCtx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(setupCtx, session)
 	if err != nil {
 		return err
 	}
 
+	ctx := context.Background()
 	for _, arg := range args {
 		if err := rmOne(ctx, dc, arg); err != nil {
 			return err
@@ -98,19 +99,20 @@ func rmOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
 
 func runEmptyTrash(cmd *cobra.Command, _ []string) error {
 	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
+	defer setupCancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.RestoreSession(setupCtx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(setupCtx, session)
 	if err != nil {
 		return err
 	}
 
+	ctx := context.Background()
 	shares, err := dc.ListShares(ctx, true)
 	if err != nil {
 		return err

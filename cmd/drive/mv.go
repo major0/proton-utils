@@ -32,19 +32,20 @@ func init() {
 
 func runMv(cmd *cobra.Command, args []string) error {
 	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
+	defer setupCancel()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.RestoreSession(setupCtx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(setupCtx, session)
 	if err != nil {
 		return err
 	}
 
+	ctx := context.Background()
 	sources := args[:len(args)-1]
 	dest := args[len(args)-1]
 

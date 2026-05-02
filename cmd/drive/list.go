@@ -582,18 +582,23 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	rc := cli.GetContext(cmd)
-	ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
-	defer cancel()
 
-	session, err := cli.RestoreSession(ctx)
+	// Timeout applies to session setup only — listing can take
+	// longer than the default timeout for large directories.
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), rc.Timeout)
+	defer setupCancel()
+
+	session, err := cli.RestoreSession(setupCtx)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(setupCtx, session)
 	if err != nil {
 		return err
 	}
+
+	ctx := context.Background()
 
 	slog.Debug("drive.list", "args", args)
 
