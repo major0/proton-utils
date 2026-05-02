@@ -885,16 +885,29 @@ func restoreExistingCookieService(ctx context.Context, svcConfig *SessionConfig,
 		RefreshToken: "",
 	}
 
-	// Fetch user and addresses via cookie-authed client.
-	user, err := session.Client.GetUser(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
+	// Load user and addresses from account cache, falling back to API.
+	// Use the account UID (not the service session UID) so all services
+	// for the same Proton account share the same cached data.
+	acctCache := NewAccountCache(acctConfig.UID)
+	user := acctCache.GetUser()
+	if user == nil {
+		u, err := session.Client.GetUser(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
+		}
+		user = &u
+		acctCache.PutUser(u)
 	}
-	session.user = user
+	session.user = *user
 
-	addrs, err := session.Client.GetAddresses(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
+	addrs := acctCache.GetAddresses()
+	if addrs == nil {
+		var err error
+		addrs, err = session.Client.GetAddresses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
+		}
+		acctCache.PutAddresses(addrs)
 	}
 
 	keypass, err := Base64Decode(acctConfig.SaltedKeyPass)

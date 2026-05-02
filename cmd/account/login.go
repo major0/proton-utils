@@ -353,6 +353,11 @@ func cookieLogin(ctx context.Context, username, password, mboxpass string) error
 		return fmt.Errorf("cookie login: get addresses: %w", err)
 	}
 
+	// Populate account cache with fresh data from login.
+	acctCache := common.NewAccountCache(cookieSess.UID)
+	acctCache.PutUser(userResp.User)
+	acctCache.PutAddresses(addrResp.Addresses)
+
 	var saltsResp struct{ KeySalts []proton.Salt }
 	if err := cookieSess.DoJSON(ctx, "GET", "/core/v4/keys/salts", nil, &saltsResp); err != nil {
 		return fmt.Errorf("cookie login: get salts: %w", err)

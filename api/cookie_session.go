@@ -669,16 +669,28 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 		RefreshToken: "",
 	}
 
-	// Fetch user and addresses via the cookie-authed client.
-	user, err := session.Client.GetUser(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("cookie session restore: get user: %w", err)
+	// Load user and addresses from account cache, falling back to API.
+	acctCache := NewAccountCache(cookieConfig.UID)
+	cachedUser := acctCache.GetUser()
+	if cachedUser != nil {
+		session.user = *cachedUser
+	} else {
+		user, err := session.Client.GetUser(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("cookie session restore: get user: %w", err)
+		}
+		session.user = user
+		acctCache.PutUser(user)
 	}
-	session.user = user
 
-	addrs, err := session.Client.GetAddresses(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("cookie session restore: get addresses: %w", err)
+	addrs := acctCache.GetAddresses()
+	if addrs == nil {
+		var err error
+		addrs, err = session.Client.GetAddresses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("cookie session restore: get addresses: %w", err)
+		}
+		acctCache.PutAddresses(addrs)
 	}
 
 	// Unlock keyrings using SaltedKeyPass from the account config.
