@@ -197,7 +197,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 
 		go func() {
 			defer close(results)
-			walkErr = dc.TreeWalk(ctx, root, rootPaths[i], order, results)
+			walkErr = dc.TreeWalk(ctx, root, rootPaths[i], order, findFlags.maxDepth, results)
 		}()
 
 		for entry := range results {

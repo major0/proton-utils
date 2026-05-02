@@ -103,7 +103,7 @@ func (c *Client) GetShare(ctx context.Context, id string) (*drive.Share, error) 
 		return nil, err
 	}
 
-	pLink, err := c.GetCachedLink(ctx, pShare.ShareID, pShare.LinkID)
+	pLink, err := c.Session.Client.GetLink(ctx, pShare.ShareID, pShare.LinkID)
 	if err != nil {
 		return nil, err
 	}

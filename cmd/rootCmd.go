@@ -283,12 +283,10 @@ func requestTimeoutHook(m *proton.Manager) {
 		if ctx.Err() != nil {
 			// Previous attempt timed out — close the dead connection
 			// and start fresh so the retry dials a new socket.
-			slog.Debug("requestTimeout: resetting cancelled context", "timeout", Timeout)
 			c.GetClient().CloseIdleConnections()
 			ctx = context.Background()
 		}
 		if _, ok := ctx.Deadline(); !ok {
-			slog.Debug("requestTimeout: setting deadline", "timeout", Timeout)
 			ctx, _ = context.WithTimeout(ctx, Timeout) //nolint:govet,gosec // cancel is handled by request lifecycle
 		}
 		req.SetContext(ctx)

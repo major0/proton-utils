@@ -148,7 +148,7 @@ func collectEntries(ctx context.Context, c *client.Client, root *drive.Link, roo
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		walkErr = c.TreeWalk(ctx, root, rootPath, order, results)
+		walkErr = c.TreeWalk(ctx, root, rootPath, order, -1, results)
 		close(results)
 	}()
 
@@ -284,7 +284,7 @@ func TestTreeWalk_ContextCancellation(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- c.TreeWalk(ctx, rootLink, "root", drive.BreadthFirst, results)
+		done <- c.TreeWalk(ctx, rootLink, "root", drive.BreadthFirst, -1, results)
 		close(results)
 	}()
 

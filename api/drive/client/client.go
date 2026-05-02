@@ -3,7 +3,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -73,14 +72,9 @@ func (c *Client) NewChildLink(_ context.Context, parent *drive.Link, pLink *prot
 		return existing
 	}
 
-	// Table miss: construct, insert into table, populate objectCache.
+	// Table miss: construct, insert into table.
 	link := drive.NewLink(pLink, parent, parent.Share(), c)
 	c.putLink(pLink.LinkID, link)
-
-	// Best-effort write to objectCache (no-op when nil).
-	if data, err := json.Marshal(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, sanitizeKey(pLink.LinkID), data)
-	}
 
 	return link
 }
@@ -115,32 +109,16 @@ func (c *Client) getLink(linkID string) *drive.Link {
 	return c.linkTable[linkID]
 }
 
-// GetCachedLink fetches a raw proton.Link by ID, checking the object cache
-// first and populating it on a miss. This is the single chokepoint for
-// all link fetches from the API — every code path that needs a
-// proton.Link should call this instead of c.Session.Client.GetLink.
+// GetCachedLink fetches a raw proton.Link by ID. This is the single
+// chokepoint for all link fetches from the API — every code path that
+// needs a proton.Link should call this instead of
+// c.Session.Client.GetLink.
+//
+// TODO: re-enable disk cache once proton.Link JSON round-trip is fixed.
+// The proton.Link struct does not survive json.Marshal/json.Unmarshal —
+// the API uses field names that don't match Go's default encoding.
 func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (proton.Link, error) {
-	// ObjectCache hit — return without API call.
-	if data, err := objectCacheRead(c.objectCache, sanitizeKey(linkID)); err == nil && data != nil {
-		var pLink proton.Link
-		if err := json.Unmarshal(data, &pLink); err == nil {
-			return pLink, nil
-		}
-		// Unmarshal failed — fall through to API fetch.
-	}
-
-	// API fetch.
-	pLink, err := c.Session.Client.GetLink(ctx, shareID, linkID)
-	if err != nil {
-		return proton.Link{}, err
-	}
-
-	// Populate objectCache (no-op when nil).
-	if data, err := json.Marshal(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, sanitizeKey(linkID), data)
-	}
-
-	return pLink, nil
+	return c.Session.Client.GetLink(ctx, shareID, linkID)
 }
 
 // putLink inserts a *Link into the table. Takes an exclusive write lock.

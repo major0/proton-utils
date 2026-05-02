@@ -176,7 +176,7 @@ func expandProtonRecursive(ctx context.Context, dc *driveClient.Client, src, dst
 	var walkErr error
 	go func() {
 		defer close(results)
-		walkErr = dc.TreeWalk(ctx, src.link, "", drive.BreadthFirst, results)
+		walkErr = dc.TreeWalk(ctx, src.link, "", drive.BreadthFirst, -1, results)
 	}()
 
 	for entry := range results {

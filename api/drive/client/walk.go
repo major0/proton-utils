@@ -20,12 +20,13 @@ type WalkEntry struct {
 // TreeWalk walks the directory tree rooted at root and sends each entry
 // to the results channel. The caller owns the channel and controls
 // buffering, backpressure, and lifetime. Cancel ctx to stop the walk.
-func (c *Client) TreeWalk(ctx context.Context, root *drive.Link, rootPath string, order drive.WalkOrder, results chan<- WalkEntry) error {
+// maxDepth limits descent depth (-1 for unlimited, 0 = root only).
+func (c *Client) TreeWalk(ctx context.Context, root *drive.Link, rootPath string, order drive.WalkOrder, maxDepth int, results chan<- WalkEntry) error {
 	switch order {
 	case drive.DepthFirst:
-		return c.walkDepthFirst(ctx, root, rootPath, 0, "", results)
+		return c.walkDepthFirst(ctx, root, rootPath, 0, maxDepth, "", results)
 	default:
-		return c.walkBreadthFirst(ctx, root, rootPath, results)
+		return c.walkBreadthFirst(ctx, root, rootPath, maxDepth, results)
 	}
 }
 
@@ -35,7 +36,7 @@ type queueItem struct {
 	depth int
 }
 
-func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPath string, results chan<- WalkEntry) error {
+func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPath string, maxDepth int, results chan<- WalkEntry) error {
 	select {
 	case results <- WalkEntry{Path: rootPath, Link: root, Depth: 0}:
 	case <-ctx.Done():
@@ -76,7 +77,8 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 					return ctx.Err()
 				}
 
-				if entry.Link.Type() == proton.LinkTypeFolder {
+				// Only descend if we haven't reached maxdepth.
+				if entry.Link.Type() == proton.LinkTypeFolder && (maxDepth < 0 || childDepth < maxDepth) {
 					next = append(next, queueItem{link: entry.Link, path: childPath, depth: childDepth})
 				}
 			}
@@ -88,12 +90,12 @@ func (c *Client) walkBreadthFirst(ctx context.Context, root *drive.Link, rootPat
 	return nil
 }
 
-func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath string, depth int, entryName string, results chan<- WalkEntry) error {
+func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath string, depth, maxDepth int, entryName string, results chan<- WalkEntry) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if link.Type() == proton.LinkTypeFolder {
+	if link.Type() == proton.LinkTypeFolder && (maxDepth < 0 || depth < maxDepth) {
 		for entry := range link.Readdir(ctx) {
 			if entry.Err != nil {
 				continue
@@ -110,7 +112,7 @@ func (c *Client) walkDepthFirst(ctx context.Context, link *drive.Link, linkPath 
 			if entry.Link.Type() == proton.LinkTypeFolder {
 				childPath += "/"
 			}
-			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, name, results); err != nil {
+			if err := c.walkDepthFirst(ctx, entry.Link, childPath, depth+1, maxDepth, name, results); err != nil {
 				return err
 			}
 		}
