@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
+	resty "github.com/go-resty/resty/v2"
 	common "github.com/major0/proton-cli/api"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/internal"
@@ -249,7 +250,7 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 		session, err := common.RestoreServiceSession(
 			ctx, ServiceName, ProtonOpts,
 			SessionStoreVar, AccountStoreVar, CookieStoreVar,
-			svc.AppVersion(""), nil,
+			svc.AppVersion(""), requestTimeoutHook,
 		)
 		if err != nil {
 			return nil, err
@@ -258,13 +259,41 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 		return session, nil
 	}
 
-	session, err := common.ReadySession(ctx, ProtonOpts, SessionStoreVar, CookieStoreVar, nil)
+	session, err := common.ReadySession(ctx, ProtonOpts, SessionStoreVar, CookieStoreVar, requestTimeoutHook)
 	if err != nil {
 		return nil, err
 	}
 	session.AppVersion = AppVersion
 	session.UserAgent = UserAgent
 	return session, nil
+}
+
+// requestTimeoutHook sets a per-request timeout on the proton.Manager's
+// Resty client and adds a retry condition for timeouts. This ensures
+// individual API calls time out even when the operation context is
+// unbounded (context.Background), and automatically retry when a
+// request times out (e.g., dead HTTP/2 connection).
+func requestTimeoutHook(m *proton.Manager) {
+	// Per-request timeout: wrap each request's context with a deadline.
+	// On retries, the previous context is cancelled — replace it with a
+	// fresh timeout and close idle connections so the retry establishes
+	// a new TCP connection instead of reusing the dead HTTP/2 stream.
+	m.AddPreRequestHook(func(c *resty.Client, req *resty.Request) error {
+		ctx := req.Context()
+		if ctx.Err() != nil {
+			// Previous attempt timed out — close the dead connection
+			// and start fresh so the retry dials a new socket.
+			slog.Debug("requestTimeout: resetting cancelled context", "timeout", Timeout)
+			c.GetClient().CloseIdleConnections()
+			ctx = context.Background()
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			slog.Debug("requestTimeout: setting deadline", "timeout", Timeout)
+			ctx, _ = context.WithTimeout(ctx, Timeout) //nolint:govet,gosec // cancel is handled by request lifecycle
+		}
+		req.SetContext(ctx)
+		return nil
+	})
 }
 
 // NewDriveClient creates a drive client with the loaded config applied.
