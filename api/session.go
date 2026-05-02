@@ -272,9 +272,18 @@ func (s *Session) CookieJar() http.CookieJar { return s.cookieJar }
 // transitioning to cookies.
 func (s *Session) SetCookieJar(jar http.CookieJar) { s.cookieJar = jar }
 
-// Addresses fetches addresses from the API.
-// Service-specific clients call this during their own construction.
+// Addresses returns the session's addresses. If addresses were already
+// loaded during Unlock, returns the cached copy. Otherwise fetches from
+// the API. This avoids a redundant API call in drive.NewClient when the
+// session was restored with cached addresses.
 func (s *Session) Addresses(ctx context.Context) ([]proton.Address, error) {
+	if len(s.addresses) > 0 {
+		addrs := make([]proton.Address, 0, len(s.addresses))
+		for _, addr := range s.addresses {
+			addrs = append(addrs, addr)
+		}
+		return addrs, nil
+	}
 	return s.Client.GetAddresses(ctx)
 }
 
