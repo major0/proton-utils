@@ -855,10 +855,16 @@ func restoreExistingCookieService(ctx context.Context, svcConfig *SessionConfig,
 			return nil, fmt.Errorf("restore service session %q: cookie refresh: %w", service, refreshErr)
 		}
 
-		// Persist updated cookies.
+		// Rebuild the jar from the refreshed cookies to avoid
+		// duplicates. The old jar may contain stale cookies that
+		// weren't replaced by Set-Cookie (different path/domain).
 		refreshedCfg := cs.Config()
 		svcConfig.Cookies = refreshedCfg.Cookies
 		svcConfig.LastRefresh = refreshedCfg.LastRefresh
+
+		jar, _ = cookiejar.New(nil)
+		loadProtonCookies(jar, svcConfig.Cookies, svc.Host)
+
 		if saveErr := store.Save(svcConfig); saveErr != nil {
 			slog.Error("restoreExistingCookieService: persist refreshed cookies", "error", saveErr)
 		}

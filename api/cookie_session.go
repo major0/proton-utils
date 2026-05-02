@@ -629,13 +629,16 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 			return nil, fmt.Errorf("cookie session restore: proactive refresh (run `proton account login`): %w", refreshErr)
 		}
 
-		// Persist updated cookies.
+		// Persist updated cookies and rebuild jar to avoid duplicates.
 		refreshedCfg := cs.Config()
 		cookieConfig.Cookies = refreshedCfg.Cookies
 		cookieConfig.LastRefresh = refreshedCfg.LastRefresh
 		if saveErr := cookieStore.Save(cookieConfig); saveErr != nil {
 			slog.Error("cookie session restore: persist refreshed cookies", "error", saveErr)
 		}
+
+		jar, _ = cookiejar.New(nil)
+		loadProtonCookies(jar, cookieConfig.Cookies, acctSvc.Host)
 	}
 
 	// Build proton.Manager with CookieTransport so Resty-based calls use cookie auth.
