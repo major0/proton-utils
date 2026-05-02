@@ -33,6 +33,10 @@ type Client struct {
 	// objects. Nil when disk_cache is disabled or $XDG_RUNTIME_DIR is
 	// unset. Callers must handle nil gracefully.
 	objectCache *diskv.Diskv
+
+	// blockStore is the shared block store for all block I/O. Created
+	// lazily after InitObjectCache so the disk cache is wired up.
+	blockStore BlockStore
 }
 
 // Verify Client implements LinkResolver at compile time.
@@ -55,6 +59,7 @@ func NewClient(ctx context.Context, session *api.Session) (*Client, error) {
 		addresses:       addrMap,
 		addressKeyRings: session.AddressKeyRings(),
 		linkTable:       make(map[string]*drive.Link),
+		blockStore:      NewBlockStore(session, nil, nil),
 	}, nil
 }
 
@@ -107,6 +112,14 @@ func (c *Client) Throttle() *api.Throttle {
 // MaxWorkers returns the default concurrency limit for parallel operations.
 func (c *Client) MaxWorkers() int {
 	return api.DefaultMaxWorkers()
+}
+
+// InternalBlockStore returns the client's shared block store. This is a
+// temporary accessor for cmd/ code that constructs copy pipelines
+// directly. It should be removed when block I/O is fully encapsulated
+// in the client package.
+func (c *Client) InternalBlockStore() BlockStore {
+	return c.blockStore
 }
 
 // getLink returns the *Link for linkID from the table, or nil if absent.

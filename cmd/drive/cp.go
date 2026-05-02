@@ -280,7 +280,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", src.raw, err)
 		}
-		store := driveClient.NewBlockStore(dc.Session, nil, nil)
+		store := dc.InternalBlockStore()
 		job.Src = driveClient.NewProtonReader(fh.LinkID, fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
 	}
 
@@ -313,7 +313,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 				// Healthy file — overwrite via new revision.
 				fh, err := dc.OverwriteFile(ctx, dst.share, dst.link)
 				if err == nil {
-					store := driveClient.NewBlockStore(dc.Session, nil, nil)
+					store := dc.InternalBlockStore()
 					job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)
 					return &job, nil
 				}
@@ -417,7 +417,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 				return nil, fmt.Errorf("cp: %s: %w", dst.raw, err)
 			}
 		}
-		store := driveClient.NewBlockStore(dc.Session, nil, nil)
+		store := dc.InternalBlockStore()
 		job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)
 	}
 

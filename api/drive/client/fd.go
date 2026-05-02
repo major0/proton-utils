@@ -100,7 +100,7 @@ func (c *Client) OpenFD(ctx context.Context, link *drive.Link) (*FileDescriptor,
 		return nil, fmt.Errorf("drive.OpenFD: %w", err)
 	}
 
-	store := NewBlockStore(c.Session, nil, nil)
+	store := c.blockStore
 
 	return &FileDescriptor{
 		linkID:     fh.LinkID,
@@ -366,7 +366,7 @@ func (c *Client) CreateFD(ctx context.Context, share *drive.Share, parent *drive
 		return nil, fmt.Errorf("drive.CreateFD: %w", err)
 	}
 
-	store := NewBlockStore(c.Session, nil, nil)
+	store := c.blockStore
 	return newWriteFD(fh, store, c.Session), nil
 }
 
@@ -378,7 +378,7 @@ func (c *Client) OverwriteFD(ctx context.Context, share *drive.Share, link *driv
 		return nil, fmt.Errorf("drive.OverwriteFD: %w", err)
 	}
 
-	store := NewBlockStore(c.Session, nil, nil)
+	store := c.blockStore
 	return newWriteFD(fh, store, c.Session), nil
 }
 

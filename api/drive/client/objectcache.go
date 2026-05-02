@@ -67,6 +67,9 @@ func (c *Client) InitObjectCache() {
 	}
 
 	c.objectCache = NewObjectCache(filepath.Join(xdgRuntimeDir, "proton", "drive"), 0)
+
+	// Initialize the shared block store with the disk cache.
+	c.blockStore = NewBlockStore(c.Session, c.objectCache, nil)
 }
 
 // objectCacheRead reads a value from the cache. When d is nil (e.g.
