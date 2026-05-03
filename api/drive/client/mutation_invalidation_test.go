@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
@@ -16,7 +17,7 @@ import (
 // Since actual mutation methods make API calls, this test exercises the
 // invalidation logic directly by pre-populating the Link Table with
 // known links, calling the invalidation helpers (deleteLink,
-// objectCacheErase, clearLinks, objectCacheEraseAll), and verifying
+// ObjectCache.Erase, clearLinks, ObjectCache.EraseAll), and verifying
 // the expected entries are absent.
 //
 // **Property 8: Mutation invalidation**
@@ -33,9 +34,9 @@ func TestPropertyMutationInvalidation(t *testing.T) {
 		root = drive.NewTestLink(rootPLink, nil, share, resolver, "root")
 		share.Link = root
 
-		// Set up a diskv-backed ObjectCache in a temp dir.
+		// Set up an ObjectCache in a temp dir.
 		dir := t.TempDir()
-		cache := NewObjectCache(dir, 0)
+		cache := api.NewObjectCache(dir)
 
 		c := &Client{
 			linkTable:   make(map[string]*drive.Link),
@@ -63,8 +64,8 @@ func TestPropertyMutationInvalidation(t *testing.T) {
 			c.putLink(id, link)
 			links[id] = link
 			// Write a dummy entry to the ObjectCache.
-			if err := objectCacheWrite(cache, id, []byte("encrypted-"+id)); err != nil {
-				rt.Fatalf("objectCacheWrite %q: %v", id, err)
+			if err := cache.Write(id, []byte("encrypted-"+id)); err != nil {
+				rt.Fatalf("ObjectCache.Write %q: %v", id, err)
 			}
 		}
 
@@ -125,7 +126,7 @@ func TestPropertyMutationInvalidation(t *testing.T) {
 			}
 
 		case 2:
-			// Remove(link): delete link + parent + objectCache.Erase(linkID).
+			// Remove(link): delete link + parent + ObjectCache.Erase(linkID).
 			if len(ids) < 2 {
 				return
 			}
@@ -134,8 +135,8 @@ func TestPropertyMutationInvalidation(t *testing.T) {
 
 			c.deleteLink(removedID)
 			c.deleteLink(parentID)
-			if err := objectCacheErase(cache, removedID); err != nil {
-				rt.Fatalf("objectCacheErase: %v", err)
+			if err := cache.Erase(removedID); err != nil {
+				rt.Fatalf("ObjectCache.Erase: %v", err)
 			}
 
 			if c.getLink(removedID) != nil {
@@ -177,10 +178,10 @@ func TestPropertyMutationInvalidation(t *testing.T) {
 			}
 
 		case 4:
-			// Clear: clear all Link Table entries + objectCache.EraseAll().
+			// Clear: clear all Link Table entries + ObjectCache.EraseAll().
 			c.clearLinks()
-			if err := objectCacheEraseAll(cache); err != nil {
-				rt.Fatalf("objectCacheEraseAll: %v", err)
+			if err := cache.EraseAll(); err != nil {
+				rt.Fatalf("ObjectCache.EraseAll: %v", err)
 			}
 
 			// All links must be absent from the table.

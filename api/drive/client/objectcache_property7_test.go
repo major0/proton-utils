@@ -7,15 +7,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/major0/proton-cli/api"
 	"pgregory.net/rapid"
 )
 
-// TestPropertyNoPlaintextMetadataOnDisk verifies that no file in the diskv
-// store for Drive contains plaintext metadata. The store contains only raw
-// encrypted API response bytes keyed by LinkID.
+// TestPropertyNoPlaintextMetadataOnDisk verifies that no file in the
+// ObjectCache store for Drive contains plaintext metadata. The store
+// contains only raw encrypted API response bytes keyed by LinkID.
 //
 // The test writes opaque byte slices (simulating encrypted API responses) to
-// the object cache via objectCacheWrite, then reads every on-disk file and
+// the object cache via ObjectCache.Write, then reads every on-disk file and
 // asserts:
 //  1. Each file's content is byte-identical to what was written.
 //  2. No file contains recognizable plaintext metadata — specifically, no
@@ -26,7 +27,7 @@ import (
 func TestPropertyNoPlaintextMetadataOnDisk(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		dir := t.TempDir()
-		cache := NewObjectCache(dir, 0)
+		cache := api.NewObjectCache(dir)
 
 		// Generate 1–10 link entries with opaque encrypted bytes.
 		numLinks := rapid.IntRange(1, 10).Draw(rt, "numLinks")
@@ -42,11 +43,11 @@ func TestPropertyNoPlaintextMetadataOnDisk(t *testing.T) {
 			written[linkID] = data
 		}
 
-		// Write all entries via the nil-safe helper (same path used by
+		// Write all entries via ObjectCache.Write (same path used by
 		// the Drive client's GetLink flow).
 		for linkID, data := range written {
-			if err := objectCacheWrite(cache, linkID, data); err != nil {
-				rt.Fatalf("objectCacheWrite(%q): %v", linkID, err)
+			if err := cache.Write(linkID, data); err != nil {
+				rt.Fatalf("ObjectCache.Write(%q): %v", linkID, err)
 			}
 		}
 

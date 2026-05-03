@@ -4,5 +4,5 @@ package client
 // the on-disk ObjectCache. Intended for session logout or full reset.
 func (c *Client) Clear() error {
 	c.clearLinks()
-	return objectCacheEraseAll(c.objectCache)
+	return c.objectCache.EraseAll()
 }

@@ -673,8 +673,8 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 	}
 
 	// Load user and addresses from account cache, falling back to API.
-	acctCache := NewAccountCache(cookieConfig.UID)
-	cachedUser := acctCache.GetUser()
+	acctCache := newAccountCacheForUID(cookieConfig.UID)
+	cachedUser := accountCacheGetUser(acctCache)
 	if cachedUser != nil {
 		session.user = *cachedUser
 	} else {
@@ -683,17 +683,17 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 			return nil, fmt.Errorf("cookie session restore: get user: %w", err)
 		}
 		session.user = user
-		acctCache.PutUser(user)
+		accountCachePutUser(acctCache, user)
 	}
 
-	addrs := acctCache.GetAddresses()
+	addrs := accountCacheGetAddresses(acctCache)
 	if addrs == nil {
 		var err error
 		addrs, err = session.Client.GetAddresses(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cookie session restore: get addresses: %w", err)
 		}
-		acctCache.PutAddresses(addrs)
+		accountCachePutAddresses(acctCache, addrs)
 	}
 
 	// Unlock keyrings using SaltedKeyPass from the account config.

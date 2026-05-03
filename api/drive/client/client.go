@@ -12,7 +12,6 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/peterbourgon/diskv/v3"
 )
 
 // Client wraps an api.Session with Drive-specific state and operations.
@@ -29,10 +28,11 @@ type Client struct {
 	linkTable map[string]*drive.Link
 	tableMu   sync.RWMutex
 
-	// objectCache is the diskv-backed on-disk cache for encrypted API
-	// objects. Nil when disk_cache is disabled or $XDG_RUNTIME_DIR is
-	// unset. Callers must handle nil gracefully.
-	objectCache *diskv.Diskv
+	// objectCache is the on-disk cache for encrypted API objects backed
+	// by api.ObjectCache. Nil when disk_cache is disabled or
+	// $XDG_RUNTIME_DIR is unset. Callers must handle nil gracefully
+	// (all ObjectCache methods are nil-safe).
+	objectCache *api.ObjectCache
 
 	// blockStore is the shared block store for all block I/O. Created
 	// lazily after InitObjectCache so the disk cache is wired up.
@@ -86,7 +86,7 @@ func (c *Client) NewChildLink(_ context.Context, parent *drive.Link, pLink *prot
 	// Best-effort write to objectCache (no-op when nil).
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, sanitizeKey(pLink.LinkID), buf.Bytes())
+		_ = c.objectCache.Write(sanitizeKey(pLink.LinkID), buf.Bytes())
 	}
 
 	return link
@@ -144,7 +144,7 @@ func (c *Client) getLink(linkID string) *drive.Link {
 // links have a cache interaction issue that needs further investigation.
 func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (proton.Link, error) {
 	// ObjectCache hit — return without API call.
-	if data, err := objectCacheRead(c.objectCache, sanitizeKey(linkID)); err == nil && data != nil {
+	if data, _ := c.objectCache.Read(sanitizeKey(linkID)); data != nil {
 		var pLink proton.Link
 		if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&pLink); err == nil {
 			return pLink, nil
@@ -161,7 +161,7 @@ func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (pro
 	// Populate objectCache (no-op when nil).
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-		_ = objectCacheWrite(c.objectCache, sanitizeKey(linkID), buf.Bytes())
+		_ = c.objectCache.Write(sanitizeKey(linkID), buf.Bytes())
 	}
 
 	return pLink, nil

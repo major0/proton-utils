@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
@@ -12,7 +13,7 @@ import (
 // TestPropertyLookupInsertOnMiss verifies the three-layer lookup flow:
 //
 //  1. Link Table hit → return existing *Link pointer.
-//  2. ObjectCache (diskv) hit → unmarshal proton.Link, construct *Link,
+//  2. ObjectCache hit → unmarshal proton.Link, construct *Link,
 //     insert into Link Table, return.
 //  3. Full miss → simulate API fetch, insert into both Link Table and
 //     ObjectCache, return.
@@ -25,7 +26,7 @@ import (
 func TestPropertyLookupInsertOnMiss(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		cacheDir := t.TempDir()
-		cache := NewObjectCache(cacheDir, 0)
+		cache := api.NewObjectCache(cacheDir)
 
 		c := &Client{
 			linkTable:   make(map[string]*drive.Link),
@@ -60,8 +61,8 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 		if got := c.getLink(linkID); got != nil {
 			rt.Fatalf("expected table miss for %q before insert", linkID)
 		}
-		data, err := objectCacheRead(c.objectCache, linkID)
-		if err == nil && data != nil {
+		data, _ := c.objectCache.Read(linkID)
+		if data != nil {
 			rt.Fatalf("expected cache miss for %q before insert", linkID)
 		}
 
@@ -73,8 +74,8 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 		if err != nil {
 			rt.Fatalf("json.Marshal: %v", err)
 		}
-		if err := objectCacheWrite(c.objectCache, linkID, marshaledData); err != nil {
-			rt.Fatalf("objectCacheWrite: %v", err)
+		if err := c.objectCache.Write(linkID, marshaledData); err != nil {
+			rt.Fatalf("ObjectCache.Write: %v", err)
 		}
 
 		// Verify: table hit returns the same pointer.
@@ -83,12 +84,12 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 		}
 
 		// Verify: objectCache has the data.
-		cachedData, err := objectCacheRead(c.objectCache, linkID)
+		cachedData, err := c.objectCache.Read(linkID)
 		if err != nil || cachedData == nil {
 			rt.Fatalf("objectCache miss after API insert: err=%v", err)
 		}
 
-		// --- Phase 2: Clear table, keep objectCache → diskv hit ---
+		// --- Phase 2: Clear table, keep objectCache → cache hit ---
 		c.clearLinks()
 
 		// Table should be empty now.
@@ -97,12 +98,12 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 		}
 
 		// ObjectCache should still have the data.
-		cachedData, err = objectCacheRead(c.objectCache, linkID)
+		cachedData, err = c.objectCache.Read(linkID)
 		if err != nil || cachedData == nil {
 			rt.Fatalf("objectCache miss after clearLinks: err=%v", err)
 		}
 
-		// Simulate what StatLink does on a diskv hit:
+		// Simulate what StatLink does on a cache hit:
 		// unmarshal, construct *Link, insert into table.
 		var pLink proton.Link
 		if err := json.Unmarshal(cachedData, &pLink); err != nil {
@@ -121,7 +122,7 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 
 		// Verify: table hit returns the new pointer (link2, not link1 — link1 was cleared).
 		if got := c.getLink(linkID); got != link2 {
-			rt.Fatalf("table hit after diskv re-insert: got different pointer")
+			rt.Fatalf("table hit after cache re-insert: got different pointer")
 		}
 
 		// --- Phase 3: Subsequent lookup returns same pointer ---
@@ -169,9 +170,9 @@ func TestPropertyLookupInsertOnMiss_NilCache(t *testing.T) {
 		if err != nil {
 			rt.Fatalf("json.Marshal: %v", err)
 		}
-		// objectCacheWrite with nil is a no-op.
-		if err := objectCacheWrite(c.objectCache, linkID, marshaledData); err != nil {
-			rt.Fatalf("objectCacheWrite(nil): %v", err)
+		// ObjectCache.Write with nil receiver is a no-op.
+		if err := c.objectCache.Write(linkID, marshaledData); err != nil {
+			rt.Fatalf("ObjectCache.Write(nil): %v", err)
 		}
 
 		// Table hit works.
@@ -179,11 +180,11 @@ func TestPropertyLookupInsertOnMiss_NilCache(t *testing.T) {
 			rt.Fatalf("table hit: pointer identity violated")
 		}
 
-		// Clear table — with nil cache, there's no diskv fallback.
+		// Clear table — with nil cache, there's no cache fallback.
 		c.clearLinks()
 
-		// objectCacheRead with nil returns miss.
-		data, err := objectCacheRead(c.objectCache, linkID)
+		// ObjectCache.Read with nil receiver returns miss.
+		data, err := c.objectCache.Read(linkID)
 		if err != nil || data != nil {
 			rt.Fatalf("expected nil cache miss, got data=%v err=%v", data, err)
 		}

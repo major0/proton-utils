@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/major0/proton-cli/api"
 	"pgregory.net/rapid"
 )
 
@@ -162,10 +163,10 @@ func TestBlockStoreInvalidateClearsBufferCache(t *testing.T) {
 }
 
 // TestBlockStoreInvalidateWithDiskCache verifies Invalidate clears both
-// the buffer cache and the on-disk diskv cache.
+// the buffer cache and the on-disk ObjectCache.
 func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 	bc := newBufferCache(16)
-	dc := NewObjectCache(t.TempDir(), 0)
+	dc := api.NewObjectCache(t.TempDir())
 
 	store := &httpBlockStore{
 		session:  nil,
@@ -177,7 +178,7 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 	bc.Put("link-both", 0, []byte("buf-data"))
 	key := blockCacheKey("link-both", 0)
 	if err := dc.Write(key, []byte("disk-data")); err != nil {
-		t.Fatalf("diskv.Write: %v", err)
+		t.Fatalf("ObjectCache.Write: %v", err)
 	}
 
 	store.Invalidate("link-both")
@@ -198,7 +199,7 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 // hit populates the buffer cache for subsequent fast access.
 func TestBlockStoreDiskCacheHitPopulatesBufferCache(t *testing.T) {
 	bc := newBufferCache(16)
-	dc := NewObjectCache(t.TempDir(), 0)
+	dc := api.NewObjectCache(t.TempDir())
 
 	store := &httpBlockStore{
 		session:  nil, // nil — if it falls through to HTTP, it panics
@@ -209,7 +210,7 @@ func TestBlockStoreDiskCacheHitPopulatesBufferCache(t *testing.T) {
 	want := []byte("disk-cached-block")
 	key := blockCacheKey("link-disk", 0)
 	if err := dc.Write(key, want); err != nil {
-		t.Fatalf("diskv.Write: %v", err)
+		t.Fatalf("ObjectCache.Write: %v", err)
 	}
 
 	// GetBlock should find it in disk cache and populate buffer cache.

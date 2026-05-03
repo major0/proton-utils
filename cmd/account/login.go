@@ -9,6 +9,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
@@ -354,9 +355,7 @@ func cookieLogin(ctx context.Context, username, password, mboxpass string) error
 	}
 
 	// Populate account cache with fresh data from login.
-	acctCache := common.NewAccountCache(cookieSess.UID)
-	acctCache.PutUser(userResp.User)
-	acctCache.PutAddresses(addrResp.Addresses)
+	account.PopulateAccountCache(cookieSess.UID, userResp.User, addrResp.Addresses)
 
 	var saltsResp struct{ KeySalts []proton.Salt }
 	if err := cookieSess.DoJSON(ctx, "GET", "/core/v4/keys/salts", nil, &saltsResp); err != nil {

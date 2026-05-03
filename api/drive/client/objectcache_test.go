@@ -6,13 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/peterbourgon/diskv/v3"
+	"github.com/major0/proton-cli/api"
 	"pgregory.net/rapid"
 )
 
-// TestPropertyObjectCacheTypeAgnostic verifies that the diskv-backed object
-// cache stores and returns arbitrary byte slices without interpreting or
-// transforming them.
+// TestPropertyObjectCacheTypeAgnostic verifies that the ObjectCache stores
+// and returns arbitrary byte slices without interpreting or transforming them.
 //
 // **Validates: Requirements 1.7**
 func TestPropertyObjectCacheTypeAgnostic(t *testing.T) {
@@ -20,7 +19,7 @@ func TestPropertyObjectCacheTypeAgnostic(t *testing.T) {
 		key := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "key")
 		data := rapid.SliceOf(rapid.Byte()).Draw(rt, "data")
 
-		cache := NewObjectCache(t.TempDir(), 0)
+		cache := api.NewObjectCache(t.TempDir())
 
 		if err := cache.Write(key, data); err != nil {
 			rt.Fatalf("Write(%q): %v", key, err)
@@ -45,7 +44,7 @@ func TestPropertyObjectCacheTypeAgnostic(t *testing.T) {
 // **Validates: Requirements 2.1**
 func TestPropertyObjectCacheNoAutoExpiration(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
-		cache := NewObjectCache(t.TempDir(), 0)
+		cache := api.NewObjectCache(t.TempDir())
 
 		// Target key/value that must survive all intervening operations.
 		targetKey := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "targetKey")
@@ -91,10 +90,10 @@ func TestPropertyObjectCacheNoAutoExpiration(t *testing.T) {
 	})
 }
 
-// TestPropertyObjectCacheNilInstance verifies that when the diskv instance is
-// nil (simulating $XDG_RUNTIME_DIR unset), all cache operations are safe
-// no-ops: writes return nil error, reads return nil data and nil error, and
-// no panic occurs.
+// TestPropertyObjectCacheNilInstance verifies that when the ObjectCache
+// instance is nil (simulating $XDG_RUNTIME_DIR unset), all cache operations
+// are safe no-ops: writes return nil error, reads return nil data and nil
+// error, and no panic occurs.
 //
 // **Validates: Requirement 1.5**
 func TestPropertyObjectCacheNilInstance(t *testing.T) {
@@ -102,39 +101,44 @@ func TestPropertyObjectCacheNilInstance(t *testing.T) {
 		key := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "key")
 		data := rapid.SliceOf(rapid.Byte()).Draw(rt, "data")
 
-		// All four helpers called with a nil *diskv.Diskv must not panic.
-		var nilCache *diskv.Diskv
+		// All methods called on a nil *api.ObjectCache must not panic.
+		var nilCache *api.ObjectCache
 
 		// Write is a no-op.
-		if err := objectCacheWrite(nilCache, key, data); err != nil {
-			rt.Fatalf("objectCacheWrite(nil, %q): unexpected error: %v", key, err)
+		if err := nilCache.Write(key, data); err != nil {
+			rt.Fatalf("Write(nil, %q): unexpected error: %v", key, err)
 		}
 
 		// Read returns a miss (nil data, nil error).
-		got, err := objectCacheRead(nilCache, key)
+		got, err := nilCache.Read(key)
 		if err != nil {
-			rt.Fatalf("objectCacheRead(nil, %q): unexpected error: %v", key, err)
+			rt.Fatalf("Read(nil, %q): unexpected error: %v", key, err)
 		}
 		if got != nil {
-			rt.Fatalf("objectCacheRead(nil, %q): expected nil data, got %d bytes", key, len(got))
+			rt.Fatalf("Read(nil, %q): expected nil data, got %d bytes", key, len(got))
 		}
 
 		// Erase is a no-op.
-		if err := objectCacheErase(nilCache, key); err != nil {
-			rt.Fatalf("objectCacheErase(nil, %q): unexpected error: %v", key, err)
+		if err := nilCache.Erase(key); err != nil {
+			rt.Fatalf("Erase(nil, %q): unexpected error: %v", key, err)
 		}
 
 		// EraseAll is a no-op.
-		if err := objectCacheEraseAll(nilCache); err != nil {
-			rt.Fatalf("objectCacheEraseAll(nil): unexpected error: %v", err)
+		if err := nilCache.EraseAll(); err != nil {
+			rt.Fatalf("EraseAll(nil): unexpected error: %v", err)
+		}
+
+		// Has returns false.
+		if nilCache.Has(key) {
+			rt.Fatalf("Has(nil, %q): expected false", key)
 		}
 	})
 }
 
-// TestPropertyObjectCacheNamespaceIsolation verifies that two diskv instances
-// with different BasePath values do not share storage. A key written to one
-// instance is not readable from the other, while it remains readable from the
-// original instance with the correct data.
+// TestPropertyObjectCacheNamespaceIsolation verifies that two ObjectCache
+// instances with different BasePath values do not share storage. A key
+// written to one instance is not readable from the other, while it remains
+// readable from the original instance with the correct data.
 //
 // **Validates: Requirements 1.2**
 func TestPropertyObjectCacheNamespaceIsolation(t *testing.T) {
@@ -142,8 +146,8 @@ func TestPropertyObjectCacheNamespaceIsolation(t *testing.T) {
 		key := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "key")
 		data := rapid.SliceOfN(rapid.Byte(), 1, 512).Draw(rt, "data")
 
-		cacheA := NewObjectCache(t.TempDir(), 0)
-		cacheB := NewObjectCache(t.TempDir(), 0)
+		cacheA := api.NewObjectCache(t.TempDir())
+		cacheB := api.NewObjectCache(t.TempDir())
 
 		// Write to instance A.
 		if err := cacheA.Write(key, data); err != nil {
@@ -154,9 +158,9 @@ func TestPropertyObjectCacheNamespaceIsolation(t *testing.T) {
 		if cacheB.Has(key) {
 			rt.Fatalf("cacheB.Has(%q) = true, want false", key)
 		}
-		_, err := cacheB.Read(key)
-		if err == nil {
-			rt.Fatalf("cacheB.Read(%q) returned nil error, want error (key should not exist)", key)
+		got, _ := cacheB.Read(key)
+		if got != nil {
+			rt.Fatalf("cacheB.Read(%q) returned data, want nil (key should not exist)", key)
 		}
 
 		// The key must still be readable from instance A with the original data.
@@ -179,7 +183,7 @@ func TestPropertyObjectCacheNamespaceIsolation(t *testing.T) {
 func TestPropertyObjectCacheAtomicWrite(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		dir := t.TempDir()
-		cache := NewObjectCache(dir, 0)
+		cache := api.NewObjectCache(dir)
 
 		key := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "key")
 		data := rapid.SliceOfN(rapid.Byte(), 1, 4096).Draw(rt, "data")
@@ -214,7 +218,7 @@ func TestPropertyObjectCacheAtomicWrite(t *testing.T) {
 func TestPropertyObjectCacheDiskLayout(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		dir := t.TempDir()
-		cache := NewObjectCache(dir, 0)
+		cache := api.NewObjectCache(dir)
 
 		// Generate 1–10 unique keys with associated data.
 		numKeys := rapid.IntRange(1, 10).Draw(rt, "numKeys")
