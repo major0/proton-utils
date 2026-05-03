@@ -44,7 +44,7 @@ func (c *Client) StatLinks(_ context.Context, share *drive.Share, parentLink *dr
 	links := make([]*drive.Link, 0, len(linkIDs))
 
 	for _, id := range linkIDs {
-		c.Session.Pool.Go(&wg, func(ctx context.Context) error {
+		c.Session.Sem.Go(&wg, func(ctx context.Context) error {
 			link, err := c.StatLink(ctx, share, parentLink, id)
 			if err != nil {
 				slog.Error("stat", "linkID", id, "error", err)
@@ -81,7 +81,7 @@ func (c *Client) FindLinkByName(ctx context.Context, share *drive.Share, parentL
 	)
 
 	for _, id := range linkIDs {
-		c.Session.Pool.Go(&wg, func(_ context.Context) error {
+		c.Session.Sem.Go(&wg, func(_ context.Context) error {
 			link, err := c.StatLink(ctx, share, parentLink, id)
 			if err != nil {
 				if ctx.Err() != nil {

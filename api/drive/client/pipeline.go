@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/api/pool"
 )
 
 // RunPipeline transfers files using the provided worker pool. Each
@@ -24,7 +24,7 @@ import (
 // The pool's concurrency limit controls how many workers run in
 // parallel. The pipeline submits nWorkers tasks and waits for all
 // of them to complete.
-func RunPipeline(_ context.Context, p *pool.Pool, jobs []CopyJob, opts TransferOpts) error {
+func RunPipeline(_ context.Context, p *api.Semaphore, jobs []CopyJob, opts TransferOpts) error {
 	if len(jobs) == 0 {
 		return nil
 	}

@@ -18,7 +18,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
-	"github.com/major0/proton-cli/api/pool"
 )
 
 // MaxAutoWorkers is the upper bound for the auto-detected worker count.
@@ -131,7 +130,7 @@ type Session struct {
 	// It is reused on HV retry so the SRP session matches the solved CAPTCHA.
 	cachedAuthInfo *proton.AuthInfo
 
-	Pool     *pool.Pool
+	Sem      *Semaphore
 	Throttle *Throttle
 
 	addresses       map[string]proton.Address
@@ -176,7 +175,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 
 	var session Session
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
+	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -212,7 +211,7 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 func sessionFromLogin(ctx context.Context, options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
 	session := &Session{}
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
+	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
 
 	jar, _ := cookiejar.New(nil)
 	session.cookieJar = jar
@@ -872,7 +871,7 @@ func restoreExistingCookieService(ctx context.Context, svcConfig *SessionCredent
 
 	session := &Session{}
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
+	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
 	session.cookieJar = jar
 
 	session.manager = proton.New(managerOpts...)

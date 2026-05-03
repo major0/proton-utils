@@ -382,8 +382,8 @@ func TestBuildChildSession(t *testing.T) {
 	if session.cookieJar == nil {
 		t.Fatal("cookieJar is nil")
 	}
-	if session.Pool == nil {
-		t.Fatal("Pool is nil")
+	if session.Sem == nil {
+		t.Fatal("Sem is nil")
 	}
 	if session.Throttle == nil {
 		t.Fatal("Throttle is nil")

@@ -12,7 +12,6 @@ import (
 	api "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	apiPool "github.com/major0/proton-cli/api/pool"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -240,11 +239,11 @@ func runCp(cmd *cobra.Command, args []string) error {
 
 	// Use the session pool when available (Proton paths), otherwise
 	// create a local pool for local-only copies.
-	var wp *apiPool.Pool
-	if dc != nil && dc.Session.Pool != nil {
-		wp = dc.Session.Pool
+	var wp *api.Semaphore
+	if dc != nil && dc.Session.Sem != nil {
+		wp = dc.Session.Sem
 	} else {
-		wp = apiPool.New(ctx, api.DefaultMaxWorkers())
+		wp = api.NewSemaphore(ctx, api.DefaultMaxWorkers(), nil)
 	}
 
 	if err := driveClient.RunPipeline(ctx, wp, jobs, transferOpts(opts)); err != nil {

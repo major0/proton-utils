@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
-	"github.com/major0/proton-cli/api/pool"
 	"pgregory.net/rapid"
 )
 
@@ -27,9 +27,9 @@ func (f *failReader) TotalSize() int64      { return 1024 }
 func (f *failReader) Describe() string      { return f.name }
 func (f *failReader) Close() error          { return nil }
 
-// testPool creates a pool for test use with the given concurrency.
-func testPool(ctx context.Context, n int) *pool.Pool {
-	return pool.New(ctx, n)
+// testPool creates a semaphore for test use with the given concurrency.
+func testPool(ctx context.Context, n int) *api.Semaphore {
+	return api.NewSemaphore(ctx, n, nil)
 }
 
 // TestBufferZeroed_Property verifies that after clear(), all bytes are zero.

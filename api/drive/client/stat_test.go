@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/pool"
 )
 
 // TestStatLinks_Empty verifies that StatLinks returns nil for empty input
@@ -14,7 +13,7 @@ import (
 func TestStatLinks_Empty(t *testing.T) {
 	c := &Client{
 		Session: &api.Session{
-			Pool: pool.New(context.Background(), 4),
+			Sem: api.NewSemaphore(context.Background(), 4, nil),
 		},
 	}
 
@@ -63,20 +62,20 @@ func TestFindLinkByName_Empty(t *testing.T) {
 // non-nil pool with the default concurrency limit.
 func TestSessionPool_Default(t *testing.T) {
 	ctx := context.Background()
-	p := pool.New(ctx, api.DefaultMaxWorkers())
+	s := api.NewSemaphore(ctx, api.DefaultMaxWorkers(), nil)
 
 	session := &api.Session{
-		Pool: p,
+		Sem: s,
 	}
 
-	if session.Pool == nil {
-		t.Fatal("Session.Pool is nil after construction")
+	if session.Sem == nil {
+		t.Fatal("Session.Sem is nil after construction")
 	}
 
-	// Verify pool is functional by submitting and waiting.
+	// Verify semaphore is functional by submitting and waiting.
 	var ran bool
 	var wg sync.WaitGroup
-	session.Pool.Go(&wg, func(_ context.Context) error {
+	session.Sem.Go(&wg, func(_ context.Context) error {
 		ran = true
 		return nil
 	})

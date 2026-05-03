@@ -16,7 +16,6 @@ import (
 	"time"
 
 	proton "github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api/pool"
 )
 
 // AuthCookiesReq is the request body for POST /core/v4/auth/cookies.
@@ -653,7 +652,7 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 
 	session := &Session{}
 	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Pool = pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(session.Throttle))
+	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
 	session.cookieJar = jar
 
 	session.manager = proton.New(managerOpts...)

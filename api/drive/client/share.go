@@ -69,7 +69,7 @@ func (c *Client) listShares(ctx context.Context, volumeID string, all bool) ([]d
 			continue
 		}
 		shareID := s.ShareID
-		c.Session.Pool.Go(&wg, func(ctx context.Context) error {
+		c.Session.Sem.Go(&wg, func(ctx context.Context) error {
 			share, err := c.GetShare(ctx, shareID)
 			if err != nil {
 				slog.Error("worker", "shareID", shareID, "error", err)

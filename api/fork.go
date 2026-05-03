@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	proton "github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api/pool"
 )
 
 // ErrForkFailed indicates that the session fork protocol failed.
@@ -295,7 +294,7 @@ func SessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc ServiceCon
 		manager:    manager,
 		cookieJar:  jar,
 		Throttle:   throttle,
-		Pool:       pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(throttle)),
+		Sem:        NewSemaphore(ctx, DefaultMaxWorkers(), throttle),
 	}
 }
 
@@ -329,7 +328,7 @@ func CookieSessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc Serv
 		manager:    manager,
 		cookieJar:  cookieJar,
 		Throttle:   throttle,
-		Pool:       pool.New(ctx, DefaultMaxWorkers(), pool.WithThrottle(throttle)),
+		Sem:        NewSemaphore(ctx, DefaultMaxWorkers(), throttle),
 	}
 }
 
