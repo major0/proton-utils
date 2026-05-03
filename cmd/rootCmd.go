@@ -11,6 +11,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
@@ -66,7 +67,7 @@ var (
 
 	// ConfigVar holds the loaded application config.
 	// Migration: subcommands should use GetContext(cmd).Config instead.
-	ConfigVar *common.Config
+	ConfigVar *config.Config
 
 	// Private variables below this point
 
@@ -134,10 +135,10 @@ var (
 			}
 
 			// Load application config.
-			cfg, err := common.LoadConfig(rootParams.ConfigFile)
+			cfg, err := config.LoadConfig(rootParams.ConfigFile)
 			if err != nil {
 				slog.Warn("config load failed, using defaults", "error", err)
-				cfg = common.DefaultConfig()
+				cfg = config.DefaultConfig()
 			}
 
 			rc := &RuntimeContext{

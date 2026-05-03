@@ -6,6 +6,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +47,7 @@ type RuntimeContext struct {
 	AppVersionOverride string
 
 	// Config holds the loaded application config.
-	Config *common.Config
+	Config *config.Config
 
 	// SessionFile is the resolved path to the sessions.db file.
 	SessionFile string

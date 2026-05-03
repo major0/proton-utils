@@ -750,17 +750,6 @@ func TestUnlock(t *testing.T) {
 	}
 }
 
-// --- SaveConfig error path test ---
-
-// TestSaveConfigError verifies SaveConfig returns an error for an
-// unwritable directory.
-func TestSaveConfigError(t *testing.T) {
-	err := SaveConfig("/proc/nonexistent/deep/path/config.yaml", DefaultConfig())
-	if err == nil {
-		t.Fatal("expected error for unwritable path")
-	}
-}
-
 // --- Property tests for staleness and proactive refresh ---
 
 // TestStalenessComparison_Property verifies that for any pair of timestamps

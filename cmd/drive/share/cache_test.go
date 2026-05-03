@@ -11,6 +11,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
@@ -44,18 +45,18 @@ func TestShareCacheToggleRoundTrip_Property(t *testing.T) {
 		memory := memoryLevelGen.Draw(t, "memory")
 		disk := diskLevelGen.Draw(t, "disk")
 
-		cfg := api.DefaultConfig()
+		cfg := config.DefaultConfig()
 		cfg.Shares[name] = api.ShareConfig{
 			MemoryCache: memory,
 			DiskCache:   disk,
 		}
 
 		path := filepath.Join(dir, rapid.StringMatching(`[a-z]{8}`).Draw(t, "file")+".yaml")
-		if err := api.SaveConfig(path, cfg); err != nil {
+		if err := config.SaveConfig(path, cfg); err != nil {
 			t.Fatalf("SaveConfig: %v", err)
 		}
 
-		loaded, err := api.LoadConfig(path)
+		loaded, err := config.LoadConfig(path)
 		if err != nil {
 			t.Fatalf("LoadConfig: %v", err)
 		}

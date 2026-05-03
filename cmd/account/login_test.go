@@ -10,6 +10,7 @@ import (
 
 	proton "github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	cli "github.com/major0/proton-cli/cmd"
 	"pgregory.net/rapid"
 )
@@ -1331,7 +1332,7 @@ func TestLoginUsesAccountService(t *testing.T) {
 	})
 
 	cli.DebugHTTP = false
-	cli.ConfigVar = common.DefaultConfig()
+	cli.ConfigVar = config.DefaultConfig()
 	cli.AppVersionOverride = ""
 
 	cli.SetService("account")

@@ -1,4 +1,4 @@
-package api
+package config
 
 import (
 	"os"
@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/major0/proton-cli/api"
 	"pgregory.net/rapid"
 )
 
@@ -38,7 +39,7 @@ func TestSaveConfig_CreatesParentDirs(t *testing.T) {
 	path := filepath.Join(dir, "sub", "dir", "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.Shares["test"] = ShareConfig{MemoryCache: CacheLinkName}
+	cfg.Shares["test"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
 
 	if err := SaveConfig(path, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
@@ -54,9 +55,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.Shares["MyFolder"] = ShareConfig{
-		MemoryCache: CacheMetadata,
-		DiskCache:   DiskCacheDisabled,
+	cfg.Shares["MyFolder"] = api.ShareConfig{
+		MemoryCache: api.CacheMetadata,
+		DiskCache:   api.DiskCacheDisabled,
 	}
 	cfg.Defaults["drive"] = "work"
 
@@ -82,7 +83,7 @@ func TestSaveConfig_AtomicWrite(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := DefaultConfig()
-	cfg.Shares["test"] = ShareConfig{DiskCache: DiskCacheObjectStore}
+	cfg.Shares["test"] = api.ShareConfig{DiskCache: api.DiskCacheObjectStore}
 
 	if err := SaveConfig(path, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
@@ -93,7 +94,7 @@ func TestSaveConfig_AtomicWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig after save: %v", err)
 	}
-	if loaded.Shares["test"].DiskCache != DiskCacheObjectStore {
+	if loaded.Shares["test"].DiskCache != api.DiskCacheObjectStore {
 		t.Fatal("expected DiskCache=objectstore after save")
 	}
 
@@ -120,11 +121,11 @@ func TestDefaultAccount(t *testing.T) {
 }
 
 func TestShareConfigDefaults(t *testing.T) {
-	var sc ShareConfig
-	if sc.MemoryCache != CacheDisabled {
+	var sc api.ShareConfig
+	if sc.MemoryCache != api.CacheDisabled {
 		t.Fatalf("default MemoryCache: got %v, want disabled", sc.MemoryCache)
 	}
-	if sc.DiskCache != DiskCacheDisabled {
+	if sc.DiskCache != api.DiskCacheDisabled {
 		t.Fatalf("default DiskCache: got %v, want disabled", sc.DiskCache)
 	}
 }
@@ -132,13 +133,13 @@ func TestShareConfigDefaults(t *testing.T) {
 func TestShareConfigYAMLRoundTrip_AllValues(t *testing.T) {
 	tests := []struct {
 		name string
-		sc   ShareConfig
+		sc   api.ShareConfig
 	}{
-		{"disabled/disabled", ShareConfig{CacheDisabled, DiskCacheDisabled}},
-		{"linkname/disabled", ShareConfig{CacheLinkName, DiskCacheDisabled}},
-		{"metadata/disabled", ShareConfig{CacheMetadata, DiskCacheDisabled}},
-		{"disabled/objectstore", ShareConfig{CacheDisabled, DiskCacheObjectStore}},
-		{"metadata/objectstore", ShareConfig{CacheMetadata, DiskCacheObjectStore}},
+		{"disabled/disabled", api.ShareConfig{MemoryCache: api.CacheDisabled, DiskCache: api.DiskCacheDisabled}},
+		{"linkname/disabled", api.ShareConfig{MemoryCache: api.CacheLinkName, DiskCache: api.DiskCacheDisabled}},
+		{"metadata/disabled", api.ShareConfig{MemoryCache: api.CacheMetadata, DiskCache: api.DiskCacheDisabled}},
+		{"disabled/objectstore", api.ShareConfig{MemoryCache: api.CacheDisabled, DiskCache: api.DiskCacheObjectStore}},
+		{"metadata/objectstore", api.ShareConfig{MemoryCache: api.CacheMetadata, DiskCache: api.DiskCacheObjectStore}},
 	}
 
 	for _, tt := range tests {
@@ -173,23 +174,23 @@ func TestShareConfigYAMLRoundTrip_AllValues(t *testing.T) {
 // SaveConfig + LoadConfig produces an equivalent Config.
 //
 // **Property 1: Config serialization round-trip**
-// **Validates: Requirements 1.2, 1.4, 2.1, 2.10, 3.1**
+// **Validates: Requirements 5.1**
 func TestConfigRoundTrip_Property(t *testing.T) {
 	dir := t.TempDir()
 
-	memoryLevelGen := rapid.SampledFrom([]MemoryCacheLevel{CacheDisabled, CacheLinkName, CacheMetadata})
-	diskLevelGen := rapid.SampledFrom([]DiskCacheLevel{DiskCacheDisabled, DiskCacheObjectStore})
+	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{api.CacheDisabled, api.CacheLinkName, api.CacheMetadata})
+	diskLevelGen := rapid.SampledFrom([]api.DiskCacheLevel{api.DiskCacheDisabled, api.DiskCacheObjectStore})
 
 	rapid.Check(t, func(t *rapid.T) {
 		cfg := &Config{
-			Shares:   make(map[string]ShareConfig),
+			Shares:   make(map[string]api.ShareConfig),
 			Defaults: make(map[string]string),
 		}
 
 		nShares := rapid.IntRange(0, 5).Draw(t, "nShares")
 		for i := 0; i < nShares; i++ {
 			name := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{0,15}`).Draw(t, "shareName")
-			cfg.Shares[name] = ShareConfig{
+			cfg.Shares[name] = api.ShareConfig{
 				MemoryCache: memoryLevelGen.Draw(t, "memory"),
 				DiskCache:   diskLevelGen.Draw(t, "disk"),
 			}
@@ -226,17 +227,17 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 // the config map have all caches disabled.
 //
 // **Property 2: Unconfigured shares default to caching disabled**
-// **Validates: Requirements 2.4**
+// **Validates: Requirements 5.1**
 func TestUnconfiguredShareDefaults_Property(t *testing.T) {
-	memoryLevelGen := rapid.SampledFrom([]MemoryCacheLevel{CacheDisabled, CacheLinkName, CacheMetadata})
-	diskLevelGen := rapid.SampledFrom([]DiskCacheLevel{DiskCacheDisabled, DiskCacheObjectStore})
+	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{api.CacheDisabled, api.CacheLinkName, api.CacheMetadata})
+	diskLevelGen := rapid.SampledFrom([]api.DiskCacheLevel{api.DiskCacheDisabled, api.DiskCacheObjectStore})
 
 	rapid.Check(t, func(t *rapid.T) {
 		cfg := DefaultConfig()
 		nShares := rapid.IntRange(0, 5).Draw(t, "nShares")
 		for i := 0; i < nShares; i++ {
 			name := rapid.StringMatching(`[a-z]{3,8}`).Draw(t, "name")
-			cfg.Shares[name] = ShareConfig{
+			cfg.Shares[name] = api.ShareConfig{
 				MemoryCache: memoryLevelGen.Draw(t, "m"),
 				DiskCache:   diskLevelGen.Draw(t, "d"),
 			}
@@ -246,8 +247,17 @@ func TestUnconfiguredShareDefaults_Property(t *testing.T) {
 		absent := "ABSENT_" + rapid.StringMatching(`[A-Z]{8}`).Draw(t, "absent")
 		sc := cfg.Shares[absent] // zero value
 
-		if sc.MemoryCache != CacheDisabled || sc.DiskCache != DiskCacheDisabled {
+		if sc.MemoryCache != api.CacheDisabled || sc.DiskCache != api.DiskCacheDisabled {
 			t.Fatal("unconfigured share should have all caches disabled")
 		}
 	})
+}
+
+// TestSaveConfigError verifies SaveConfig returns an error for an
+// unwritable directory.
+func TestSaveConfigError(t *testing.T) {
+	err := SaveConfig("/proc/nonexistent/deep/path/config.yaml", DefaultConfig())
+	if err == nil {
+		t.Fatal("expected error for unwritable path")
+	}
 }

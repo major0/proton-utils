@@ -6,6 +6,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	"github.com/major0/proton-cli/api/drive"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -65,7 +66,7 @@ func runShareCache(cmd *cobra.Command, args []string) error {
 
 	cfg := rc.Config
 	if cfg == nil {
-		cfg = api.DefaultConfig()
+		cfg = config.DefaultConfig()
 	}
 
 	hasToggle := cacheFlags.memoryCache != "" || cacheFlags.diskCache != ""
@@ -111,7 +112,7 @@ func runShareCache(cmd *cobra.Command, args []string) error {
 
 	// Save config.
 	configPath := cli.ConfigFilePath()
-	if err := api.SaveConfig(configPath, cfg); err != nil {
+	if err := config.SaveConfig(configPath, cfg); err != nil {
 		return fmt.Errorf("share cache: save config: %w", err)
 	}
 

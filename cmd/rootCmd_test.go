@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	"github.com/spf13/cobra"
 )
 
@@ -200,7 +201,7 @@ func TestSetService(t *testing.T) {
 	rootParams.SessionFile = "/tmp/test-sessions.db"
 	Account = "default"
 	DebugHTTP = false
-	ConfigVar = common.DefaultConfig()
+	ConfigVar = config.DefaultConfig()
 	AppVersionOverride = ""
 
 	tests := []struct {
@@ -277,7 +278,7 @@ func TestResolveVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			AppVersionOverride = tt.override
-			cfg := common.DefaultConfig()
+			cfg := config.DefaultConfig()
 			if tt.config != nil {
 				cfg.ServiceVersions = tt.config
 			}
@@ -303,7 +304,7 @@ func TestAppVersionFlag(t *testing.T) {
 }
 
 func TestServiceVersionConfig(t *testing.T) {
-	cfg := common.DefaultConfig()
+	cfg := config.DefaultConfig()
 	cfg.ServiceVersions["drive"] = "1.0.0.0"
 
 	got := cfg.ServiceVersion("drive", common.DefaultVersion)

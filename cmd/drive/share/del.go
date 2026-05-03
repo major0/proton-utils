@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -59,7 +59,7 @@ func runShareDel(cmd *cobra.Command, args []string) error {
 	if cfg != nil {
 		if _, ok := cfg.Shares[name]; ok {
 			delete(cfg.Shares, name)
-			if err := api.SaveConfig(cli.ConfigFilePath(), cfg); err != nil {
+			if err := config.SaveConfig(cli.ConfigFilePath(), cfg); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to update config: %v\n", err)
 			}
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/config"
 	"github.com/major0/proton-cli/api/drive"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
@@ -612,11 +613,11 @@ func TestShareCacheCmd_ToggleFlags(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := tmpDir + "/config.yaml"
 
-	cfg := api.DefaultConfig()
+	cfg := config.DefaultConfig()
 	cli.ConfigVar = cfg
 
 	// Save a config so SaveConfig has a valid path.
-	if err := api.SaveConfig(configPath, cfg); err != nil {
+	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
@@ -701,7 +702,7 @@ func TestShareCacheCmd_DisableFlags(t *testing.T) {
 		cacheFlags = origFlags
 	})
 
-	cfg := api.DefaultConfig()
+	cfg := config.DefaultConfig()
 	cfg.Shares["Test Share"] = api.ShareConfig{
 		MemoryCache: api.CacheMetadata,
 		DiskCache:   api.DiskCacheObjectStore,
@@ -734,7 +735,7 @@ func TestShareCacheCmd_OnDiskToggle(t *testing.T) {
 		cacheFlags = origFlags
 	})
 
-	cli.ConfigVar = api.DefaultConfig()
+	cli.ConfigVar = config.DefaultConfig()
 
 	cacheFlags.memoryCache = ""
 	cacheFlags.diskCache = "objectstore"
@@ -770,7 +771,7 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	origConfig := cli.ConfigVar
 	t.Cleanup(func() { cli.ConfigVar = origConfig })
 
-	cfg := api.DefaultConfig()
+	cfg := config.DefaultConfig()
 	cfg.Shares["Shared Folder"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
 	cli.ConfigVar = cfg
 
@@ -981,7 +982,7 @@ func TestShareCacheCmd_SaveConfigError(t *testing.T) {
 		cacheFlags = origFlags
 	})
 
-	cli.ConfigVar = api.DefaultConfig()
+	cli.ConfigVar = config.DefaultConfig()
 
 	cacheFlags.memoryCache = "linkname"
 	cacheFlags.diskCache = ""
@@ -1007,7 +1008,7 @@ func TestShareDelCmd_ForceFlag(t *testing.T) {
 	})
 
 	delFlags.force = true
-	cli.ConfigVar = api.DefaultConfig()
+	cli.ConfigVar = config.DefaultConfig()
 
 	var gotForce bool
 	deleteShareFn = func(_ context.Context, _ *driveClient.Client, _ string, force bool) error {
