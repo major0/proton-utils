@@ -15,13 +15,13 @@ import (
 // mockSessionStore implements api.SessionStore and always returns an error.
 type mockSessionStore struct{}
 
-func (m mockSessionStore) Load() (*api.SessionConfig, error) {
+func (m mockSessionStore) Load() (*api.SessionCredentials, error) {
 	return nil, errors.New("mock: no session available")
 }
-func (m mockSessionStore) Save(_ *api.SessionConfig) error { return nil }
-func (m mockSessionStore) Delete() error                   { return nil }
-func (m mockSessionStore) List() ([]string, error)         { return nil, nil }
-func (m mockSessionStore) Switch(_ string) error           { return nil }
+func (m mockSessionStore) Save(_ *api.SessionCredentials) error { return nil }
+func (m mockSessionStore) Delete() error                        { return nil }
+func (m mockSessionStore) List() ([]string, error)              { return nil, nil }
+func (m mockSessionStore) Switch(_ string) error                { return nil }
 
 // withMockSession sets up a mock session store that always fails,
 // allowing us to test the error paths of session-dependent functions.

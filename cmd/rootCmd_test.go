@@ -15,14 +15,14 @@ type mockSessionStore struct {
 	loadErr error
 }
 
-func (m *mockSessionStore) Load() (*common.SessionConfig, error) {
+func (m *mockSessionStore) Load() (*common.SessionCredentials, error) {
 	return nil, m.loadErr
 }
 
-func (m *mockSessionStore) Save(_ *common.SessionConfig) error { return nil }
-func (m *mockSessionStore) Delete() error                      { return nil }
-func (m *mockSessionStore) List() ([]string, error)            { return nil, nil }
-func (m *mockSessionStore) Switch(_ string) error              { return nil }
+func (m *mockSessionStore) Save(_ *common.SessionCredentials) error { return nil }
+func (m *mockSessionStore) Delete() error                           { return nil }
+func (m *mockSessionStore) List() ([]string, error)                 { return nil, nil }
+func (m *mockSessionStore) Switch(_ string) error                   { return nil }
 
 func TestRestoreSession(t *testing.T) {
 	tests := []struct {

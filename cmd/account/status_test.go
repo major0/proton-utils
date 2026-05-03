@@ -20,7 +20,7 @@ func TestBuildServiceStatus(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		cfg        *api.SessionConfig
+		cfg        *api.SessionCredentials
 		wantStatus sessionStatus
 	}{
 		{
@@ -30,17 +30,17 @@ func TestBuildServiceStatus(t *testing.T) {
 		},
 		{
 			"zero LastRefresh is stale",
-			&api.SessionConfig{UID: "u1"},
+			&api.SessionCredentials{UID: "u1"},
 			statusStale,
 		},
 		{
 			"fresh session",
-			&api.SessionConfig{UID: "u1", LastRefresh: time.Now()},
+			&api.SessionCredentials{UID: "u1", LastRefresh: time.Now()},
 			statusFresh,
 		},
 		{
 			"stale relative to account",
-			&api.SessionConfig{UID: "u1", LastRefresh: acctRefresh.Add(-time.Hour)},
+			&api.SessionCredentials{UID: "u1", LastRefresh: acctRefresh.Add(-time.Hour)},
 			statusStale,
 		},
 	}
@@ -88,7 +88,7 @@ func TestBuildServiceStatus_AccountService(t *testing.T) {
 		ClientID: "web-account",
 	}
 	now := time.Now()
-	cfg := &api.SessionConfig{UID: "u1", LastRefresh: now}
+	cfg := &api.SessionCredentials{UID: "u1", LastRefresh: now}
 
 	ss := buildServiceStatus(svc, cfg, now, false)
 	if ss.Status != statusFresh {
@@ -179,7 +179,7 @@ func TestBuildServiceStatus_ExpiredSession(t *testing.T) {
 		ClientID: "web-account",
 	}
 
-	cfg := &api.SessionConfig{
+	cfg := &api.SessionCredentials{
 		UID:         "u1",
 		LastRefresh: time.Now().Add(-25 * time.Hour),
 	}
@@ -201,7 +201,7 @@ func TestBuildServiceStatus_WarnSession(t *testing.T) {
 		ClientID: "web-account",
 	}
 
-	cfg := &api.SessionConfig{
+	cfg := &api.SessionCredentials{
 		UID:         "u1",
 		LastRefresh: time.Now().Add(-21 * time.Hour),
 	}

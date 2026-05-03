@@ -18,14 +18,14 @@ import (
 
 // testSessionIndex is a minimal in-memory SessionStore for integration tests.
 type testSessionIndex struct {
-	configs map[string]*SessionConfig // service → config
+	configs map[string]*SessionCredentials // service → config
 }
 
 func newTestSessionIndex() *testSessionIndex {
-	return &testSessionIndex{configs: make(map[string]*SessionConfig)}
+	return &testSessionIndex{configs: make(map[string]*SessionCredentials)}
 }
 
-func (s *testSessionIndex) Load() (*SessionConfig, error) {
+func (s *testSessionIndex) Load() (*SessionCredentials, error) {
 	// Return the first config found (single-service store).
 	for _, cfg := range s.configs {
 		c := *cfg
@@ -34,7 +34,7 @@ func (s *testSessionIndex) Load() (*SessionConfig, error) {
 	return nil, ErrKeyNotFound
 }
 
-func (s *testSessionIndex) Save(cfg *SessionConfig) error {
+func (s *testSessionIndex) Save(cfg *SessionCredentials) error {
 	svc := cfg.Service
 	if svc == "" {
 		svc = "default"
@@ -47,7 +47,7 @@ func (s *testSessionIndex) Delete() error           { return nil }
 func (s *testSessionIndex) List() ([]string, error) { return nil, nil }
 func (s *testSessionIndex) Switch(string) error     { return nil }
 
-func (s *testSessionIndex) SetConfig(svc string, cfg *SessionConfig) {
+func (s *testSessionIndex) SetConfig(svc string, cfg *SessionCredentials) {
 	s.configs[svc] = cfg
 }
 
@@ -356,7 +356,7 @@ func TestIntegration_ProactiveRefreshCascade(t *testing.T) {
 	defer session.Stop()
 
 	// Config with old LastRefresh — should trigger refresh.
-	config := &SessionConfig{
+	config := &SessionCredentials{
 		LastRefresh: time.Now().Add(-2 * time.Hour),
 	}
 
@@ -415,7 +415,7 @@ func TestIntegration_BackwardCompatWildcard(t *testing.T) {
 	}))
 	defer targetSrv.Close()
 
-	wildcardConfig := &SessionConfig{
+	wildcardConfig := &SessionCredentials{
 		UID:           "wildcard-uid",
 		AccessToken:   "wildcard-at",
 		RefreshToken:  "wildcard-rt",
@@ -526,7 +526,7 @@ func TestIntegration_RestoreServiceSessionDecisionLogic(t *testing.T) {
 
 	// Test 4: Service store error (non-ErrKeyNotFound) → propagated.
 	// Need a valid account config for this path.
-	acctStore := &configStore{config: &SessionConfig{
+	acctStore := &configStore{config: &SessionCredentials{
 		UID:           "acct-uid",
 		AccessToken:   "acct-at",
 		RefreshToken:  "acct-rt",

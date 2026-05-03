@@ -86,10 +86,10 @@ func (si *SessionIndex) writeIndex(idx *SessionIndexData) error {
 }
 
 // Load resolves (account, service) to a UUID via the index file, then
-// retrieves the SessionConfig from the keyring. It tries the exact service
+// retrieves the SessionCredentials from the keyring. It tries the exact service
 // first, then falls back to the "*" wildcard. Stale index entries (UUID
 // present in index but missing from keyring) are cleaned up automatically.
-func (si *SessionIndex) Load() (*api.SessionConfig, error) {
+func (si *SessionIndex) Load() (*api.SessionCredentials, error) {
 	idx, err := si.readIndex()
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (si *SessionIndex) Load() (*api.SessionConfig, error) {
 		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, api.ErrKeyNotFound)
 	}
 
-	var cfg api.SessionConfig
+	var cfg api.SessionCredentials
 	if err := json.Unmarshal([]byte(secret), &cfg); err != nil {
 		return nil, fmt.Errorf("session load %q/%q: %w", si.account, si.service, err)
 	}
@@ -136,11 +136,11 @@ func (si *SessionIndex) Load() (*api.SessionConfig, error) {
 	return &cfg, nil
 }
 
-// Save stores the given SessionConfig in the keyring and updates the on-disk
+// Save stores the given SessionCredentials in the keyring and updates the on-disk
 // index file. If no entry exists for (account, service), a new v4 UUID is
 // generated as the keyring key. Parent directories for the index file are
 // created if they don't exist.
-func (si *SessionIndex) Save(session *api.SessionConfig) error {
+func (si *SessionIndex) Save(session *api.SessionCredentials) error {
 	idx, err := si.readIndex()
 	if err != nil {
 		return err
@@ -162,7 +162,7 @@ func (si *SessionIndex) Save(session *api.SessionConfig) error {
 	}
 
 	// Marshal session config and store in keyring.
-	//nolint:gosec // G117: marshaling SessionConfig is intentional, tokens are the payload.
+	//nolint:gosec // G117: marshaling SessionCredentials is intentional, tokens are the payload.
 	data, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("session save %q/%q: %w", si.account, si.service, err)

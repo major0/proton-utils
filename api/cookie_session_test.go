@@ -1013,7 +1013,7 @@ func TestCookieSessionConfig_RoundTrip(t *testing.T) {
 func TestCookieSessionConfig_JSONRoundTrip(t *testing.T) {
 	config := &CookieSessionConfig{
 		UID: "uid-json-test",
-		Cookies: []serialCookie{
+		Cookies: []SerialCookie{
 			{Name: "AUTH-uid-json-test", Value: "auth-val"},
 			{Name: "REFRESH-uid-json-test", Value: "refresh-val"},
 		},
@@ -1063,10 +1063,10 @@ func TestCookieSessionFromConfig_DoJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Build a config with cookies scoped to apiCookieURL.
+	// Build a config with cookies scoped to CookieURL.
 	config := &CookieSessionConfig{
 		UID: uid,
-		Cookies: []serialCookie{
+		Cookies: []SerialCookie{
 			{Name: "AUTH-" + uid, Value: "restored-auth-token"},
 			{Name: "REFRESH-" + uid, Value: "restored-refresh-token"},
 		},

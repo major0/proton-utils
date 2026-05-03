@@ -96,7 +96,7 @@ func newTestCmdWithCookieAuth(cookieAuth bool) *cobra.Command { //nolint:unparam
 	cmd.SetContext(context.Background())
 	cli.SetContext(cmd, &cli.RuntimeContext{
 		AccountStore: &mockStore{
-			config: &common.SessionConfig{
+			config: &common.SessionCredentials{
 				UID:        "test-uid",
 				CookieAuth: cookieAuth,
 			},

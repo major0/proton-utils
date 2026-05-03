@@ -3,8 +3,8 @@ package api
 
 // SessionStore defines the interface for persisting and retrieving session data.
 type SessionStore interface {
-	Load() (*SessionConfig, error)
-	Save(session *SessionConfig) error
+	Load() (*SessionCredentials, error)
+	Save(creds *SessionCredentials) error
 	Delete() error
 	List() ([]string, error)
 	Switch(account string) error

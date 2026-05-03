@@ -49,7 +49,7 @@ func TestCookieTransport_401TriggersRefresh(t *testing.T) {
 	// Build a CookieSession with the test server's cookies.
 	cs := CookieSessionFromConfig(&CookieSessionConfig{
 		UID: uid,
-		Cookies: []serialCookie{
+		Cookies: []SerialCookie{
 			{Name: "AUTH-" + uid, Value: "old-auth"},
 			{Name: "REFRESH-" + uid, Value: "old-refresh"},
 		},
@@ -58,7 +58,7 @@ func TestCookieTransport_401TriggersRefresh(t *testing.T) {
 
 	// Build CookieTransport with the CookieSession attached.
 	store := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID:         uid,
 			LastRefresh: time.Now(),
 		},
@@ -118,7 +118,7 @@ func TestCookieTransport_RefreshFailReturnsOriginal401(t *testing.T) {
 
 	cs := CookieSessionFromConfig(&CookieSessionConfig{
 		UID: uid,
-		Cookies: []serialCookie{
+		Cookies: []SerialCookie{
 			{Name: "AUTH-" + uid, Value: "expired-auth"},
 			{Name: "REFRESH-" + uid, Value: "expired-refresh"},
 		},
@@ -126,7 +126,7 @@ func TestCookieTransport_RefreshFailReturnsOriginal401(t *testing.T) {
 	cs.AppVersion = "web-account@5.2.0"
 
 	store := &cookieMockStore{
-		config: &SessionConfig{UID: uid, LastRefresh: time.Now()},
+		config: &SessionCredentials{UID: uid, LastRefresh: time.Now()},
 	}
 	ct := &CookieTransport{Base: http.DefaultTransport}
 	ct.SetCookieSession(cs, store)
@@ -185,7 +185,7 @@ func TestCookieTransport_SuccessfulRefreshPersistsCookies(t *testing.T) {
 
 	cs := CookieSessionFromConfig(&CookieSessionConfig{
 		UID: uid,
-		Cookies: []serialCookie{
+		Cookies: []SerialCookie{
 			{Name: "AUTH-" + uid, Value: "old-auth"},
 			{Name: "REFRESH-" + uid, Value: "old-refresh"},
 		},
@@ -193,9 +193,9 @@ func TestCookieTransport_SuccessfulRefreshPersistsCookies(t *testing.T) {
 	cs.AppVersion = "web-account@5.2.0"
 
 	store := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "old-auth"},
 				{Name: "REFRESH-" + uid, Value: "old-refresh"},
 			},

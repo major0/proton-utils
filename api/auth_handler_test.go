@@ -13,20 +13,20 @@ import (
 // mockStore is a thread-safe in-memory SessionStore for testing.
 type mockStore struct {
 	mu     sync.Mutex
-	config *SessionConfig
+	config *SessionCredentials
 }
 
-func (m *mockStore) Load() (*SessionConfig, error) {
+func (m *mockStore) Load() (*SessionCredentials, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.config == nil {
-		return &SessionConfig{}, nil
+		return &SessionCredentials{}, nil
 	}
 	cfg := *m.config
 	return &cfg, nil
 }
 
-func (m *mockStore) Save(cfg *SessionConfig) error {
+func (m *mockStore) Save(cfg *SessionCredentials) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.config = cfg

@@ -79,7 +79,7 @@ func TestSecretLogging_SessionFromCredentials(t *testing.T) {
 
 	// SessionFromCredentials will fail at GetUser (no real server), but
 	// the slog calls happen before the network call.
-	_, _ = SessionFromCredentials(context.Background(), nil, &SessionConfig{
+	_, _ = SessionFromCredentials(context.Background(), nil, &SessionCredentials{
 		UID:          "test-uid",
 		AccessToken:  sentinelAccess,
 		RefreshToken: sentinelRefresh,
@@ -99,7 +99,7 @@ func TestSecretLogging_SessionRestore(t *testing.T) {
 	buf, cleanup := captureSlog(t)
 	defer cleanup()
 
-	store := &configStore{config: &SessionConfig{
+	store := &configStore{config: &SessionCredentials{
 		UID:          "test-uid",
 		AccessToken:  sentinelAccess,
 		RefreshToken: sentinelRefresh,

@@ -64,7 +64,7 @@ const CookieDomain = "proton.me"
 // domain scoping. For Proton domains (*.proton.me), Domain is set to
 // proton.me so cookies match all subdomains. For other domains (e.g.,
 // localhost in tests), the original domain is preserved.
-func loadProtonCookies(jar http.CookieJar, cookies []serialCookie, baseURL string) {
+func loadProtonCookies(jar http.CookieJar, cookies []SerialCookie, baseURL string) {
 	if len(cookies) == 0 {
 		return
 	}
@@ -393,7 +393,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 		if loadErr != nil {
 			slog.Error("RefreshCookies: load store for persist", "error", loadErr)
 		} else {
-			config.Cookies = serializeCookies(cs.cookieJar, cookieQueryURL(cs.BaseURL))
+			config.Cookies = SerializeCookies(cs.cookieJar, cookieQueryURL(cs.BaseURL))
 			config.LastRefresh = time.Now()
 			if saveErr := cs.Store.Save(config); saveErr != nil {
 				slog.Error("RefreshCookies: persist cookies", "error", saveErr)
@@ -525,10 +525,10 @@ func TransitionToCookies(ctx context.Context, session *Session) (*CookieSession,
 }
 
 // CookieSessionConfig holds the minimal data to restore a CookieSession
-// without Resty. Stored separately from the Bearer SessionConfig.
+// without Resty. Stored separately from the Bearer SessionCredentials.
 type CookieSessionConfig struct {
 	UID         string         `json:"uid"`
-	Cookies     []serialCookie `json:"cookies,omitempty"`
+	Cookies     []SerialCookie `json:"cookies,omitempty"`
 	LastRefresh time.Time      `json:"last_refresh,omitempty"`
 	Service     string         `json:"service,omitempty"`
 }
@@ -540,7 +540,7 @@ func (cs *CookieSession) Config() *CookieSessionConfig {
 
 	return &CookieSessionConfig{
 		UID:         cs.UID,
-		Cookies:     serializeCookies(cs.cookieJar, u),
+		Cookies:     SerializeCookies(cs.cookieJar, u),
 		LastRefresh: time.Now(),
 	}
 }
@@ -569,7 +569,7 @@ func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, c
 	cfg := cookieSess.Config()
 	saltedKeyPass := Base64Encode(keypass)
 
-	cookieConfig := &SessionConfig{
+	cookieConfig := &SessionCredentials{
 		UID:           cfg.UID,
 		Cookies:       cfg.Cookies,
 		SaltedKeyPass: saltedKeyPass,
@@ -580,7 +580,7 @@ func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, c
 		return fmt.Errorf("cookie login save: cookie store: %w", err)
 	}
 
-	accountConfig := &SessionConfig{
+	accountConfig := &SessionCredentials{
 		UID:           session.Auth.UID,
 		AccessToken:   "",
 		RefreshToken:  "",
@@ -600,7 +600,7 @@ func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, c
 // a proton.Manager with CookieTransport, and unlocks keyrings. The returned
 // Session uses cookie auth for all Resty-based API calls (GetUser,
 // GetAddresses, etc.). Session.Auth holds the UID but empty Bearer tokens.
-func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieStore SessionStore, acctConfig *SessionConfig, managerHook func(*proton.Manager)) (*Session, error) {
+func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieStore SessionStore, acctConfig *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
 	cookieConfig, err := cookieStore.Load()
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {

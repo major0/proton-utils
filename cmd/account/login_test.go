@@ -959,24 +959,24 @@ type failingStore struct {
 	err error
 }
 
-func (f *failingStore) Load() (*common.SessionConfig, error) { return nil, f.err }
-func (f *failingStore) Save(_ *common.SessionConfig) error   { return nil }
-func (f *failingStore) Delete() error                        { return nil }
-func (f *failingStore) List() ([]string, error)              { return nil, f.err }
-func (f *failingStore) Switch(_ string) error                { return nil }
+func (f *failingStore) Load() (*common.SessionCredentials, error) { return nil, f.err }
+func (f *failingStore) Save(_ *common.SessionCredentials) error   { return nil }
+func (f *failingStore) Delete() error                             { return nil }
+func (f *failingStore) List() ([]string, error)                   { return nil, f.err }
+func (f *failingStore) Switch(_ string) error                     { return nil }
 
 // successStore is a SessionStore that returns test data.
 type successStore struct {
 	accounts []string
 }
 
-func (s *successStore) Load() (*common.SessionConfig, error) {
+func (s *successStore) Load() (*common.SessionCredentials, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (s *successStore) Save(_ *common.SessionConfig) error { return nil }
-func (s *successStore) Delete() error                      { return nil }
-func (s *successStore) List() ([]string, error)            { return s.accounts, nil }
-func (s *successStore) Switch(_ string) error              { return nil }
+func (s *successStore) Save(_ *common.SessionCredentials) error { return nil }
+func (s *successStore) Delete() error                           { return nil }
+func (s *successStore) List() ([]string, error)                 { return s.accounts, nil }
+func (s *successStore) Switch(_ string) error                   { return nil }
 
 func TestAccountListCmd_Success(t *testing.T) {
 	origStore := cli.SessionStoreVar

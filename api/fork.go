@@ -56,7 +56,7 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 	// Encrypt the parent's SaltedKeyPass into a fork blob.
 	blob := &ForkBlob{
 		Type:        "default",
-		KeyPassword: parent.Auth.UID, // placeholder; callers set this from SessionConfig
+		KeyPassword: parent.Auth.UID, // placeholder; callers set this from SessionCredentials
 	}
 
 	ciphertext, blobKey, err := EncryptForkBlob(blob)
@@ -346,7 +346,7 @@ func CookieSessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc Serv
 // CRITICAL: The account Bearer session is never passed to TransitionToCookies.
 // A temporary forked session is transitioned instead, preserving the account
 // session for Drive operations.
-func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionConfig, targetService ServiceConfig, _ string, keyPass []byte, cookieStore SessionStore) (*Session, []byte, error) {
+func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCredentials, targetService ServiceConfig, _ string, keyPass []byte, cookieStore SessionStore) (*Session, []byte, error) {
 	acctSvc, _ := LookupService("account")
 
 	// Try to load an existing cookie session.
@@ -481,7 +481,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCo
 // loadOrCreateCookieSession loads a CookieSession from the cookie store,
 // or creates one by forking a temporary session from the account and
 // transitioning it to cookies.
-func loadOrCreateCookieSession(ctx context.Context, acctSession *Session, acctConfig *SessionConfig, acctSvc ServiceConfig, cookieStore SessionStore) (*CookieSession, error) {
+func loadOrCreateCookieSession(ctx context.Context, acctSession *Session, acctConfig *SessionCredentials, acctSvc ServiceConfig, cookieStore SessionStore) (*CookieSession, error) {
 	cookieConfig, loadErr := cookieStore.Load()
 
 	needsCreate := false
@@ -539,7 +539,7 @@ func loadOrCreateCookieSession(ctx context.Context, acctSession *Session, acctCo
 	// Save the cookie session to the store.
 	csc := cookieSess.Config()
 	csc.Service = "cookie"
-	saveCfg := &SessionConfig{
+	saveCfg := &SessionCredentials{
 		UID:         csc.UID,
 		Cookies:     csc.Cookies,
 		LastRefresh: csc.LastRefresh,

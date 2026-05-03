@@ -12,12 +12,12 @@ import (
 
 // savingStore records the last saved config and can optionally return an error.
 type savingStore struct {
-	saved   *SessionConfig
+	saved   *SessionCredentials
 	saveErr error
 }
 
-func (s *savingStore) Load() (*SessionConfig, error) { return nil, ErrKeyNotFound }
-func (s *savingStore) Save(cfg *SessionConfig) error {
+func (s *savingStore) Load() (*SessionCredentials, error) { return nil, ErrKeyNotFound }
+func (s *savingStore) Save(cfg *SessionCredentials) error {
 	if s.saveErr != nil {
 		return s.saveErr
 	}

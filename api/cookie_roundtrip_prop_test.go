@@ -10,8 +10,8 @@ import (
 )
 
 // TestPropertyCookiePersistenceRoundTrip verifies that for any set of
-// serialCookie values with non-empty Name and Value, serializing them into a
-// SessionConfig, persisting to a mock store, loading back, and injecting into
+// SerialCookie values with non-empty Name and Value, serializing them into a
+// SessionCredentials, persisting to a mock store, loading back, and injecting into
 // a fresh cookie jar produces a jar where querying the account service URL
 // returns cookies with matching Name and Value for every original cookie.
 //
@@ -26,7 +26,7 @@ func TestPropertyCookiePersistenceRoundTrip(t *testing.T) {
 
 		// Generate cookies with unique names to avoid jar deduplication.
 		seen := make(map[string]bool, n)
-		cookies := make([]serialCookie, 0, n)
+		cookies := make([]SerialCookie, 0, n)
 		for i := 0; i < n; i++ {
 			name := genCookieName(t, fmt.Sprintf("name%d", i))
 			if seen[name] {
@@ -34,27 +34,27 @@ func TestPropertyCookiePersistenceRoundTrip(t *testing.T) {
 			}
 			seen[name] = true
 			value := genCookieValue(t, fmt.Sprintf("value%d", i))
-			cookies = append(cookies, serialCookie{
+			cookies = append(cookies, SerialCookie{
 				Name:  name,
 				Value: value,
 			})
 		}
 
-		// Serialize into a SessionConfig.
-		config := &SessionConfig{
+		// Serialize into a SessionCredentials.
+		config := &SessionCredentials{
 			UID:        "roundtrip-uid",
 			Cookies:    cookies,
 			CookieAuth: true,
 		}
 
 		// Persist to mock store via JSON marshal/unmarshal (simulates store save/load).
-		//nolint:gosec // G117: property test intentionally marshals SessionConfig.
+		//nolint:gosec // G117: property test intentionally marshals SessionCredentials.
 		data, err := json.Marshal(config)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
 
-		var loaded SessionConfig
+		var loaded SessionCredentials
 		if err := json.Unmarshal(data, &loaded); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
@@ -66,7 +66,7 @@ func TestPropertyCookiePersistenceRoundTrip(t *testing.T) {
 		}
 		u := cookieQueryURL(AccountHost())
 		u.Path = "/"
-		loadCookies(jar, loaded.Cookies, u)
+		LoadCookies(jar, loaded.Cookies, u)
 
 		// Query the jar and assert Name+Value match for every original cookie.
 		queriedCookies := jar.Cookies(cookieQueryURL(AccountHost()))

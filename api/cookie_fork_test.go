@@ -16,13 +16,13 @@ import (
 // cookieMockStore is a SessionStore that tracks Save calls and supports
 // configurable Load behavior for cookie session testing.
 type cookieMockStore struct {
-	config    *SessionConfig
-	saved     *SessionConfig
+	config    *SessionCredentials
+	saved     *SessionCredentials
 	saveCount int
 	loadErr   error
 }
 
-func (s *cookieMockStore) Load() (*SessionConfig, error) {
+func (s *cookieMockStore) Load() (*SessionCredentials, error) {
 	if s.loadErr != nil {
 		return nil, s.loadErr
 	}
@@ -33,7 +33,7 @@ func (s *cookieMockStore) Load() (*SessionConfig, error) {
 	return &cfg, nil
 }
 
-func (s *cookieMockStore) Save(cfg *SessionConfig) error {
+func (s *cookieMockStore) Save(cfg *SessionCredentials) error {
 	s.saved = cfg
 	s.saveCount++
 	return nil
@@ -149,7 +149,7 @@ func TestLoadOrCreateCookieSession_NoCookieSession(t *testing.T) {
 		manager:    proton.New(proton.WithHostURL(srv.URL)),
 	}
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:         uid,
 		LastRefresh: time.Now(),
 	}
@@ -193,7 +193,7 @@ func TestLoadOrCreateCookieSession_ValidCookieSession(t *testing.T) {
 	uid := "acct-uid-2"
 	now := time.Now()
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:         uid,
 		LastRefresh: now.Add(-30 * time.Minute), // account refreshed 30 min ago
 	}
@@ -207,9 +207,9 @@ func TestLoadOrCreateCookieSession_ValidCookieSession(t *testing.T) {
 
 	// Cookie session is fresher than account session → not stale.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "auth-val"},
 				{Name: "REFRESH-" + uid, Value: "refresh-val"},
 			},
@@ -261,7 +261,7 @@ func TestLoadOrCreateCookieSession_StaleCookieSession(t *testing.T) {
 		manager:    proton.New(proton.WithHostURL(srv.URL)),
 	}
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:         uid,
 		LastRefresh: now, // account refreshed now
 	}
@@ -275,9 +275,9 @@ func TestLoadOrCreateCookieSession_StaleCookieSession(t *testing.T) {
 
 	// Cookie session is older than account → stale.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "old-auth"},
 				{Name: "REFRESH-" + uid, Value: "old-refresh"},
 			},
@@ -400,7 +400,7 @@ func TestCookieForkPushUsesCookieAuth(t *testing.T) {
 		manager:    proton.New(proton.WithHostURL(srv.URL)),
 	}
 
-	acctConfig := &SessionConfig{UID: uid, LastRefresh: time.Now()}
+	acctConfig := &SessionCredentials{UID: uid, LastRefresh: time.Now()}
 	acctSvc := ServiceConfig{Name: "account", Host: srv.URL, ClientID: "web-account", Version: "5.2.0"}
 	targetSvc := ServiceConfig{Name: "lumo", Host: srv.URL, ClientID: "web-lumo", Version: "1.3.3.4"}
 	cookieStore := &cookieMockStore{}
@@ -447,7 +447,7 @@ func TestCookieSessionFromConfig_RestoresBaseURL(t *testing.T) {
 	uid := "restore-url-uid"
 	now := time.Now()
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:         uid,
 		LastRefresh: now.Add(-30 * time.Minute),
 	}
@@ -460,9 +460,9 @@ func TestCookieSessionFromConfig_RestoresBaseURL(t *testing.T) {
 	}
 
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "auth-val"},
 			},
 			LastRefresh: now,
@@ -503,12 +503,12 @@ func TestLoadOrCreateCookieSession_EmptyUID(t *testing.T) {
 		manager:    proton.New(proton.WithHostURL(srv.URL)),
 	}
 
-	acctConfig := &SessionConfig{UID: uid, LastRefresh: time.Now()}
+	acctConfig := &SessionCredentials{UID: uid, LastRefresh: time.Now()}
 	acctSvc := ServiceConfig{Name: "account", Host: srv.URL, ClientID: "web-account", Version: "5.2.0"}
 
 	// Cookie config exists but has empty UID → should re-create.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID:         "",
 			LastRefresh: time.Now(),
 		},

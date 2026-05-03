@@ -76,9 +76,9 @@ func TestCookieSessionRestore_Success(t *testing.T) {
 	defer func() { Services["account"] = origAcct }()
 
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "auth-token"},
 				{Name: "REFRESH-" + uid, Value: "refresh-token"},
 			},
@@ -88,7 +88,7 @@ func TestCookieSessionRestore_Success(t *testing.T) {
 		},
 	}
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:           uid,
 		SaltedKeyPass: Base64Encode([]byte("keypass")),
 		CookieAuth:    true,
@@ -122,7 +122,7 @@ func TestCookieSessionRestore_Success(t *testing.T) {
 // store returns ErrKeyNotFound, CookieSessionRestore returns ErrNotLoggedIn.
 func TestCookieSessionRestore_MissingCookieStore(t *testing.T) {
 	cookieStore := &cookieMockStore{loadErr: ErrKeyNotFound}
-	acctConfig := &SessionConfig{UID: "uid", SaltedKeyPass: Base64Encode([]byte("kp"))}
+	acctConfig := &SessionCredentials{UID: "uid", SaltedKeyPass: Base64Encode([]byte("kp"))}
 
 	_, err := CookieSessionRestore(context.Background(), nil, cookieStore, acctConfig, nil)
 	if !errors.Is(err, ErrNotLoggedIn) {
@@ -145,9 +145,9 @@ func TestCookieSessionRestore_ProactiveRefreshTriggered(t *testing.T) {
 	defer func() { Services["account"] = origAcct }()
 
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "old-auth"},
 				{Name: "REFRESH-" + uid, Value: "old-refresh"},
 			},
@@ -157,7 +157,7 @@ func TestCookieSessionRestore_ProactiveRefreshTriggered(t *testing.T) {
 		},
 	}
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:           uid,
 		SaltedKeyPass: Base64Encode([]byte("keypass")),
 		CookieAuth:    true,
@@ -194,9 +194,9 @@ func TestCookieSessionRestore_ProactiveRefreshSkipped(t *testing.T) {
 	defer func() { Services["account"] = origAcct }()
 
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "auth-token"},
 				{Name: "REFRESH-" + uid, Value: "refresh-token"},
 			},
@@ -206,7 +206,7 @@ func TestCookieSessionRestore_ProactiveRefreshSkipped(t *testing.T) {
 		},
 	}
 
-	acctConfig := &SessionConfig{
+	acctConfig := &SessionCredentials{
 		UID:           uid,
 		SaltedKeyPass: Base64Encode([]byte("keypass")),
 		CookieAuth:    true,
@@ -237,7 +237,7 @@ func TestSessionRestore_CookieAuthTrue_RoutesCookiePath(t *testing.T) {
 	defer func() { Services["account"] = origAcct }()
 
 	// Account store has CookieAuth=true, empty tokens.
-	accountStore := &configStore{config: &SessionConfig{
+	accountStore := &configStore{config: &SessionCredentials{
 		UID:           uid,
 		AccessToken:   "",
 		RefreshToken:  "",
@@ -247,9 +247,9 @@ func TestSessionRestore_CookieAuthTrue_RoutesCookiePath(t *testing.T) {
 
 	// Cookie store has the actual cookies.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "auth-token"},
 				{Name: "REFRESH-" + uid, Value: "refresh-token"},
 			},
@@ -280,7 +280,7 @@ func TestSessionRestore_CookieAuthTrue_RoutesCookiePath(t *testing.T) {
 // requires non-empty tokens).
 func TestSessionRestore_CookieAuthFalse_UsesBearerPath(t *testing.T) {
 	// Account store has CookieAuth=false with valid tokens.
-	accountStore := &configStore{config: &SessionConfig{
+	accountStore := &configStore{config: &SessionCredentials{
 		UID:          "bearer-uid",
 		AccessToken:  "at",
 		RefreshToken: "rt",
@@ -289,7 +289,7 @@ func TestSessionRestore_CookieAuthFalse_UsesBearerPath(t *testing.T) {
 
 	// Cookie store exists but should NOT be used.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{UID: "cookie-uid", CookieAuth: true},
+		config: &SessionCredentials{UID: "cookie-uid", CookieAuth: true},
 	}
 
 	// SessionRestore should use Bearer path → will fail at GetUser (no server),
@@ -330,7 +330,7 @@ func TestRestoreServiceSession_CookieAuth_UsesCookieFork(t *testing.T) {
 
 	// Account store: CookieAuth=true, valid credentials for SessionFromCredentials.
 	acctStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID:           uid,
 			AccessToken:   "acct-at",
 			RefreshToken:  "acct-rt",
@@ -342,9 +342,9 @@ func TestRestoreServiceSession_CookieAuth_UsesCookieFork(t *testing.T) {
 
 	// Cookie store: has cookies for the cookie fork path.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID: uid,
-			Cookies: []serialCookie{
+			Cookies: []SerialCookie{
 				{Name: "AUTH-" + uid, Value: "auth-token"},
 				{Name: "REFRESH-" + uid, Value: "refresh-token"},
 				{Name: "Session-Id", Value: "sid-test"},
@@ -378,7 +378,7 @@ func TestRestoreServiceSession_CookieAuth_UsesCookieFork(t *testing.T) {
 func TestRestoreServiceSession_NoCookieAuth_UsesBearerFork(t *testing.T) {
 	// Account store: CookieAuth=false (Bearer mode).
 	acctStore := &cookieMockStore{
-		config: &SessionConfig{
+		config: &SessionCredentials{
 			UID:           "bearer-uid",
 			AccessToken:   "at",
 			RefreshToken:  "rt",
@@ -390,7 +390,7 @@ func TestRestoreServiceSession_NoCookieAuth_UsesBearerFork(t *testing.T) {
 
 	// Cookie store exists but should NOT be used.
 	cookieStore := &cookieMockStore{
-		config: &SessionConfig{UID: "cookie-uid"},
+		config: &SessionCredentials{UID: "cookie-uid"},
 	}
 
 	// Service store: empty (forces a fork).

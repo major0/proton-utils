@@ -18,9 +18,9 @@ import (
 	"pgregory.net/rapid"
 )
 
-// genSerialCookie generates an arbitrary serialCookie.
-func genSerialCookie(t *rapid.T) serialCookie {
-	return serialCookie{
+// genSerialCookie generates an arbitrary SerialCookie.
+func genSerialCookie(t *rapid.T) SerialCookie {
+	return SerialCookie{
 		Name:   rapid.String().Draw(t, "name"),
 		Value:  rapid.String().Draw(t, "value"),
 		Domain: rapid.String().Draw(t, "domain"),
@@ -28,11 +28,11 @@ func genSerialCookie(t *rapid.T) serialCookie {
 	}
 }
 
-// genSessionConfig generates an arbitrary SessionConfig with random cookies
+// genSessionConfig generates an arbitrary SessionCredentials with random cookies
 // and timestamps.
-func genSessionConfig(t *rapid.T) SessionConfig {
+func genSessionConfig(t *rapid.T) SessionCredentials {
 	n := rapid.IntRange(0, 20).Draw(t, "numCookies")
-	cookies := make([]serialCookie, n)
+	cookies := make([]SerialCookie, n)
 	for i := range cookies {
 		cookies[i] = genSerialCookie(t)
 	}
@@ -44,7 +44,7 @@ func genSessionConfig(t *rapid.T) SessionConfig {
 	sec := rapid.Int64Range(-62135596800, 253402300799).Draw(t, "unixSec")
 	ts := time.Unix(sec, 0).UTC()
 
-	return SessionConfig{
+	return SessionCredentials{
 		UID:           rapid.String().Draw(t, "uid"),
 		AccessToken:   rapid.String().Draw(t, "accessToken"),
 		RefreshToken:  rapid.String().Draw(t, "refreshToken"),
@@ -56,7 +56,7 @@ func genSessionConfig(t *rapid.T) SessionConfig {
 	}
 }
 
-// TestPropertySessionConfigCookieRoundTrip verifies that for any SessionConfig
+// TestPropertySessionConfigCookieRoundTrip verifies that for any SessionCredentials
 // with arbitrary cookies and timestamps, JSON marshal/unmarshal produces
 // identical Cookies and LastRefresh.
 //
@@ -65,13 +65,13 @@ func TestPropertySessionConfigCookieRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		original := genSessionConfig(t)
 
-		//nolint:gosec // G117: property test intentionally marshals SessionConfig with tokens.
+		//nolint:gosec // G117: property test intentionally marshals SessionCredentials with tokens.
 		data, err := json.Marshal(original)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
 
-		var restored SessionConfig
+		var restored SessionCredentials
 		if err := json.Unmarshal(data, &restored); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
@@ -130,19 +130,19 @@ func genCookieValue(t *rapid.T, label string) string {
 	return string(b)
 }
 
-// genJarCookie generates a serialCookie suitable for cookie jar round-trip
+// genJarCookie generates a SerialCookie suitable for cookie jar round-trip
 // testing. Domain and Path are empty because net/http/cookiejar does not
 // expose these fields via Cookies() — the jar manages domain/path matching
 // internally. The round-trip therefore preserves only Name and Value.
-func genJarCookie(t *rapid.T, idx int) serialCookie {
-	return serialCookie{
+func genJarCookie(t *rapid.T, idx int) SerialCookie {
+	return SerialCookie{
 		Name:  genCookieName(t, fmt.Sprintf("name%d", idx)),
 		Value: genCookieValue(t, fmt.Sprintf("value%d", idx)),
 	}
 }
 
 // TestPropertyCookieJarRoundTrip verifies that for any set of cookie entries,
-// loadCookies followed by serializeCookies returns equivalent cookies.
+// LoadCookies followed by SerializeCookies returns equivalent cookies.
 //
 // The cookie jar (net/http/cookiejar) normalizes cookies: Domain is not
 // returned by Cookies(), and cookies with duplicate Name+Path are deduplicated
@@ -156,7 +156,7 @@ func TestPropertyCookieJarRoundTrip(t *testing.T) {
 
 		// Generate cookies with unique names to avoid jar deduplication.
 		seen := make(map[string]bool, n)
-		cookies := make([]serialCookie, 0, n)
+		cookies := make([]SerialCookie, 0, n)
 		for i := 0; i < n; i++ {
 			c := genJarCookie(t, i)
 			if seen[c.Name] {
@@ -166,15 +166,15 @@ func TestPropertyCookieJarRoundTrip(t *testing.T) {
 			cookies = append(cookies, c)
 		}
 
-		apiURL := apiCookieURL()
+		apiURL := CookieURL()
 
 		jar, err := cookiejar.New(nil)
 		if err != nil {
 			t.Fatalf("cookiejar.New: %v", err)
 		}
 
-		loadCookies(jar, cookies, apiURL)
-		got := serializeCookies(jar, apiURL)
+		LoadCookies(jar, cookies, apiURL)
+		got := SerializeCookies(jar, apiURL)
 
 		if len(got) != len(cookies) {
 			t.Fatalf("cookie count: got %d, want %d", len(got), len(cookies))
@@ -201,42 +201,42 @@ func TestPropertyCookieJarRoundTrip(t *testing.T) {
 // --- Unit tests for cookie edge cases ---
 
 // TestSerializeCookiesEmptyJar verifies that a fresh jar with no cookies
-// produces a nil slice from serializeCookies.
+// produces a nil slice from SerializeCookies.
 func TestSerializeCookiesEmptyJar(t *testing.T) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)
 	}
-	got := serializeCookies(jar, apiCookieURL())
+	got := SerializeCookies(jar, CookieURL())
 	if got != nil {
 		t.Fatalf("expected nil, got %v", got)
 	}
 }
 
-// TestLoadCookiesNil verifies that calling loadCookies with a nil slice
+// TestLoadCookiesNil verifies that calling LoadCookies with a nil slice
 // does not panic and leaves the jar empty.
 func TestLoadCookiesNil(t *testing.T) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)
 	}
-	apiURL := apiCookieURL()
-	loadCookies(jar, nil, apiURL)
+	apiURL := CookieURL()
+	LoadCookies(jar, nil, apiURL)
 
 	if cookies := jar.Cookies(apiURL); len(cookies) != 0 {
 		t.Fatalf("expected empty jar, got %d cookies", len(cookies))
 	}
 }
 
-// TestLoadCookiesEmpty verifies that calling loadCookies with an empty
+// TestLoadCookiesEmpty verifies that calling LoadCookies with an empty
 // (non-nil) slice does not panic and leaves the jar empty.
 func TestLoadCookiesEmpty(t *testing.T) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)
 	}
-	apiURL := apiCookieURL()
-	loadCookies(jar, []serialCookie{}, apiURL)
+	apiURL := CookieURL()
+	LoadCookies(jar, []SerialCookie{}, apiURL)
 
 	if cookies := jar.Cookies(apiURL); len(cookies) != 0 {
 		t.Fatalf("expected empty jar, got %d cookies", len(cookies))
@@ -244,11 +244,11 @@ func TestLoadCookiesEmpty(t *testing.T) {
 }
 
 // TestSessionConfigBackwardCompat verifies that JSON without the Cookies and
-// LastRefresh fields deserializes cleanly into a SessionConfig with nil
+// LastRefresh fields deserializes cleanly into a SessionCredentials with nil
 // Cookies and zero-value LastRefresh.
 func TestSessionConfigBackwardCompat(t *testing.T) {
 	raw := `{"uid":"u1","access_token":"a","refresh_token":"r","salted_key_pass":"k"}`
-	var cfg SessionConfig
+	var cfg SessionCredentials
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -266,12 +266,12 @@ func TestSessionConfigBackwardCompat(t *testing.T) {
 	}
 }
 
-// TestSessionConfigLastRefreshPreserved verifies that a SessionConfig with a
+// TestSessionConfigLastRefreshPreserved verifies that a SessionCredentials with a
 // specific LastRefresh timestamp survives JSON marshal/unmarshal with the
 // timestamp preserved.
 func TestSessionConfigLastRefreshPreserved(t *testing.T) {
 	ts := time.Date(2025, 6, 15, 12, 30, 45, 0, time.UTC)
-	cfg := SessionConfig{
+	cfg := SessionCredentials{
 		UID:           "u1",
 		AccessToken:   "a",
 		RefreshToken:  "r",
@@ -279,13 +279,13 @@ func TestSessionConfigLastRefreshPreserved(t *testing.T) {
 		LastRefresh:   ts,
 	}
 
-	//nolint:gosec // G117: unit test intentionally marshals SessionConfig with tokens.
+	//nolint:gosec // G117: unit test intentionally marshals SessionCredentials with tokens.
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	var restored SessionConfig
+	var restored SessionCredentials
 	if err := json.Unmarshal(data, &restored); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -302,14 +302,14 @@ type errStore struct {
 	err error
 }
 
-func (s *errStore) Load() (*SessionConfig, error) { return nil, s.err }
-func (s *errStore) Save(*SessionConfig) error     { return nil }
-func (s *errStore) Delete() error                 { return nil }
-func (s *errStore) List() ([]string, error)       { return nil, nil }
-func (s *errStore) Switch(string) error           { return nil }
+func (s *errStore) Load() (*SessionCredentials, error) { return nil, s.err }
+func (s *errStore) Save(*SessionCredentials) error     { return nil }
+func (s *errStore) Delete() error                      { return nil }
+func (s *errStore) List() ([]string, error)            { return nil, nil }
+func (s *errStore) Switch(string) error                { return nil }
 
 // TestReadySessionStoreError verifies that ReadySession propagates store.Load
-// errors. An empty mockStore returns a SessionConfig with no UID, which
+// errors. An empty mockStore returns a SessionCredentials with no UID, which
 // SessionFromCredentials rejects with ErrMissingUID.
 func TestReadySessionStoreError(t *testing.T) {
 	store := &mockStore{}
@@ -340,27 +340,27 @@ func TestReadySessionNotLoggedIn(t *testing.T) {
 func TestSessionFromCredentials(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *SessionConfig
+		config  *SessionCredentials
 		wantErr string
 	}{
 		{
 			name:    "missing UID",
-			config:  &SessionConfig{AccessToken: "a", RefreshToken: "r"},
+			config:  &SessionCredentials{AccessToken: "a", RefreshToken: "r"},
 			wantErr: "missing UID",
 		},
 		{
 			name:    "missing access token",
-			config:  &SessionConfig{UID: "u", RefreshToken: "r"},
+			config:  &SessionCredentials{UID: "u", RefreshToken: "r"},
 			wantErr: "missing access token",
 		},
 		{
 			name:    "missing refresh token",
-			config:  &SessionConfig{UID: "u", AccessToken: "a"},
+			config:  &SessionCredentials{UID: "u", AccessToken: "a"},
 			wantErr: "missing refresh token",
 		},
 		{
 			name:    "all fields empty",
-			config:  &SessionConfig{},
+			config:  &SessionCredentials{},
 			wantErr: "missing UID",
 		},
 	}
@@ -393,22 +393,22 @@ func errForMessage(msg string) error {
 
 // --- SessionRestore staleness detection tests (2.2) ---
 
-// configStore is a SessionStore backed by a single in-memory SessionConfig.
+// configStore is a SessionStore backed by a single in-memory SessionCredentials.
 type configStore struct {
-	config *SessionConfig
+	config *SessionCredentials
 }
 
-func (s *configStore) Load() (*SessionConfig, error) {
+func (s *configStore) Load() (*SessionCredentials, error) {
 	if s.config == nil {
 		return nil, ErrKeyNotFound
 	}
 	cfg := *s.config
 	return &cfg, nil
 }
-func (s *configStore) Save(*SessionConfig) error { return nil }
-func (s *configStore) Delete() error             { return nil }
-func (s *configStore) List() ([]string, error)   { return nil, nil }
-func (s *configStore) Switch(string) error       { return nil }
+func (s *configStore) Save(*SessionCredentials) error { return nil }
+func (s *configStore) Delete() error                  { return nil }
+func (s *configStore) List() ([]string, error)        { return nil, nil }
+func (s *configStore) Switch(string) error            { return nil }
 
 // TestSessionRestoreStaleness verifies that SessionRestore propagates
 // ErrNotLoggedIn for missing sessions and returns errors for configs
@@ -432,7 +432,7 @@ func TestSessionRestoreStaleness(t *testing.T) {
 		},
 		{
 			name: "stale tokens warn path",
-			store: &configStore{config: &SessionConfig{
+			store: &configStore{config: &SessionCredentials{
 				UID:          "u",
 				AccessToken:  "a",
 				RefreshToken: "r",
@@ -443,7 +443,7 @@ func TestSessionRestoreStaleness(t *testing.T) {
 		},
 		{
 			name: "expired tokens path",
-			store: &configStore{config: &SessionConfig{
+			store: &configStore{config: &SessionCredentials{
 				UID:          "u",
 				AccessToken:  "a",
 				RefreshToken: "r",
@@ -453,7 +453,7 @@ func TestSessionRestoreStaleness(t *testing.T) {
 		},
 		{
 			name: "zero LastRefresh skips staleness check",
-			store: &configStore{config: &SessionConfig{
+			store: &configStore{config: &SessionCredentials{
 				UID:          "u",
 				AccessToken:  "a",
 				RefreshToken: "r",
@@ -639,10 +639,10 @@ func TestNewDeauthHandler(_ *testing.T) {
 type failStore struct {
 	loadErr error
 	saveErr error
-	config  *SessionConfig
+	config  *SessionCredentials
 }
 
-func (s *failStore) Load() (*SessionConfig, error) {
+func (s *failStore) Load() (*SessionCredentials, error) {
 	if s.loadErr != nil {
 		return nil, s.loadErr
 	}
@@ -650,12 +650,12 @@ func (s *failStore) Load() (*SessionConfig, error) {
 		cfg := *s.config
 		return &cfg, nil
 	}
-	return &SessionConfig{}, nil
+	return &SessionCredentials{}, nil
 }
-func (s *failStore) Save(*SessionConfig) error { return s.saveErr }
-func (s *failStore) Delete() error             { return nil }
-func (s *failStore) List() ([]string, error)   { return nil, nil }
-func (s *failStore) Switch(string) error       { return nil }
+func (s *failStore) Save(*SessionCredentials) error { return s.saveErr }
+func (s *failStore) Delete() error                  { return nil }
+func (s *failStore) List() ([]string, error)        { return nil, nil }
+func (s *failStore) Switch(string) error            { return nil }
 
 // TestAuthHandlerStoreErrors verifies that the auth handler handles store
 // errors gracefully (logs them, doesn't panic).
@@ -1269,44 +1269,44 @@ func TestShouldFork(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name      string
-		svcConfig *SessionConfig
+		svcConfig *SessionCredentials
 		svcErr    error
-		acctCfg   *SessionConfig
+		acctCfg   *SessionCredentials
 		service   string
 		want      bool
 	}{
 		{
 			name:    "missing session triggers fork",
 			svcErr:  ErrKeyNotFound,
-			acctCfg: &SessionConfig{LastRefresh: now},
+			acctCfg: &SessionCredentials{LastRefresh: now},
 			service: "drive",
 			want:    true,
 		},
 		{
 			name:      "wildcard fallback triggers fork",
-			svcConfig: &SessionConfig{Service: "other", LastRefresh: now},
-			acctCfg:   &SessionConfig{LastRefresh: now},
+			svcConfig: &SessionCredentials{Service: "other", LastRefresh: now},
+			acctCfg:   &SessionCredentials{LastRefresh: now},
 			service:   "drive",
 			want:      true,
 		},
 		{
 			name:      "empty service field triggers fork",
-			svcConfig: &SessionConfig{Service: "", LastRefresh: now},
-			acctCfg:   &SessionConfig{LastRefresh: now},
+			svcConfig: &SessionCredentials{Service: "", LastRefresh: now},
+			acctCfg:   &SessionCredentials{LastRefresh: now},
 			service:   "drive",
 			want:      true,
 		},
 		{
 			name:      "stale session triggers fork",
-			svcConfig: &SessionConfig{Service: "drive", LastRefresh: now.Add(-2 * time.Hour)},
-			acctCfg:   &SessionConfig{LastRefresh: now},
+			svcConfig: &SessionCredentials{Service: "drive", LastRefresh: now.Add(-2 * time.Hour)},
+			acctCfg:   &SessionCredentials{LastRefresh: now},
 			service:   "drive",
 			want:      true,
 		},
 		{
 			name:      "fresh session does not fork",
-			svcConfig: &SessionConfig{Service: "drive", LastRefresh: now},
-			acctCfg:   &SessionConfig{LastRefresh: now},
+			svcConfig: &SessionCredentials{Service: "drive", LastRefresh: now},
+			acctCfg:   &SessionCredentials{LastRefresh: now},
 			service:   "drive",
 			want:      false,
 		},

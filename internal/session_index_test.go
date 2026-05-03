@@ -28,11 +28,11 @@ func randomString(r *rand.Rand, maxLen int) string {
 	return string(b)
 }
 
-// sessionConfigGenerator produces random SessionConfig values for property tests.
+// sessionConfigGenerator produces random SessionCredentials values for property tests.
 type sessionConfigGenerator struct{}
 
 func (sessionConfigGenerator) Generate(r *rand.Rand, _ int) reflect.Value {
-	cfg := api.SessionConfig{
+	cfg := api.SessionCredentials{
 		UID:           randomString(r, 32),
 		AccessToken:   randomString(r, 64),
 		RefreshToken:  randomString(r, 64),
@@ -48,7 +48,7 @@ func (nonEmptyStringGenerator) Generate(r *rand.Rand, _ int) reflect.Value {
 	return reflect.ValueOf(randomString(r, 32))
 }
 
-// PropertySaveLoadRoundTrip verifies that for any valid SessionConfig, account
+// PropertySaveLoadRoundTrip verifies that for any valid SessionCredentials, account
 // name, and service name, saving then loading with the same (account, service)
 // returns an equal config.
 //
@@ -63,7 +63,7 @@ func TestPropertySaveLoadRoundTrip(t *testing.T) {
 		},
 	}
 
-	prop := func(session api.SessionConfig, account string, service string) bool {
+	prop := func(session api.SessionCredentials, account string, service string) bool {
 		dir := t.TempDir()
 		indexPath := filepath.Join(dir, "sessions.json")
 		kr := NewMockKeyring()
@@ -115,7 +115,7 @@ func TestPropertyServiceFallbackToWildcard(t *testing.T) {
 		},
 	}
 
-	prop := func(session api.SessionConfig, account string, service string) bool {
+	prop := func(session api.SessionCredentials, account string, service string) bool {
 		dir := t.TempDir()
 		indexPath := filepath.Join(dir, "sessions.json")
 		kr := NewMockKeyring()
@@ -197,7 +197,7 @@ func TestSessionIndex_KeyringUnavailable(t *testing.T) {
 	kr := NewMockKeyring()
 
 	store := NewSessionStore(indexPath, "alice", "drive", kr)
-	session := &api.SessionConfig{
+	session := &api.SessionCredentials{
 		UID:           "uid-1",
 		AccessToken:   "at-1",
 		RefreshToken:  "rt-1",
@@ -231,7 +231,7 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 	kr := NewMockKeyring()
 
 	store := NewSessionStore(indexPath, "alice", "drive", kr)
-	session := &api.SessionConfig{
+	session := &api.SessionCredentials{
 		UID:           "uid-1",
 		AccessToken:   "at-1",
 		RefreshToken:  "rt-1",
@@ -287,9 +287,9 @@ func TestSessionIndex_StaleEntryCleanup(t *testing.T) {
 
 // --- Sub-task 5.1: Tests for SessionIndex Load/Save/Delete/List/Switch ---
 
-// testSession returns a minimal SessionConfig for use in table-driven tests.
-func testSession(uid string) *api.SessionConfig {
-	return &api.SessionConfig{
+// testSession returns a minimal SessionCredentials for use in table-driven tests.
+func testSession(uid string) *api.SessionCredentials {
+	return &api.SessionCredentials{
 		UID:           uid,
 		AccessToken:   "at-" + uid,
 		RefreshToken:  "rt-" + uid,
@@ -302,7 +302,7 @@ func TestSessionIndex_SaveAndLoad(t *testing.T) {
 		name    string
 		account string
 		service string
-		session *api.SessionConfig
+		session *api.SessionCredentials
 		wantErr string
 	}{
 		{
@@ -855,9 +855,9 @@ func TestMockKeyring_MultipleServices(t *testing.T) {
 
 // --- Sub-task 5.3: Property tests for session index round-trip (rapid) ---
 
-// genSessionConfigRapid generates an arbitrary SessionConfig for rapid property tests.
-func genSessionConfigRapid(t *rapid.T) *api.SessionConfig {
-	return &api.SessionConfig{
+// genSessionConfigRapid generates an arbitrary SessionCredentials for rapid property tests.
+func genSessionConfigRapid(t *rapid.T) *api.SessionCredentials {
+	return &api.SessionCredentials{
 		UID:           rapid.StringMatching(`[a-zA-Z0-9]{1,32}`).Draw(t, "uid"),
 		AccessToken:   rapid.StringMatching(`[a-zA-Z0-9]{1,64}`).Draw(t, "accessToken"),
 		RefreshToken:  rapid.StringMatching(`[a-zA-Z0-9]{1,64}`).Draw(t, "refreshToken"),
@@ -866,7 +866,7 @@ func genSessionConfigRapid(t *rapid.T) *api.SessionConfig {
 }
 
 // TestPropertySessionIndexSaveLoadRoundTrip_Property verifies that for any
-// valid SessionConfig, account, and service, Save then Load returns an
+// valid SessionCredentials, account, and service, Save then Load returns an
 // identical config.
 //
 // **Validates: Requirements 2.3**
@@ -998,7 +998,7 @@ func TestPropertySessionIndexListAfterSave_Property(t *testing.T) {
 	})
 }
 
-// TestWildcardFallback_Property verifies that for any SessionConfig stored
+// TestWildcardFallback_Property verifies that for any SessionCredentials stored
 // under the "*" wildcard service, SessionIndex.Load with any service name
 // that has no exact match returns the wildcard session's config.
 //

@@ -21,16 +21,6 @@ import (
 	"github.com/major0/proton-cli/api/pool"
 )
 
-// serialCookie holds the minimal fields needed to reconstruct an http.Cookie
-// for jar injection. Expiry is not persisted — the API server manages cookie
-// lifetime.
-type serialCookie struct {
-	Name   string `json:"name"`
-	Value  string `json:"value"`
-	Domain string `json:"domain"`
-	Path   string `json:"path"`
-}
-
 // MaxAutoWorkers is the upper bound for the auto-detected worker count.
 // Proton's storage API rate-limits above ~64 concurrent requests.
 const MaxAutoWorkers = 64
@@ -75,21 +65,21 @@ const TokenWarnAge = 20 * time.Hour
 // TokenExpireAge is the age at which session tokens are considered expired.
 const TokenExpireAge = 24 * time.Hour
 
-// apiCookieURL returns the parsed Proton API base URL used for cookie scoping.
-func apiCookieURL() *url.URL {
+// CookieURL returns the parsed Proton API base URL used for cookie scoping.
+func CookieURL() *url.URL {
 	u, _ := url.Parse(proton.DefaultHostURL)
 	return u
 }
 
-// serializeCookies extracts cookies from the jar for the given API URL.
-func serializeCookies(jar http.CookieJar, apiURL *url.URL) []serialCookie {
+// SerializeCookies extracts cookies from the jar for the given API URL.
+func SerializeCookies(jar http.CookieJar, apiURL *url.URL) []SerialCookie {
 	cookies := jar.Cookies(apiURL)
 	if len(cookies) == 0 {
 		return nil
 	}
-	out := make([]serialCookie, len(cookies))
+	out := make([]SerialCookie, len(cookies))
 	for i, c := range cookies {
-		out[i] = serialCookie{
+		out[i] = SerialCookie{
 			Name:   c.Name,
 			Value:  c.Value,
 			Domain: c.Domain,
@@ -99,8 +89,8 @@ func serializeCookies(jar http.CookieJar, apiURL *url.URL) []serialCookie {
 	return out
 }
 
-// loadCookies injects persisted cookies into the jar for the given API URL.
-func loadCookies(jar http.CookieJar, cookies []serialCookie, apiURL *url.URL) {
+// LoadCookies injects persisted cookies into the jar for the given API URL.
+func LoadCookies(jar http.CookieJar, cookies []SerialCookie, apiURL *url.URL) {
 	if len(cookies) == 0 {
 		return
 	}
@@ -127,9 +117,10 @@ type Doer interface {
 type Session struct {
 	Client     *proton.Client
 	Auth       proton.Auth
-	BaseURL    string // override for DoJSON; defaults to proton.DefaultHostURL
-	AppVersion string // x-pm-appversion header value for DoJSON requests
-	UserAgent  string // User-Agent header value for DoJSON requests
+	BaseURL    string         // override for DoJSON; defaults to proton.DefaultHostURL
+	AppVersion string         // x-pm-appversion header value for DoJSON requests
+	UserAgent  string         // User-Agent header value for DoJSON requests
+	Config     *SessionConfig // resolved application config; set by consumer via api/config/
 	manager    *proton.Manager
 
 	cookieJar  http.CookieJar
@@ -168,7 +159,7 @@ func (s *Session) initHTTPClient() *http.Client {
 // SessionFromCredentials initializes a new session from the provided config.
 // The session is not fully usable until it has been Unlock'ed using the
 // user-provided keypass.
-func SessionFromCredentials(ctx context.Context, options []proton.Option, config *SessionConfig, managerHook func(*proton.Manager)) (*Session, error) {
+func SessionFromCredentials(ctx context.Context, options []proton.Option, config *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
 	var err error
 
 	if config.UID == "" {
@@ -486,7 +477,7 @@ func SessionRestore(ctx context.Context, options []proton.Option, store SessionS
 	}
 
 	// Restore persisted cookies into the session's jar.
-	loadCookies(session.cookieJar, config.Cookies, apiCookieURL())
+	LoadCookies(session.cookieJar, config.Cookies, CookieURL())
 
 	keypass, err := Base64Decode(config.SaltedKeyPass)
 	if err != nil {
@@ -559,7 +550,7 @@ func IsStale(accountRefresh, serviceRefresh time.Time) bool {
 // proactiveRefresh checks the session's LastRefresh age and triggers a
 // refresh if the token is past the ProactiveRefreshAge threshold.
 // The auth handler callback updates Session.Auth and persists via SessionSave.
-func proactiveRefresh(ctx context.Context, session *Session, config *SessionConfig) error {
+func proactiveRefresh(ctx context.Context, session *Session, config *SessionCredentials) error {
 	if !NeedsProactiveRefresh(config.LastRefresh) {
 		return nil
 	}
@@ -577,7 +568,7 @@ func proactiveRefresh(ctx context.Context, session *Session, config *SessionConf
 // the account session. Returns true when the service session is missing,
 // is a wildcard fallback, has no Service field (legacy), or is stale
 // relative to the account session.
-func shouldFork(svcConfig *SessionConfig, svcErr error, acctConfig *SessionConfig, service string) bool {
+func shouldFork(svcConfig *SessionCredentials, svcErr error, acctConfig *SessionCredentials, service string) bool {
 	if svcErr != nil {
 		slog.Debug("service session not found, will fork", "service", service)
 		return true
@@ -731,7 +722,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 	acctSession.BaseURL = acctSvc.Host
 
 	// Restore cookies into account session.
-	loadCookies(acctSession.cookieJar, acctConfig.Cookies, apiCookieURL())
+	LoadCookies(acctSession.cookieJar, acctConfig.Cookies, CookieURL())
 
 	// Register auth handler on account session so proactive refresh persists tokens.
 	acctSession.AddAuthHandler(NewAuthHandler(accountStore, acctSession))
@@ -797,13 +788,13 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 
 // restoreExistingService restores a service session from persisted credentials.
 // Used when the service session exists and is not stale.
-func restoreExistingService(ctx context.Context, options []proton.Option, svcConfig *SessionConfig, store SessionStore, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
+func restoreExistingService(ctx context.Context, options []proton.Option, svcConfig *SessionCredentials, store SessionStore, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
 	session, err := SessionFromCredentials(ctx, options, svcConfig, managerHook)
 	if err != nil {
 		return nil, fmt.Errorf("restore service session %q: credentials: %w", service, err)
 	}
 
-	loadCookies(session.cookieJar, svcConfig.Cookies, apiCookieURL())
+	LoadCookies(session.cookieJar, svcConfig.Cookies, CookieURL())
 
 	keypass, err := Base64Decode(svcConfig.SaltedKeyPass)
 	if err != nil {
@@ -833,7 +824,7 @@ func restoreExistingService(ctx context.Context, options []proton.Option, svcCon
 // cookie transition) but valid cookies persisted in the service store.
 // Uses CookieTransport so Resty-based calls use cookie auth, with 401
 // retry via RefreshCookies.
-func restoreExistingCookieService(ctx context.Context, svcConfig *SessionConfig, store SessionStore, _ SessionStore, acctConfig *SessionConfig, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
+func restoreExistingCookieService(ctx context.Context, svcConfig *SessionCredentials, store SessionStore, _ SessionStore, acctConfig *SessionCredentials, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
 	// Build cookie jar and inject persisted cookies from the service store.
 	jar, _ := cookiejar.New(nil)
 	loadProtonCookies(jar, svcConfig.Cookies, svc.Host)
@@ -948,12 +939,12 @@ func restoreExistingCookieService(ctx context.Context, svcConfig *SessionConfig,
 // (path=/api/auth/refresh) cookies.
 func SessionSave(store SessionStore, session *Session, keypass []byte) error {
 	queryURL := cookieQueryURL(session.BaseURL)
-	config := &SessionConfig{
+	config := &SessionCredentials{
 		UID:           session.Auth.UID,
 		AccessToken:   session.Auth.AccessToken,
 		RefreshToken:  session.Auth.RefreshToken,
 		SaltedKeyPass: Base64Encode(keypass),
-		Cookies:       serializeCookies(session.cookieJar, queryURL),
+		Cookies:       SerializeCookies(session.cookieJar, queryURL),
 		LastRefresh:   time.Now(),
 	}
 	return store.Save(config)

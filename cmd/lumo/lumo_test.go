@@ -12,21 +12,21 @@ import (
 
 // mockStore is a minimal SessionStore for testing.
 type mockStore struct {
-	config  *common.SessionConfig
+	config  *common.SessionCredentials
 	loadErr error
 }
 
-func (m *mockStore) Load() (*common.SessionConfig, error) {
+func (m *mockStore) Load() (*common.SessionCredentials, error) {
 	if m.loadErr != nil {
 		return nil, m.loadErr
 	}
 	return m.config, nil
 }
 
-func (m *mockStore) Save(_ *common.SessionConfig) error { return nil }
-func (m *mockStore) Delete() error                      { return nil }
-func (m *mockStore) List() ([]string, error)            { return nil, nil }
-func (m *mockStore) Switch(_ string) error              { return nil }
+func (m *mockStore) Save(_ *common.SessionCredentials) error { return nil }
+func (m *mockStore) Delete() error                           { return nil }
+func (m *mockStore) List() ([]string, error)                 { return nil, nil }
+func (m *mockStore) Switch(_ string) error                   { return nil }
 
 // newTestCmd creates a cobra.Command with a RuntimeContext attached.
 func newTestCmd(acctStore common.SessionStore) *cobra.Command {
@@ -42,7 +42,7 @@ func newTestCmd(acctStore common.SessionStore) *cobra.Command {
 // returns an error when the account session uses Bearer auth.
 func TestRestoreClient_BearerSessionRejected(t *testing.T) {
 	cmd := newTestCmd(&mockStore{
-		config: &common.SessionConfig{
+		config: &common.SessionCredentials{
 			UID:        "test-uid",
 			CookieAuth: false,
 		},

@@ -12,11 +12,11 @@ type failingStore struct {
 	err error
 }
 
-func (f *failingStore) Load() (*commonAPI.SessionConfig, error) { return nil, f.err }
-func (f *failingStore) Save(_ *commonAPI.SessionConfig) error   { return nil }
-func (f *failingStore) Delete() error                           { return nil }
-func (f *failingStore) List() ([]string, error)                 { return nil, f.err }
-func (f *failingStore) Switch(_ string) error                   { return nil }
+func (f *failingStore) Load() (*commonAPI.SessionCredentials, error) { return nil, f.err }
+func (f *failingStore) Save(_ *commonAPI.SessionCredentials) error   { return nil }
+func (f *failingStore) Delete() error                                { return nil }
+func (f *failingStore) List() ([]string, error)                      { return nil, f.err }
+func (f *failingStore) Switch(_ string) error                        { return nil }
 
 // testShareMetadata creates a ShareMetadata for testing.
 func testShareMetadata(shareID string, st proton.ShareType) proton.ShareMetadata {

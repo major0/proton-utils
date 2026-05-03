@@ -130,7 +130,7 @@ func persistCookieRefresh(cs *CookieSession, store SessionStore) {
 		return
 	}
 	u := cookieQueryURL(cs.BaseURL)
-	cfg.Cookies = serializeCookies(cs.cookieJar, u)
+	cfg.Cookies = SerializeCookies(cs.cookieJar, u)
 	cfg.LastRefresh = time.Now()
 	if err := store.Save(cfg); err != nil {
 		slog.Error("cookieTransport: persist refreshed cookies", "error", err)
@@ -141,7 +141,7 @@ func persistCookieRefresh(cs *CookieSession, store SessionStore) {
 // into the CookieTransport. Returns the CookieSession so callers can use it
 // for other cookie operations. The cookieStore is used to persist updated
 // cookies after refresh.
-func NewCookieAuthHandler(cookieConfig *SessionConfig, baseURL string, transport *CookieTransport, cookieStore SessionStore) *CookieSession {
+func NewCookieAuthHandler(cookieConfig *SessionCredentials, baseURL string, transport *CookieTransport, cookieStore SessionStore) *CookieSession {
 	cs := CookieSessionFromConfig(&CookieSessionConfig{
 		UID:         cookieConfig.UID,
 		Cookies:     cookieConfig.Cookies,
@@ -155,10 +155,10 @@ func NewCookieAuthHandler(cookieConfig *SessionConfig, baseURL string, transport
 	return cs
 }
 
-// CookieSessionFromContext creates a CookieSession from a SessionConfig and
+// CookieSessionFromContext creates a CookieSession from a SessionCredentials and
 // attaches it to the given CookieTransport for 401 refresh handling. This is
 // a convenience function for CookieSessionRestore.
-func attachCookieRefresh(ctx context.Context, cookieConfig *SessionConfig, jar http.CookieJar, transport *CookieTransport, cookieStore SessionStore) {
+func attachCookieRefresh(ctx context.Context, cookieConfig *SessionCredentials, jar http.CookieJar, transport *CookieTransport, cookieStore SessionStore) {
 	_ = ctx // reserved for future use
 	cs := &CookieSession{
 		UID:       cookieConfig.UID,

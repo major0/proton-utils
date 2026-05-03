@@ -53,7 +53,7 @@ func init() {
 
 // buildServiceStatus builds the status for a single service, given the
 // account session's LastRefresh for staleness comparison.
-func buildServiceStatus(svc api.ServiceConfig, cfg *api.SessionConfig, acctRefresh time.Time, verbose bool) serviceStatus {
+func buildServiceStatus(svc api.ServiceConfig, cfg *api.SessionCredentials, acctRefresh time.Time, verbose bool) serviceStatus {
 	ss := serviceStatus{
 		Service: svc.Name,
 		Host:    svc.Host,
