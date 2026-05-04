@@ -67,11 +67,12 @@ func SetContext(cmd *cobra.Command, rc *RuntimeContext) {
 }
 
 // GetContext retrieves the RuntimeContext from a cobra command's context.
-// Returns nil if no RuntimeContext has been set (e.g. PersistentPreRunE
-// has not run). Callers must check for nil.
+// It walks up the parent chain because PersistentPreRunE sets the context
+// on the root command, not on the executing subcommand. Returns nil if no
+// RuntimeContext has been set (e.g. PersistentPreRunE has not run).
 func GetContext(cmd *cobra.Command) *RuntimeContext {
-	if cmd != nil {
-		if ctx := cmd.Context(); ctx != nil {
+	for c := cmd; c != nil; c = c.Parent() {
+		if ctx := c.Context(); ctx != nil {
 			if rc, ok := ctx.Value(contextKey{}).(*RuntimeContext); ok && rc != nil {
 				return rc
 			}
