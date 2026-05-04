@@ -236,15 +236,13 @@ func requestTimeoutHook(_ *proton.Manager) {
 }
 
 // NewDriveClient creates a drive client from a session and applies config
-// from RuntimeContext. The cmd parameter is used to retrieve the loaded
-// application config via GetContext.
-func NewDriveClient(ctx context.Context, cmd *cobra.Command, session *common.Session) (*drive.Client, error) {
+// from RuntimeContext.
+func NewDriveClient(ctx context.Context, session *common.Session) (*drive.Client, error) {
 	dc, err := drive.NewClient(ctx, session)
 	if err != nil {
 		return nil, err
 	}
-	rc := GetContext(cmd)
-	dc.Config = rc.Config
+	dc.Config = session.Config
 	dc.InitObjectCache()
 	return dc, nil
 }

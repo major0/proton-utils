@@ -70,7 +70,7 @@ func injectClientError(err error) {
 	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return &api.Session{}, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
 		return nil, err
 	}
 }
@@ -85,7 +85,7 @@ func injectTestClient() {
 	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
 		return &drive.Client{Session: session}, nil
 	}
 }
@@ -100,7 +100,7 @@ func injectResolvedShare(share *drive.Share) {
 	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
 		return &drive.Client{Session: session}, nil
 	}
 	resolveShareFn = func(_ context.Context, _ *drive.Client, _ string) (*drive.Share, error) {
@@ -118,7 +118,7 @@ func injectShareList(shares []*drive.Share) {
 	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
 		return &drive.Client{Session: session}, nil
 	}
 	listSharesFn = func(_ context.Context, _ *drive.Client) ([]*drive.Share, error) {

@@ -11,14 +11,13 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/config"
 )
 
 // Client wraps an api.Session with Drive-specific state and operations.
 // Implements LinkResolver.
 type Client struct {
 	Session         *api.Session
-	Config          *config.Config // loaded config for cache policy lookup; may be nil
+	Config          *api.SessionConfig // loaded config for cache policy lookup; may be nil
 	addresses       map[string]proton.Address
 	addressKeyRings map[string]*crypto.KeyRing
 

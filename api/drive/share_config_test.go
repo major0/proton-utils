@@ -8,7 +8,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/config"
 	"pgregory.net/rapid"
 )
 
@@ -46,7 +45,7 @@ func (m *mockResolver) MaxWorkers() int         { return 1 }
 func TestApplyShareConfig_MatchingName(t *testing.T) {
 	share := testShare("MyFolder", proton.ShareTypeStandard)
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {
 					MemoryCache: api.CacheMetadata,
@@ -71,7 +70,7 @@ func TestInitObjectCache_ConstructsDiskv(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", dir)
 
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {
 					DiskCache: api.DiskCacheObjectStore,
@@ -103,7 +102,7 @@ func TestInitObjectCache_SkippedWithoutXDG(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
 
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {
 					DiskCache: api.DiskCacheObjectStore,
@@ -124,7 +123,7 @@ func TestInitObjectCache_SkippedWhenNoDiskCache(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", dir)
 
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {
 					MemoryCache: api.CacheMetadata,
@@ -144,7 +143,7 @@ func TestInitObjectCache_SkippedWhenNoDiskCache(t *testing.T) {
 func TestApplyShareConfig_LinkNameLevel(t *testing.T) {
 	share := testShare("MyFolder", proton.ShareTypeStandard)
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {
 					MemoryCache: api.CacheLinkName,
@@ -167,7 +166,7 @@ func TestApplyShareConfig_LinkNameLevel(t *testing.T) {
 func TestApplyShareConfig_NoMatch(t *testing.T) {
 	share := testShare("OtherFolder", proton.ShareTypeStandard)
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"MyFolder": {MemoryCache: api.CacheMetadata},
 			},
@@ -188,7 +187,7 @@ func TestApplyShareConfig_RootForced(t *testing.T) {
 	share := testShare("root", proton.ShareTypeMain)
 	// Even with config enabling everything, root should be forced disabled.
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"root": {
 					MemoryCache: api.CacheMetadata,
@@ -208,7 +207,7 @@ func TestApplyShareConfig_RootForced(t *testing.T) {
 func TestApplyShareConfig_PhotosForced(t *testing.T) {
 	share := testShare("Photos", ShareTypePhotos)
 	c := &Client{
-		Config: &config.Config{
+		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
 				"Photos": {
 					MemoryCache: api.CacheMetadata,
@@ -282,7 +281,7 @@ func TestPropertyRootPhotosDisabled(t *testing.T) {
 		share.DiskCacheLevel = diskLevel
 
 		c := &Client{
-			Config: &config.Config{
+			Config: &api.SessionConfig{
 				Shares: map[string]api.ShareConfig{
 					name: {
 						MemoryCache: memLevel,

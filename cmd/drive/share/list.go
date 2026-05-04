@@ -31,7 +31,7 @@ func runShareList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	dc, err := newDriveClientFn(ctx, cmd, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}

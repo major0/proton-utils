@@ -32,7 +32,7 @@ func runShareAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	dc, err := newDriveClientFn(ctx, cmd, session)
+	dc, err := newDriveClientFn(ctx, session)
 	if err != nil {
 		return err
 	}

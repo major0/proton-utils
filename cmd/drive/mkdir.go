@@ -38,7 +38,7 @@ func runMkdir(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, cmd, session)
+	dc, err := cli.NewDriveClient(ctx, session)
 	if err != nil {
 		return err
 	}
