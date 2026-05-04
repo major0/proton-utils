@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/lumo"
-	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -97,7 +96,7 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 		for i := range rows {
 			ids[i] = rows[i].ID
 		}
-		short := shortid.Format(ids)
+		short := formatShortIDs(ids)
 		for i := range rows {
 			if s, ok := short[rows[i].ID]; ok {
 				rows[i].ID = s
@@ -414,7 +413,7 @@ func runSpaceDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, arg := range args {
-		spaceID, resolveErr := shortid.Resolve(spaceIDs, arg)
+		spaceID, resolveErr := resolveShortID(spaceIDs, arg)
 		if resolveErr != nil {
 			return fmt.Errorf("resolving space: %w", resolveErr)
 		}
@@ -515,7 +514,7 @@ func runSpaceConfig(cmd *cobra.Command, args []string) error {
 	for i, s := range spaces {
 		spaceIDs[i] = s.ID
 	}
-	spaceID, err = shortid.Resolve(spaceIDs, spaceID)
+	spaceID, err = resolveShortID(spaceIDs, spaceID)
 	if err != nil {
 		return fmt.Errorf("resolving space: %w", err)
 	}

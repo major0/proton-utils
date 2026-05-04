@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/api/shortid"
 )
 
 // parseProtonURI parses a proton:// URI into its share and path components.
@@ -144,7 +143,7 @@ func resolveShareByShortID(ctx context.Context, dc *drive.Client, prefix string)
 		ids[i] = m.ShareID
 	}
 
-	fullID, err := shortid.Resolve(ids, prefix)
+	fullID, err := resolveShortID(ids, prefix)
 	if err != nil {
 		return nil, err
 	}

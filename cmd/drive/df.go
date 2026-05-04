@@ -9,7 +9,6 @@ import (
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -127,7 +126,7 @@ func runDf(cmd *cobra.Command, _ []string) error {
 	}
 	shortVolIDs := map[string]string{}
 	if rc.Verbose < 1 {
-		shortVolIDs = shortid.Format(volIDs)
+		shortVolIDs = formatShortIDs(volIDs)
 	}
 
 	// Account-level quota from the user object.

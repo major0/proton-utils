@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +48,7 @@ func runShareList(cmd *cobra.Command, _ []string) error {
 	}
 	short := map[string]string{}
 	if rc.Verbose < 1 {
-		short = shortid.Format(ids)
+		short = formatShortIDs(ids)
 	}
 
 	for i := range shares {
