@@ -14,7 +14,6 @@ import (
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/config"
 	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -105,9 +104,9 @@ var (
 				Timeout:            rootParams.Timeout,
 				DebugHTTP:          debugHTTP,
 				ProtonOpts:         opts,
-				SessionStore:       internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", internal.SystemKeyring{}),
-				AccountStore:       internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "account", internal.SystemKeyring{}),
-				CookieStore:        internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "cookie", internal.SystemKeyring{}),
+				SessionStore:       NewSessionStore(rootParams.SessionFile, rootParams.Account, "*", SystemKeyring{}),
+				AccountStore:       NewSessionStore(rootParams.SessionFile, rootParams.Account, "account", SystemKeyring{}),
+				CookieStore:        NewSessionStore(rootParams.SessionFile, rootParams.Account, "cookie", SystemKeyring{}),
 				Account:            rootParams.Account,
 				ServiceName:        "*",
 				AppVersionOverride: rootParams.AppVersionOverride,
@@ -138,8 +137,8 @@ func SetServiceCmd(cmd *cobra.Command, service string) {
 	rc.ServiceName = service
 	svc, _ := common.LookupService(service)
 
-	rc.SessionStore = internal.NewSessionStore(
-		rc.SessionFile, rc.Account, service, internal.SystemKeyring{},
+	rc.SessionStore = NewSessionStore(
+		rc.SessionFile, rc.Account, service, SystemKeyring{},
 	)
 
 	rc.ProtonOpts = []proton.Option{

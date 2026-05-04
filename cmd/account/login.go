@@ -11,13 +11,12 @@ import (
 	common "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
-	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
 )
 
 // userPromptFn is the function used to prompt the user for input.
 // It is a variable so tests can replace it without reading stdin.
-var userPromptFn = internal.UserPrompt
+var userPromptFn = cli.UserPrompt
 
 var authLoginParams = struct {
 	username      string

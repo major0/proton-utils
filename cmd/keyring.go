@@ -1,5 +1,4 @@
-// Package internal provides shared utilities for the proton-cli application.
-package internal
+package cli
 
 import (
 	"github.com/zalando/go-keyring"

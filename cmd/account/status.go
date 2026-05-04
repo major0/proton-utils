@@ -10,7 +10,6 @@ import (
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
-	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -111,11 +110,11 @@ func runAccountStatus(cmd *cobra.Command, _ []string) error {
 		sessionFile = sessionFile[:len(sessionFile)-len("config.yaml")] + "sessions.db"
 	}
 
-	kr := internal.SystemKeyring{}
+	kr := cli.SystemKeyring{}
 	verbose := rc.DebugHTTP || false // verbose when -vv or higher
 
 	// Check if any account exists.
-	idx := internal.NewSessionStore(sessionFile, rc.Account, "*", kr)
+	idx := cli.NewSessionStore(sessionFile, rc.Account, "*", kr)
 	accounts, err := idx.List()
 	if err != nil {
 		return fmt.Errorf("reading session index: %w", err)
@@ -127,12 +126,12 @@ func runAccountStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Load account session for staleness comparison.
-	acctStore := internal.NewSessionStore(sessionFile, rc.Account, "account", kr)
+	acctStore := cli.NewSessionStore(sessionFile, rc.Account, "account", kr)
 	acctCfg, _ := acctStore.Load()
 
 	// Also try wildcard for backward compat.
 	if acctCfg == nil {
-		wildcardStore := internal.NewSessionStore(sessionFile, rc.Account, "*", kr)
+		wildcardStore := cli.NewSessionStore(sessionFile, rc.Account, "*", kr)
 		acctCfg, _ = wildcardStore.Load()
 	}
 
@@ -161,7 +160,7 @@ func runAccountStatus(cmd *cobra.Command, _ []string) error {
 			svc, _ = api.LookupService(svcName)
 		}
 
-		store := internal.NewSessionStore(sessionFile, rc.Account, svcName, kr)
+		store := cli.NewSessionStore(sessionFile, rc.Account, svcName, kr)
 		cfg, loadErr := store.Load()
 		if loadErr != nil {
 			cfg = nil
