@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/ProtonMail/go-proton-api"
 	"github.com/jedib0t/go-pretty/v6/table"
 	common "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/account"
@@ -13,8 +12,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// addressInfo holds the primitive values extracted from an opaque
+// account.Address for rendering.
+type addressInfo struct {
+	Email  string
+	Type   int
+	Status int
+}
+
+// addressInfoFrom extracts rendering data from opaque account.Address values.
+func addressInfoFrom(addrs []account.Address) []addressInfo {
+	out := make([]addressInfo, len(addrs))
+	for i, a := range addrs {
+		out[i] = addressInfo{
+			Email:  a.Email(),
+			Type:   a.Type(),
+			Status: a.Status(),
+		}
+	}
+	return out
+}
+
 // renderAddresses writes the address table to the given writer.
-func renderAddresses(w io.Writer, addresses []proton.Address) {
+func renderAddresses(w io.Writer, addresses []addressInfo) {
 	t := table.NewWriter()
 	t.SetOutputMirror(w)
 	t.AppendHeader(table.Row{"Address", "Type", "State"})
@@ -48,7 +68,7 @@ var accountAddressCmd = &cobra.Command{
 			return err
 		}
 
-		renderAddresses(os.Stdout, addresses)
+		renderAddresses(os.Stdout, addressInfoFrom(addresses))
 		return nil
 	},
 }

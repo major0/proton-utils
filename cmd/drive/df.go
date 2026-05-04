@@ -144,14 +144,14 @@ func runDf(cmd *cobra.Command, _ []string) error {
 	printVolumeRows(volumes, nameIndex, shareIndex, shortVolIDs)
 
 	// Account total line.
-	acctSize := units.BytesSize(float64(user.MaxSpace))
-	acctUsed := units.BytesSize(float64(user.UsedSpace))
+	acctSize := units.BytesSize(float64(user.MaxSpace()))
+	acctUsed := units.BytesSize(float64(user.UsedSpace()))
 	acctAvail := "-"
 	acctPct := "-"
-	if user.MaxSpace > 0 {
-		free := user.MaxSpace - user.UsedSpace
+	if user.MaxSpace() > 0 {
+		free := user.MaxSpace() - user.UsedSpace()
 		acctAvail = units.BytesSize(float64(free))
-		acctPct = fmt.Sprintf("%.0f%%", float64(user.UsedSpace)/float64(user.MaxSpace)*100)
+		acctPct = fmt.Sprintf("%.0f%%", float64(user.UsedSpace())/float64(user.MaxSpace())*100)
 	}
 	fmt.Printf("%-20s %10s %10s %10s %5s %10s %10s %s\n",
 		"total", acctSize, acctUsed, acctAvail, acctPct, "-", "-", "-")

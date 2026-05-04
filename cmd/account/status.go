@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
@@ -96,7 +97,7 @@ func buildServiceStatus(svc api.ServiceConfig, cfg *api.SessionCredentials, acct
 	}
 
 	// Override with staleness relative to account session for non-account services.
-	if svc.Name != "account" && !acctRefresh.IsZero() && api.IsStale(acctRefresh, cfg.LastRefresh) {
+	if svc.Name != "account" && !acctRefresh.IsZero() && account.IsStale(acctRefresh, cfg.LastRefresh) {
 		ss.Status = statusStale
 	}
 

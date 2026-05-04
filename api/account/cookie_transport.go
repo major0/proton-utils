@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/major0/proton-cli/api"
 )
 
 // CookieTransport is an http.RoundTripper that converts Bearer auth to
@@ -36,7 +38,7 @@ type CookieTransport struct {
 	cookieSess *CookieSession
 
 	// cookieStore persists updated cookies after a successful refresh.
-	cookieStore SessionStore
+	cookieStore api.SessionStore
 
 	// mu serializes 401 refresh attempts.
 	mu sync.Mutex
@@ -44,7 +46,7 @@ type CookieTransport struct {
 
 // SetCookieSession attaches a CookieSession and store for 401 refresh.
 // When set, 401 responses trigger RefreshCookies and a retry.
-func (ct *CookieTransport) SetCookieSession(cs *CookieSession, store SessionStore) {
+func (ct *CookieTransport) SetCookieSession(cs *CookieSession, store api.SessionStore) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	ct.cookieSess = cs
@@ -123,14 +125,14 @@ func (ct *CookieTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 // persistCookieRefresh saves updated cookies to the store after a refresh.
-func persistCookieRefresh(cs *CookieSession, store SessionStore) {
+func persistCookieRefresh(cs *CookieSession, store api.SessionStore) {
 	cfg, err := store.Load()
 	if err != nil {
 		slog.Error("cookieTransport: load store for persist", "error", err)
 		return
 	}
 	u := cookieQueryURL(cs.BaseURL)
-	cfg.Cookies = SerializeCookies(cs.cookieJar, u)
+	cfg.Cookies = api.SerializeCookies(cs.cookieJar, u)
 	cfg.LastRefresh = time.Now()
 	if err := store.Save(cfg); err != nil {
 		slog.Error("cookieTransport: persist refreshed cookies", "error", err)
@@ -141,31 +143,31 @@ func persistCookieRefresh(cs *CookieSession, store SessionStore) {
 // into the CookieTransport. Returns the CookieSession so callers can use it
 // for other cookie operations. The cookieStore is used to persist updated
 // cookies after refresh.
-func NewCookieAuthHandler(cookieConfig *SessionCredentials, baseURL string, transport *CookieTransport, cookieStore SessionStore) *CookieSession {
+func NewCookieAuthHandler(cookieConfig *api.SessionCredentials, baseURL string, transport *CookieTransport, cookieStore api.SessionStore) *CookieSession {
 	cs := CookieSessionFromConfig(&CookieSessionConfig{
 		UID:         cookieConfig.UID,
 		Cookies:     cookieConfig.Cookies,
 		LastRefresh: cookieConfig.LastRefresh,
 	}, baseURL)
 
-	acctSvc, _ := LookupService("account")
+	acctSvc, _ := api.LookupService("account")
 	cs.AppVersion = acctSvc.AppVersion("")
 
 	transport.SetCookieSession(cs, cookieStore)
 	return cs
 }
 
-// CookieSessionFromContext creates a CookieSession from a SessionCredentials and
+// attachCookieRefresh creates a CookieSession from a SessionCredentials and
 // attaches it to the given CookieTransport for 401 refresh handling. This is
 // a convenience function for CookieSessionRestore.
-func attachCookieRefresh(ctx context.Context, cookieConfig *SessionCredentials, jar http.CookieJar, transport *CookieTransport, cookieStore SessionStore) {
+func attachCookieRefresh(ctx context.Context, cookieConfig *api.SessionCredentials, jar http.CookieJar, transport *CookieTransport, cookieStore api.SessionStore) {
 	_ = ctx // reserved for future use
 	cs := &CookieSession{
 		UID:       cookieConfig.UID,
 		Store:     cookieStore,
 		cookieJar: jar,
 	}
-	acctSvc, _ := LookupService("account")
+	acctSvc, _ := api.LookupService("account")
 	cs.BaseURL = acctSvc.Host
 	cs.AppVersion = acctSvc.AppVersion("")
 

@@ -15,6 +15,7 @@ import (
 	"github.com/ProtonMail/go-srp"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 )
 
 // testKeyData holds pre-computed PGP key material for cookie login tests.
@@ -164,7 +165,7 @@ func cookieLoginTestServer(t *testing.T, kd testKeyData) *httptest.Server {
 // saveFnArgs captures the arguments passed to cookieLoginSaveFn.
 type saveFnArgs struct {
 	session    *common.Session
-	cookieSess *common.CookieSession
+	cookieSess *account.CookieSession
 	keypass    []byte
 }
 
@@ -202,9 +203,9 @@ func TestCookieLogin_FullFlow(t *testing.T) {
 
 	// Mock createAnonSessionFn.
 	jar, _ := cookiejar.New(nil)
-	createAnonSessionFn = func(_ context.Context) (*common.AnonSessionResp, http.CookieJar, error) {
+	createAnonSessionFn = func(_ context.Context) (*account.AnonSessionResp, http.CookieJar, error) {
 		callOrder = append(callOrder, "createAnon")
-		return &common.AnonSessionResp{
+		return &account.AnonSessionResp{
 			UID:          "anon-uid",
 			AccessToken:  "anon-access",
 			RefreshToken: "anon-refresh",
@@ -212,16 +213,16 @@ func TestCookieLogin_FullFlow(t *testing.T) {
 	}
 
 	// Mock transitionToCookiesFn — return a CookieSession pointing at httptest server.
-	var mockCookieSess *common.CookieSession
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+	var mockCookieSess *account.CookieSession
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
 		callOrder = append(callOrder, "transition")
 		testJar, _ := cookiejar.New(nil)
-		mockCookieSess = common.NewCookieSession("test-uid", ts.URL, testJar)
+		mockCookieSess = account.NewCookieSession("test-uid", ts.URL, testJar)
 		return mockCookieSess, nil
 	}
 
 	// Mock cookieSRPAuthFn — return auth with no 2FA.
-	cookieSRPAuthFn = func(_ context.Context, _ *common.CookieSession, _ string, _ []byte) (*proton.Auth, error) {
+	cookieSRPAuthFn = func(_ context.Context, _ *account.CookieSession, _ string, _ []byte) (*proton.Auth, error) {
 		callOrder = append(callOrder, "srpAuth")
 		return &proton.Auth{
 			UID:          "auth-uid",
@@ -233,7 +234,7 @@ func TestCookieLogin_FullFlow(t *testing.T) {
 	}
 
 	// Mock cookieTwoFAFn — should NOT be called.
-	cookieTwoFAFn = func(_ context.Context, _ *common.CookieSession, _ string) error {
+	cookieTwoFAFn = func(_ context.Context, _ *account.CookieSession, _ string) error {
 		callOrder = append(callOrder, "twoFA")
 		t.Error("cookieTwoFAFn should not be called when 2FA is disabled")
 		return nil
@@ -241,7 +242,7 @@ func TestCookieLogin_FullFlow(t *testing.T) {
 
 	// Mock cookieLoginSaveFn — capture args.
 	var savedArgs saveFnArgs
-	cookieLoginSaveFn = func(session *common.Session, cs *common.CookieSession, keypass []byte) error {
+	cookieLoginSaveFn = func(session *common.Session, cs *account.CookieSession, keypass []byte) error {
 		callOrder = append(callOrder, "save")
 		savedArgs = saveFnArgs{session: session, cookieSess: cs, keypass: keypass}
 		return nil
@@ -316,9 +317,9 @@ func TestCookieLogin_WithTwoFA(t *testing.T) {
 
 	// Mock createAnonSessionFn.
 	jar, _ := cookiejar.New(nil)
-	createAnonSessionFn = func(_ context.Context) (*common.AnonSessionResp, http.CookieJar, error) {
+	createAnonSessionFn = func(_ context.Context) (*account.AnonSessionResp, http.CookieJar, error) {
 		callOrder = append(callOrder, "createAnon")
-		return &common.AnonSessionResp{
+		return &account.AnonSessionResp{
 			UID:          "anon-uid",
 			AccessToken:  "anon-access",
 			RefreshToken: "anon-refresh",
@@ -326,14 +327,14 @@ func TestCookieLogin_WithTwoFA(t *testing.T) {
 	}
 
 	// Mock transitionToCookiesFn.
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
 		callOrder = append(callOrder, "transition")
 		testJar, _ := cookiejar.New(nil)
-		return common.NewCookieSession("test-uid", ts.URL, testJar), nil
+		return account.NewCookieSession("test-uid", ts.URL, testJar), nil
 	}
 
 	// Mock cookieSRPAuthFn — return auth WITH 2FA enabled.
-	cookieSRPAuthFn = func(_ context.Context, _ *common.CookieSession, _ string, _ []byte) (*proton.Auth, error) {
+	cookieSRPAuthFn = func(_ context.Context, _ *account.CookieSession, _ string, _ []byte) (*proton.Auth, error) {
 		callOrder = append(callOrder, "srpAuth")
 		return &proton.Auth{
 			UID:          "auth-uid",
@@ -346,14 +347,14 @@ func TestCookieLogin_WithTwoFA(t *testing.T) {
 
 	// Mock cookieTwoFAFn — verify the code.
 	var twoFACode string
-	cookieTwoFAFn = func(_ context.Context, _ *common.CookieSession, code string) error {
+	cookieTwoFAFn = func(_ context.Context, _ *account.CookieSession, code string) error {
 		callOrder = append(callOrder, "twoFA")
 		twoFACode = code
 		return nil
 	}
 
 	// Mock cookieLoginSaveFn.
-	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
 		callOrder = append(callOrder, "save")
 		return nil
 	}
@@ -426,18 +427,18 @@ func TestCookieLogin_WithTwoFA_FromFlag(t *testing.T) {
 	})
 
 	jar, _ := cookiejar.New(nil)
-	createAnonSessionFn = func(_ context.Context) (*common.AnonSessionResp, http.CookieJar, error) {
-		return &common.AnonSessionResp{
+	createAnonSessionFn = func(_ context.Context) (*account.AnonSessionResp, http.CookieJar, error) {
+		return &account.AnonSessionResp{
 			UID: "anon-uid", AccessToken: "anon-access", RefreshToken: "anon-refresh",
 		}, jar, nil
 	}
 
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
 		testJar, _ := cookiejar.New(nil)
-		return common.NewCookieSession("test-uid", ts.URL, testJar), nil
+		return account.NewCookieSession("test-uid", ts.URL, testJar), nil
 	}
 
-	cookieSRPAuthFn = func(_ context.Context, _ *common.CookieSession, _ string, _ []byte) (*proton.Auth, error) {
+	cookieSRPAuthFn = func(_ context.Context, _ *account.CookieSession, _ string, _ []byte) (*proton.Auth, error) {
 		return &proton.Auth{
 			UID:          "auth-uid",
 			AccessToken:  "auth-access",
@@ -448,12 +449,12 @@ func TestCookieLogin_WithTwoFA_FromFlag(t *testing.T) {
 	}
 
 	var twoFACode string
-	cookieTwoFAFn = func(_ context.Context, _ *common.CookieSession, code string) error {
+	cookieTwoFAFn = func(_ context.Context, _ *account.CookieSession, code string) error {
 		twoFACode = code
 		return nil
 	}
 
-	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
 		return nil
 	}
 

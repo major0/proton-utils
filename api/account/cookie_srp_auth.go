@@ -1,10 +1,9 @@
-package api
+package account
 
 import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 
 	proton "github.com/ProtonMail/go-proton-api"
@@ -32,7 +31,7 @@ func CookieSRPAuth(ctx context.Context, cs *CookieSession, username string, pass
 	// Step 1: Get SRP parameters from the server.
 	var info proton.AuthInfo
 	if err := cs.DoJSON(ctx, "POST", "/core/v4/auth/info", authInfoReq{Username: username}, &info); err != nil {
-		return nil, fmt.Errorf("cookie srp: auth info: %w", err)
+		return nil, fmt.Errorf("%w: auth info: %w", ErrAuthFailed, err)
 	}
 
 	// Step 2: Compute SRP proofs using go-srp.
@@ -45,12 +44,12 @@ func CookieSRPAuth(ctx context.Context, cs *CookieSession, username string, pass
 		info.ServerEphemeral,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cookie srp: new auth: %w", err)
+		return nil, fmt.Errorf("%w: srp: %w", ErrAuthFailed, err)
 	}
 
 	proofs, err := srpAuth.GenerateProofs(2048)
 	if err != nil {
-		return nil, fmt.Errorf("cookie srp: generate proofs: %w", err)
+		return nil, fmt.Errorf("%w: srp proofs: %w", ErrAuthFailed, err)
 	}
 
 	// Step 3: Submit SRP proof to the server.
@@ -62,16 +61,16 @@ func CookieSRPAuth(ctx context.Context, cs *CookieSession, username string, pass
 	}
 	var auth proton.Auth
 	if err := cs.DoJSON(ctx, "POST", "/core/v4/auth", req, &auth); err != nil {
-		return nil, fmt.Errorf("cookie srp: auth: %w", err)
+		return nil, fmt.Errorf("%w: auth: %w", ErrAuthFailed, err)
 	}
 
 	// Step 4: Verify server proof.
 	serverProof, err := base64.StdEncoding.DecodeString(auth.ServerProof)
 	if err != nil {
-		return nil, fmt.Errorf("cookie srp: decode server proof: %w", err)
+		return nil, fmt.Errorf("%w: decode server proof: %w", ErrAuthFailed, err)
 	}
 	if !bytes.Equal(serverProof, proofs.ExpectedServerProof) {
-		return nil, errors.New("cookie srp: server proof mismatch")
+		return nil, fmt.Errorf("%w: server proof mismatch", ErrAuthFailed)
 	}
 
 	return &auth, nil

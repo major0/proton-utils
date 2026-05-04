@@ -61,8 +61,8 @@ var authLoginCmd = &cobra.Command{
 			return err
 		}
 
-		session.AddAuthHandler(common.NewAuthHandler(cli.SessionStoreVar, session))
-		session.AddDeauthHandler(common.NewDeauthHandler())
+		session.AddAuthHandler(account.NewAuthHandler(cli.SessionStoreVar, session))
+		session.AddDeauthHandler(account.NewDeauthHandler())
 
 		if err := handleTwoFA(ctx, session); err != nil {
 			return err
@@ -103,11 +103,11 @@ func promptCredentials() (username, password string, err error) {
 
 // sessionFromLoginFn is the function used to create a session from login credentials.
 // It is a variable so tests can replace it without making real API calls.
-var sessionFromLoginFn = common.SessionFromLogin
+var sessionFromLoginFn = account.SessionFromLogin
 
 // sessionRetryWithHVFn is the function used to retry login after HV.
 // It is a variable so tests can replace it without making real API calls.
-var sessionRetryWithHVFn = common.SessionRetryWithHV
+var sessionRetryWithHVFn = account.SessionRetryWithHV
 
 // attemptLogin performs the initial login, handling HV/CAPTCHA if needed.
 func attemptLogin(ctx context.Context, username, password string) (*common.Session, error) {
@@ -190,17 +190,17 @@ var saltKeyPassFn = func(ctx context.Context, session *common.Session, password 
 // sessionSaveFn is the function used to save the session.
 // It is a variable so tests can replace it without real persistence.
 var sessionSaveFn = func(session *common.Session, keypass []byte) error {
-	return common.SessionSave(cli.SessionStoreVar, session, keypass)
+	return account.SessionSave(cli.SessionStoreVar, session, keypass)
 }
 
 // transitionToCookiesFn is the function used to transition a Bearer session to cookie auth.
 // It is a variable so tests can replace it without making real API calls.
-var transitionToCookiesFn = common.TransitionToCookies
+var transitionToCookiesFn = account.TransitionToCookies
 
 // cookieLoginSaveFn is the function used to save a cookie session after login.
 // It is a variable so tests can replace it without real persistence.
-var cookieLoginSaveFn = func(session *common.Session, cookieSess *common.CookieSession, keypass []byte) error {
-	return common.CookieLoginSave(cli.CookieStoreVar, cli.AccountStoreVar, session, cookieSess, keypass)
+var cookieLoginSaveFn = func(session *common.Session, cookieSess *account.CookieSession, keypass []byte) error {
+	return account.CookieLoginSave(cli.CookieStoreVar, cli.AccountStoreVar, session, cookieSess, keypass)
 }
 
 // cookieStoreDeleteFn deletes the cookie store entry. Used during re-login
@@ -246,15 +246,15 @@ func deriveAndSave(ctx context.Context, session *common.Session, password, mboxp
 
 // createAnonSessionFn is the function used to create an anonymous session.
 // It is a variable so tests can replace it.
-var createAnonSessionFn = common.CreateAnonSession
+var createAnonSessionFn = account.CreateAnonSession
 
 // cookieSRPAuthFn is the function used to perform SRP authentication within a cookie session.
 // It is a variable so tests can replace it without making real API calls.
-var cookieSRPAuthFn = common.CookieSRPAuth
+var cookieSRPAuthFn = account.CookieSRPAuth
 
 // cookieTwoFAFn is the function used to submit a TOTP 2FA code within a cookie session.
 // It is a variable so tests can replace it without making real API calls.
-var cookieTwoFAFn = common.CookieTwoFA
+var cookieTwoFAFn = account.CookieTwoFA
 
 // cookieLogin performs the browser-matching cookie login flow:
 // 1. Create anonymous session on account.proton.me

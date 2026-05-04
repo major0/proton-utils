@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"bytes"
@@ -14,10 +14,8 @@ import (
 	"strings"
 
 	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 )
-
-// ErrForkFailed indicates that the session fork protocol failed.
-var ErrForkFailed = errors.New("session fork failed")
 
 // ForkPushReq is the request body for POST /auth/v4/sessions/forks.
 type ForkPushReq struct {
@@ -51,7 +49,7 @@ type ForkPullResp struct {
 // session is returned with BaseURL and AppVersion set to the target service's
 // values. The decrypted SaltedKeyPass from the fork blob is returned as the
 // second value.
-func ForkSession(ctx context.Context, parent *Session, targetService ServiceConfig, version string) (*Session, []byte, error) {
+func ForkSession(ctx context.Context, parent *api.Session, targetService api.ServiceConfig, version string) (*api.Session, []byte, error) {
 	// Encrypt the parent's SaltedKeyPass into a fork blob.
 	blob := &ForkBlob{
 		Type:        "default",
@@ -64,8 +62,6 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 	}
 
 	// Push: POST /auth/v4/sessions/forks on the parent's (account) host.
-	// The ChildClientID tells the server which scopes to grant for the
-	// child session. The pull goes to the target service host.
 	pushReq := ForkPushReq{
 		ChildClientID: targetService.ClientID,
 		Independent:   0,
@@ -76,7 +72,7 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 	// Log AUTH-* cookie presence for debugging.
 	hasAuthCookie := false
 	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
-		for _, c := range parent.cookieJar.Cookies(pushURL) {
+		for _, c := range parent.CookieJar().Cookies(pushURL) {
 			if strings.HasPrefix(c.Name, "AUTH-") {
 				hasAuthCookie = true
 				break
@@ -89,9 +85,9 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 		return nil, nil, fmt.Errorf("%w: push: %w", ErrForkFailed, err)
 	}
 
-	// Log cookies after push (the push response may set new cookies).
+	// Log cookies after push.
 	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
-		postPushCookies := parent.cookieJar.Cookies(pushURL)
+		postPushCookies := parent.CookieJar().Cookies(pushURL)
 		names := make([]string, len(postPushCookies))
 		for i, c := range postPushCookies {
 			names[i] = c.Name
@@ -123,7 +119,7 @@ func ForkSession(ctx context.Context, parent *Session, targetService ServiceConf
 
 // ForkSessionWithKeyPass creates a child session, encrypting the given
 // SaltedKeyPass in the fork blob instead of using the parent's UID.
-func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService ServiceConfig, version string, keyPass []byte) (*Session, []byte, error) {
+func ForkSessionWithKeyPass(ctx context.Context, parent *api.Session, targetService api.ServiceConfig, version string, keyPass []byte) (*api.Session, []byte, error) {
 	blob := &ForkBlob{
 		Type:        "default",
 		KeyPassword: string(keyPass),
@@ -144,7 +140,7 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService 
 	// Log AUTH-* cookie presence for debugging.
 	hasAuthCookie := false
 	if pushURL, err := url.Parse(parent.BaseURL); err == nil {
-		for _, c := range parent.cookieJar.Cookies(pushURL) {
+		for _, c := range parent.CookieJar().Cookies(pushURL) {
 			if strings.HasPrefix(c.Name, "AUTH-") {
 				hasAuthCookie = true
 				break
@@ -181,7 +177,7 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *Session, targetService 
 // service host. The pull is unauthenticated (no Bearer token) — the
 // selector in the URL path is the credential. Session cookies from the
 // parent's jar are propagated to the target host for correlation.
-func forkPull(ctx context.Context, parent *Session, host, selector, appVersion string) (*ForkPullResp, error) {
+func forkPull(ctx context.Context, parent *api.Session, host, selector, appVersion string) (*ForkPullResp, error) {
 	pullURL := host + "/auth/v4/sessions/forks/" + selector
 
 	slog.Debug("fork.pull.request", "url", pullURL, "appversion", appVersion)
@@ -197,24 +193,19 @@ func forkPull(ctx context.Context, parent *Session, host, selector, appVersion s
 	if parent.UserAgent != "" {
 		req.Header.Set("User-Agent", parent.UserAgent)
 	}
-	req.Header.Set("Accept", ProtonAccept)
+	req.Header.Set("Accept", api.ProtonAccept)
 
 	// Propagate session cookies from the parent's jar to the pull jar.
-	// The Proton API uses Session-Id to correlate the pull with the push,
-	// and other cookies (Tag, iaas, etc.) may influence scope grants.
-	// AUTH-* and REFRESH-* cookies must NOT be sent on the pull — the
-	// browser's pull is a fresh page load with no auth tokens.
 	pullJar, _ := cookiejar.New(nil)
-	// Build source URLs from the service registry — no hardcoded hosts.
 	var protonHosts []*url.URL
-	for _, svc := range Services {
+	for _, svc := range api.Services {
 		if u, err := url.Parse(svc.Host); err == nil {
 			protonHosts = append(protonHosts, &url.URL{Scheme: u.Scheme, Host: u.Host})
 		}
 	}
 	targetURL, _ := url.Parse(host)
 	for _, srcURL := range protonHosts {
-		for _, c := range parent.cookieJar.Cookies(srcURL) {
+		for _, c := range parent.CookieJar().Cookies(srcURL) {
 			// Skip auth cookies — only session/metadata cookies.
 			if strings.HasPrefix(c.Name, "AUTH-") || strings.HasPrefix(c.Name, "REFRESH-") {
 				continue
@@ -249,7 +240,7 @@ func forkPull(ctx context.Context, parent *Session, host, selector, appVersion s
 
 	if envelope.Code != 1000 {
 		slog.Debug("fork.pull.error", "url", pullURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
-		return nil, &Error{
+		return nil, &api.Error{
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
@@ -268,71 +259,57 @@ func forkPull(ctx context.Context, parent *Session, host, selector, appVersion s
 // SessionFromForkPull constructs a Session from a ForkPullResp and
 // ServiceConfig. The version string is passed through for backward
 // compatibility but the service's own app version is used for all requests.
-func SessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc ServiceConfig, _ string) *Session {
+func SessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc api.ServiceConfig, _ string) *api.Session {
 	jar, _ := cookiejar.New(nil)
 	appVersion := svc.AppVersion("")
 
-	throttle := NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-
-	manager := proton.New(
+	managerOpts := []proton.Option{
 		proton.WithHostURL(svc.Host),
 		proton.WithAppVersion(appVersion),
 		proton.WithCookieJar(jar),
-	)
-
-	client := manager.NewClient(pull.UID, pull.AccessToken, pull.RefreshToken)
-
-	return &Session{
-		Client: client,
-		Auth: proton.Auth{
-			UID:          pull.UID,
-			AccessToken:  pull.AccessToken,
-			RefreshToken: pull.RefreshToken,
-		},
-		BaseURL:    svc.Host,
-		AppVersion: appVersion,
-		manager:    manager,
-		cookieJar:  jar,
-		Throttle:   throttle,
-		Sem:        NewSemaphore(ctx, DefaultMaxWorkers(), throttle),
 	}
+
+	session := api.InitSessionWithJar(ctx, jar, managerOpts, nil)
+	session.Client = session.Manager().NewClient(pull.UID, pull.AccessToken, pull.RefreshToken)
+	session.Auth = proton.Auth{
+		UID:          pull.UID,
+		AccessToken:  pull.AccessToken,
+		RefreshToken: pull.RefreshToken,
+	}
+	session.BaseURL = svc.Host
+	session.AppVersion = appVersion
+
+	return session
 }
 
 // CookieSessionFromForkPull constructs a Session that uses cookie auth
 // instead of Bearer auth. The provided cookie jar must contain the AUTH-<uid>
 // cookie. CookieTransport strips the Bearer header that Resty adds, so the
 // server only sees cookie auth.
-func CookieSessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc ServiceConfig, cookieJar http.CookieJar) *Session {
+func CookieSessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc api.ServiceConfig, cookieJar http.CookieJar) *api.Session {
 	appVersion := svc.AppVersion("")
 
-	throttle := NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-
-	manager := proton.New(
+	managerOpts := []proton.Option{
 		proton.WithHostURL(svc.Host),
 		proton.WithAppVersion(appVersion),
 		proton.WithTransport(&CookieTransport{Base: http.DefaultTransport}),
 		proton.WithCookieJar(cookieJar),
-	)
-
-	client := manager.NewClient(pull.UID, pull.AccessToken, pull.RefreshToken)
-
-	return &Session{
-		Client: client,
-		Auth: proton.Auth{
-			UID:          pull.UID,
-			AccessToken:  pull.AccessToken,
-			RefreshToken: pull.RefreshToken,
-		},
-		BaseURL:    svc.Host,
-		AppVersion: appVersion,
-		manager:    manager,
-		cookieJar:  cookieJar,
-		Throttle:   throttle,
-		Sem:        NewSemaphore(ctx, DefaultMaxWorkers(), throttle),
 	}
+
+	session := api.InitSessionWithJar(ctx, cookieJar, managerOpts, nil)
+	session.Client = session.Manager().NewClient(pull.UID, pull.AccessToken, pull.RefreshToken)
+	session.Auth = proton.Auth{
+		UID:          pull.UID,
+		AccessToken:  pull.AccessToken,
+		RefreshToken: pull.RefreshToken,
+	}
+	session.BaseURL = svc.Host
+	session.AppVersion = appVersion
+
+	return session
 }
 
-// cookieFork performs a cookie-aware fork for CookieAuth services.
+// CookieFork performs a cookie-aware fork for CookieAuth services.
 //
 // The flow:
 //  1. Load or create a CookieSession from cookieStore.
@@ -345,8 +322,8 @@ func CookieSessionFromForkPull(ctx context.Context, pull *ForkPullResp, svc Serv
 // CRITICAL: The account Bearer session is never passed to TransitionToCookies.
 // A temporary forked session is transitioned instead, preserving the account
 // session for Drive operations.
-func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCredentials, targetService ServiceConfig, _ string, keyPass []byte, cookieStore SessionStore) (*Session, []byte, error) {
-	acctSvc, _ := LookupService("account")
+func CookieFork(ctx context.Context, acctSession *api.Session, acctConfig *api.SessionCredentials, targetService api.ServiceConfig, _ string, keyPass []byte, cookieStore api.SessionStore) (*api.Session, []byte, error) {
+	acctSvc, _ := api.LookupService("account")
 
 	// Try to load an existing cookie session.
 	cookieSess, err := loadOrCreateCookieSession(ctx, acctSession, acctConfig, acctSvc, cookieStore)
@@ -364,8 +341,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCr
 		return nil, nil, fmt.Errorf("%w: encrypt blob: %w", ErrForkFailed, err)
 	}
 
-	// Fork push via CookieSession's cookie jar. Build the request to match
-	// the browser's fork push exactly — every header, every cookie path.
+	// Fork push via CookieSession's cookie jar.
 	pushReq := ForkPushReq{
 		ChildClientID: targetService.ClientID,
 		Independent:   0,
@@ -426,7 +402,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCr
 		return nil, nil, fmt.Errorf("%w: unmarshal push envelope: %w", ErrForkFailed, err)
 	}
 	if envelope.Code != 1000 {
-		return nil, nil, &Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error, Details: envelope.Details}
+		return nil, nil, &api.Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error, Details: envelope.Details}
 	}
 
 	var pushResp ForkPushResp
@@ -450,9 +426,7 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCr
 		return nil, nil, fmt.Errorf("%w: decrypt blob: %w", ErrForkFailed, err)
 	}
 
-	// The fork pull returns Bearer tokens for the child session. Like the
-	// browser, we must transition the child to cookies via auth/cookies on
-	// the target service host. This gives us AUTH-<child-uid> cookies.
+	// Transition the child to cookies.
 	childBearer := SessionFromForkPull(ctx, pullResp, targetService, "")
 	childBearer.BaseURL = targetService.Host
 	childBearer.AppVersion = targetService.AppVersion("")
@@ -464,13 +438,11 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCr
 		return nil, nil, fmt.Errorf("%w: child cookie transition: %w", ErrForkFailed, err)
 	}
 
-	// Build the final child session with CookieTransport using the child's
-	// own cookie jar (has AUTH-<child-uid> for the target service).
+	// Build the final child session with CookieTransport.
 	child := CookieSessionFromForkPull(ctx, pullResp, targetService, childCookieSess.cookieJar)
 
 	// Clear Bearer tokens — after cookie transition, auth is provided
-	// exclusively via cookies. Services like Lumo reject Bearer auth
-	// entirely, so Session.DoJSON must not send an Authorization header.
+	// exclusively via cookies.
 	child.Auth.AccessToken = ""
 	child.Auth.RefreshToken = ""
 
@@ -480,13 +452,13 @@ func cookieFork(ctx context.Context, acctSession *Session, acctConfig *SessionCr
 // loadOrCreateCookieSession loads a CookieSession from the cookie store,
 // or creates one by forking a temporary session from the account and
 // transitioning it to cookies.
-func loadOrCreateCookieSession(ctx context.Context, acctSession *Session, acctConfig *SessionCredentials, acctSvc ServiceConfig, cookieStore SessionStore) (*CookieSession, error) {
+func loadOrCreateCookieSession(ctx context.Context, acctSession *api.Session, acctConfig *api.SessionCredentials, acctSvc api.ServiceConfig, cookieStore api.SessionStore) (*CookieSession, error) {
 	cookieConfig, loadErr := cookieStore.Load()
 
 	needsCreate := false
 	switch {
 	case loadErr != nil:
-		if !errors.Is(loadErr, ErrKeyNotFound) {
+		if !errors.Is(loadErr, api.ErrKeyNotFound) {
 			return nil, fmt.Errorf("load cookie session: %w", loadErr)
 		}
 		slog.Debug("cookie session not found, will create", "uid", acctConfig.UID)
@@ -518,16 +490,7 @@ func loadOrCreateCookieSession(ctx context.Context, acctSession *Session, acctCo
 	}
 
 	// Create a new cookie session by transitioning the account session
-	// directly to cookies. This matches the browser flow: the account
-	// session calls POST /core/v4/auth/cookies with its own UID and
-	// Bearer token. The response sets AUTH-<uid> and REFRESH-<uid>
-	// cookies with the account session's full authority.
-	//
-	// NOTE: This invalidates the account session's Bearer tokens
-	// server-side. The cookie session inherits the account's full
-	// scopes, which is required for the fork push to grant service-
-	// specific scopes like "lumo". A temp-forked session has restricted
-	// scopes and cannot grant "lumo" on the child fork.
+	// directly to cookies.
 	slog.Debug("cookie session: transitioning account session to cookies", "uid", acctSession.Auth.UID)
 
 	cookieSess, err := TransitionToCookies(ctx, acctSession)
@@ -538,7 +501,7 @@ func loadOrCreateCookieSession(ctx context.Context, acctSession *Session, acctCo
 	// Save the cookie session to the store.
 	csc := cookieSess.Config()
 	csc.Service = "cookie"
-	saveCfg := &SessionCredentials{
+	saveCfg := &api.SessionCredentials{
 		UID:         csc.UID,
 		Cookies:     csc.Cookies,
 		LastRefresh: csc.LastRefresh,

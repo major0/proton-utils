@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/major0/proton-cli/api"
 
 	"github.com/ProtonMail/go-proton-api"
 )
@@ -151,9 +153,9 @@ func TestCookieDoJSON_EnvelopeParsing(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d", apiErr.Status, http.StatusUnprocessableEntity)
@@ -368,9 +370,9 @@ func TestCookieDoSSE_NonSuccessReturnsError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Status != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", apiErr.Status, http.StatusForbidden)
@@ -435,16 +437,16 @@ func TestCookieDoSSE_CookieSending(t *testing.T) {
 // --- CookieSession.buildURL tests (1.4) ---
 
 func TestCookieBuildURL_RelativePath(t *testing.T) {
-	cs := &CookieSession{BaseURL: AccountHost()}
+	cs := &CookieSession{BaseURL: api.AccountHost()}
 	got := cs.buildURL("/core/v4/users")
-	want := AccountHost() + "/core/v4/users"
+	want := api.AccountHost() + "/core/v4/users"
 	if got != want {
 		t.Fatalf("buildURL = %q, want %q", got, want)
 	}
 }
 
 func TestCookieBuildURL_AbsoluteURL(t *testing.T) {
-	cs := &CookieSession{BaseURL: AccountHost()}
+	cs := &CookieSession{BaseURL: api.AccountHost()}
 	abs := "https://lumo.proton.me/api/ai/v1/chat"
 	got := cs.buildURL(abs)
 	if got != abs {
@@ -455,7 +457,7 @@ func TestCookieBuildURL_AbsoluteURL(t *testing.T) {
 func TestCookieBuildURL_EmptyBaseURL(t *testing.T) {
 	cs := &CookieSession{}
 	got := cs.buildURL("/core/v4/users")
-	want := AccountHost() + "/core/v4/users"
+	want := api.AccountHost() + "/core/v4/users"
 	if got != want {
 		t.Fatalf("buildURL = %q, want %q", got, want)
 	}
@@ -466,18 +468,19 @@ func TestCookieBuildURL_EmptyBaseURL(t *testing.T) {
 // testBearerSession creates a minimal Session for testing TransitionToCookies.
 // The session's DoJSONCookie sends Bearer auth and uses the cookie jar,
 // so we point it at a test server that returns Set-Cookie headers.
-func testBearerSession(t *testing.T, srvURL string) *Session {
+func testBearerSession(t *testing.T, srvURL string) *api.Session {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
-	return &Session{
+	s := &api.Session{
 		Auth: proton.Auth{
 			UID:          "test-uid-abc",
 			AccessToken:  "access-tok-123",
 			RefreshToken: "refresh-tok-456",
 		},
-		BaseURL:   srvURL,
-		cookieJar: jar,
+		BaseURL: srvURL,
 	}
+	s.SetCookieJar(jar)
+	return s
 }
 
 func TestTransitionToCookies_Success(t *testing.T) {
@@ -573,9 +576,9 @@ func TestTransitionToCookies_APIError(t *testing.T) {
 		t.Fatal("expected error for API failure, got nil")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Code != 10013 {
 		t.Fatalf("code = %d, want %d", apiErr.Code, 10013)
@@ -721,9 +724,9 @@ func TestRefreshCookies_APIError(t *testing.T) {
 		t.Fatal("expected error for API failure, got nil")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Code != 10013 {
 		t.Fatalf("code = %d, want %d", apiErr.Code, 10013)
@@ -871,9 +874,9 @@ func TestDoJSON_401RetryStillFails(t *testing.T) {
 		t.Fatal("expected error after double 401, got nil")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Status != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", apiErr.Status, http.StatusUnauthorized)
@@ -904,9 +907,9 @@ func TestDoJSON_Non401ErrorNoRetry(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Status != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", apiErr.Status, http.StatusForbidden)
@@ -1013,7 +1016,7 @@ func TestCookieSessionConfig_RoundTrip(t *testing.T) {
 func TestCookieSessionConfig_JSONRoundTrip(t *testing.T) {
 	config := &CookieSessionConfig{
 		UID: "uid-json-test",
-		Cookies: []SerialCookie{
+		Cookies: []api.SerialCookie{
 			{Name: "AUTH-uid-json-test", Value: "auth-val"},
 			{Name: "REFRESH-uid-json-test", Value: "refresh-val"},
 		},
@@ -1066,7 +1069,7 @@ func TestCookieSessionFromConfig_DoJSON(t *testing.T) {
 	// Build a config with cookies scoped to CookieURL.
 	config := &CookieSessionConfig{
 		UID: uid,
-		Cookies: []SerialCookie{
+		Cookies: []api.SerialCookie{
 			{Name: "AUTH-" + uid, Value: "restored-auth-token"},
 			{Name: "REFRESH-" + uid, Value: "restored-refresh-token"},
 		},

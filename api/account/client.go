@@ -4,6 +4,7 @@ package account
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -94,13 +95,29 @@ func (c *Client) putAddresses(addrs []proton.Address) {
 }
 
 // GetUser returns the authenticated user's profile and quota information.
-func (c *Client) GetUser(ctx context.Context) (proton.User, error) {
-	return c.Session.Client.GetUser(ctx)
+// The returned User is an opaque wrapper — consumers access fields via
+// accessor methods and do not need to import go-proton-api.
+func (c *Client) GetUser(ctx context.Context) (User, error) {
+	u, err := c.Session.Client.GetUser(ctx)
+	if err != nil {
+		return User{}, fmt.Errorf("account.GetUser: %w", err)
+	}
+	return newUser(u), nil
 }
 
 // GetAddresses returns all email addresses associated with the account.
-func (c *Client) GetAddresses(ctx context.Context) ([]proton.Address, error) {
-	return c.Session.Client.GetAddresses(ctx)
+// The returned Address values are opaque wrappers — consumers access
+// fields via accessor methods and do not need to import go-proton-api.
+func (c *Client) GetAddresses(ctx context.Context) ([]Address, error) {
+	raw, err := c.Session.Client.GetAddresses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("account.GetAddresses: %w", err)
+	}
+	addrs := make([]Address, len(raw))
+	for i, a := range raw {
+		addrs[i] = newAddress(a)
+	}
+	return addrs, nil
 }
 
 // PopulateAccountCache creates a temporary ObjectCache scoped to the

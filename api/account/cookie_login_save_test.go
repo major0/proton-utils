@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"fmt"
@@ -7,17 +7,19 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/major0/proton-cli/api"
+
 	"github.com/ProtonMail/go-proton-api"
 )
 
 // savingStore records the last saved config and can optionally return an error.
 type savingStore struct {
-	saved   *SessionCredentials
+	saved   *api.SessionCredentials
 	saveErr error
 }
 
-func (s *savingStore) Load() (*SessionCredentials, error) { return nil, ErrKeyNotFound }
-func (s *savingStore) Save(cfg *SessionCredentials) error {
+func (s *savingStore) Load() (*api.SessionCredentials, error) { return nil, api.ErrKeyNotFound }
+func (s *savingStore) Save(cfg *api.SessionCredentials) error {
 	if s.saveErr != nil {
 		return s.saveErr
 	}
@@ -43,7 +45,7 @@ func TestCookieLoginSave_CookieStoreFields(t *testing.T) {
 		{Name: "REFRESH-uid1", Value: "refresh-val"},
 	})
 
-	session := &Session{
+	session := &api.Session{
 		Auth: proton.Auth{UID: "uid1"},
 	}
 	cookieSess := &CookieSession{
@@ -85,7 +87,7 @@ func TestCookieLoginSave_AccountStoreFields(t *testing.T) {
 	accountStore := &savingStore{}
 
 	jar, _ := cookiejar.New(nil)
-	session := &Session{
+	session := &api.Session{
 		Auth: proton.Auth{UID: "uid2"},
 	}
 	cookieSess := &CookieSession{
@@ -127,7 +129,7 @@ func TestCookieLoginSave_CookieStoreError(t *testing.T) {
 	accountStore := &savingStore{}
 
 	jar, _ := cookiejar.New(nil)
-	session := &Session{Auth: proton.Auth{UID: "uid3"}}
+	session := &api.Session{Auth: proton.Auth{UID: "uid3"}}
 	cookieSess := &CookieSession{UID: "uid3", cookieJar: jar}
 
 	err := CookieLoginSave(cookieStore, accountStore, session, cookieSess, []byte("kp"))
@@ -146,7 +148,7 @@ func TestCookieLoginSave_AccountStoreError(t *testing.T) {
 	accountStore := &savingStore{saveErr: fmt.Errorf("account disk full")}
 
 	jar, _ := cookiejar.New(nil)
-	session := &Session{Auth: proton.Auth{UID: "uid4"}}
+	session := &api.Session{Auth: proton.Auth{UID: "uid4"}}
 	cookieSess := &CookieSession{UID: "uid4", cookieJar: jar}
 
 	err := CookieLoginSave(cookieStore, accountStore, session, cookieSess, []byte("kp"))

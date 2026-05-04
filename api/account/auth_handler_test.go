@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"fmt"
@@ -7,41 +7,16 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 	"pgregory.net/rapid"
 )
 
-// mockStore is a thread-safe in-memory SessionStore for testing.
-type mockStore struct {
-	mu     sync.Mutex
-	config *SessionCredentials
-}
-
-func (m *mockStore) Load() (*SessionCredentials, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.config == nil {
-		return &SessionCredentials{}, nil
-	}
-	cfg := *m.config
-	return &cfg, nil
-}
-
-func (m *mockStore) Save(cfg *SessionCredentials) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.config = cfg
-	return nil
-}
-
-func (m *mockStore) Delete() error           { return nil }
-func (m *mockStore) List() ([]string, error) { return nil, nil }
-func (m *mockStore) Switch(string) error     { return nil }
-
 // TestAuthHandlerConcurrency verifies no data race when multiple goroutines
-// invoke the auth handler simultaneously. Run with: go test -race ./api/...
+// invoke the auth handler simultaneously. Run with: go test -race ./api/account/...
 func TestAuthHandlerConcurrency(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
-	session := &Session{cookieJar: jar}
+	session := &api.Session{}
+	session.SetCookieJar(jar)
 	store := &mockStore{}
 
 	handler := NewAuthHandler(store, session)
@@ -78,7 +53,8 @@ func TestPropertyAuthHandlerTokenPropagation(t *testing.T) {
 		rt := rapid.String().Draw(t, "refreshToken")
 
 		jar, _ := cookiejar.New(nil)
-		session := &Session{cookieJar: jar}
+		session := &api.Session{}
+		session.SetCookieJar(jar)
 		store := &mockStore{}
 		handler := NewAuthHandler(store, session)
 

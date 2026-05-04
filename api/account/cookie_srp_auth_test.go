@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"context"
@@ -150,7 +150,7 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 	}
 
 	// Step 1: auth/info DoJSON error — arbitrary error message from server.
-	// Req 6.1: prefix "cookie srp: auth info:"
+	// Req 6.1: prefix "account: authentication failed"
 	t.Run("step1_auth_info", func(t *testing.T) {
 		rapid.Check(t, func(t *rapid.T) {
 			msg := rapid.StringMatching(`[a-zA-Z0-9 _-]{1,64}`).Draw(t, "errMsg")
@@ -172,19 +172,18 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
-			const prefix = "cookie srp: auth info:"
-			if !strings.Contains(err.Error(), prefix) {
-				t.Fatalf("error %q does not contain prefix %q", err.Error(), prefix)
+			if !errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("error %q does not wrap ErrAuthFailed", err.Error())
 			}
-			if errors.Unwrap(err) == nil {
-				t.Fatalf("errors.Unwrap returned nil; original error not recoverable")
+			if !strings.Contains(err.Error(), "auth info:") {
+				t.Fatalf("error %q does not contain step context 'auth info:'", err.Error())
 			}
 		})
 	})
 
 	// Step 2: srp.NewAuth error — server returns an invalid (unsigned) modulus
 	// so that NewAuth fails with a signature error.
-	// Req 6.2: prefix "cookie srp: new auth:"
+	// Req 6.2: wraps ErrAuthFailed
 	t.Run("step2_new_auth", func(t *testing.T) {
 		rapid.Check(t, func(t *rapid.T) {
 			// Any non-empty string that is not a valid PGP signed message will
@@ -209,12 +208,11 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
-			const prefix = "cookie srp: new auth:"
-			if !strings.Contains(err.Error(), prefix) {
-				t.Fatalf("error %q does not contain prefix %q", err.Error(), prefix)
+			if !errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("error %q does not wrap ErrAuthFailed", err.Error())
 			}
-			if errors.Unwrap(err) == nil {
-				t.Fatalf("errors.Unwrap returned nil; original error not recoverable")
+			if !strings.Contains(err.Error(), "srp:") {
+				t.Fatalf("error %q does not contain step context 'srp:'", err.Error())
 			}
 		})
 	})
@@ -222,7 +220,7 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 	// Step 3: GenerateProofs error — replace srp.RandReader with a failing
 	// reader so that generateClientEphemeral returns an error. The auth/info
 	// response uses valid SRP parameters so that NewAuth succeeds.
-	// Req 6.3: prefix "cookie srp: generate proofs:"
+	// Req 6.3: wraps ErrAuthFailed
 	t.Run("step3_generate_proofs", func(t *testing.T) {
 		rapid.Check(t, func(t *rapid.T) {
 			randErrMsg := rapid.StringMatching(`[a-zA-Z0-9 ]{1,32}`).Draw(t, "randErrMsg")
@@ -248,12 +246,11 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
-			const prefix = "cookie srp: generate proofs:"
-			if !strings.Contains(err.Error(), prefix) {
-				t.Fatalf("error %q does not contain prefix %q", err.Error(), prefix)
+			if !errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("error %q does not wrap ErrAuthFailed", err.Error())
 			}
-			if errors.Unwrap(err) == nil {
-				t.Fatalf("errors.Unwrap returned nil; original error not recoverable")
+			if !strings.Contains(err.Error(), "srp proofs:") {
+				t.Fatalf("error %q does not contain step context 'srp proofs:'", err.Error())
 			}
 		})
 	})
@@ -261,7 +258,7 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 	// Step 4: auth POST DoJSON error — server returns success for auth/info
 	// but an error for the auth POST. Uses rapid to generate arbitrary error
 	// messages.
-	// Req 6.4: prefix "cookie srp: auth:"
+	// Req 6.4: wraps ErrAuthFailed
 	t.Run("step4_auth", func(t *testing.T) {
 		rapid.Check(t, func(t *rapid.T) {
 			msg := rapid.StringMatching(`[a-zA-Z0-9 _-]{1,64}`).Draw(t, "errMsg")
@@ -291,12 +288,11 @@ func TestPropertyErrorWrappingPreservesContext(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
-			const prefix = "cookie srp: auth:"
-			if !strings.Contains(err.Error(), prefix) {
-				t.Fatalf("error %q does not contain prefix %q", err.Error(), prefix)
+			if !errors.Is(err, ErrAuthFailed) {
+				t.Fatalf("error %q does not wrap ErrAuthFailed", err.Error())
 			}
-			if errors.Unwrap(err) == nil {
-				t.Fatalf("errors.Unwrap returned nil; original error not recoverable")
+			if !strings.Contains(err.Error(), "auth:") {
+				t.Fatalf("error %q does not contain step context 'auth:'", err.Error())
 			}
 		})
 	})
@@ -509,8 +505,8 @@ func TestCookieSRPAuth_ServerProofMismatch(t *testing.T) {
 }
 
 // TestCookieSRPAuth_AuthInfoError verifies that when the auth/info endpoint
-// returns an API error, CookieSRPAuth wraps it with the "cookie srp: auth info:"
-// prefix and the original error is recoverable via errors.Unwrap.
+// returns an API error, CookieSRPAuth wraps it with ErrAuthFailed and the
+// original error is recoverable via errors.Is.
 func TestCookieSRPAuth_AuthInfoError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -533,12 +529,11 @@ func TestCookieSRPAuth_AuthInfoError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	const wantPrefix = "cookie srp: auth info:"
-	if !strings.Contains(err.Error(), wantPrefix) {
-		t.Fatalf("error %q does not contain prefix %q", err.Error(), wantPrefix)
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Fatalf("error %q does not wrap ErrAuthFailed", err.Error())
 	}
-	if errors.Unwrap(err) == nil {
-		t.Fatal("errors.Unwrap returned nil; original error not recoverable")
+	if !strings.Contains(err.Error(), "auth info:") {
+		t.Fatalf("error %q does not contain step context 'auth info:'", err.Error())
 	}
 }
 

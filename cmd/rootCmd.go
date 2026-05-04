@@ -11,6 +11,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/config"
 	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/internal"
@@ -248,7 +249,7 @@ func resolveVersion(service string) string {
 func RestoreSession(ctx context.Context) (*common.Session, error) {
 	if ServiceName != "" && ServiceName != "*" {
 		svc, _ := common.LookupService(ServiceName)
-		session, err := common.RestoreServiceSession(
+		session, err := account.RestoreServiceSession(
 			ctx, ServiceName, ProtonOpts,
 			SessionStoreVar, AccountStoreVar, CookieStoreVar,
 			svc.AppVersion(""), requestTimeoutHook,
@@ -260,7 +261,7 @@ func RestoreSession(ctx context.Context) (*common.Session, error) {
 		return session, nil
 	}
 
-	session, err := common.ReadySession(ctx, ProtonOpts, SessionStoreVar, CookieStoreVar, requestTimeoutHook)
+	session, err := account.ReadySession(ctx, ProtonOpts, SessionStoreVar, CookieStoreVar, requestTimeoutHook)
 	if err != nil {
 		return nil, err
 	}

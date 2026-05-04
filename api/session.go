@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -155,76 +154,6 @@ func (s *Session) initHTTPClient() *http.Client {
 	return s.httpClient
 }
 
-// SessionFromCredentials initializes a new session from the provided config.
-// The session is not fully usable until it has been Unlock'ed using the
-// user-provided keypass.
-func SessionFromCredentials(ctx context.Context, options []proton.Option, config *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
-	var err error
-
-	if config.UID == "" {
-		return nil, ErrMissingUID
-	}
-
-	if config.AccessToken == "" {
-		return nil, ErrMissingAccessToken
-	}
-
-	if config.RefreshToken == "" {
-		return nil, ErrMissingRefreshToken
-	}
-
-	var session Session
-	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
-
-	jar, _ := cookiejar.New(nil)
-	session.cookieJar = jar
-
-	slog.Debug("session.refresh client")
-
-	session.manager = proton.New(append(options, proton.WithCookieJar(jar))...)
-
-	if managerHook != nil {
-		managerHook(session.manager)
-	}
-
-	slog.Debug("session.config", "uid", config.UID, "access_token", "<redacted>", "refresh_token", "<redacted>")
-	session.Client = session.manager.NewClient(config.UID, config.AccessToken, config.RefreshToken)
-	session.Auth = proton.Auth{
-		UID:          config.UID,
-		AccessToken:  config.AccessToken,
-		RefreshToken: config.RefreshToken,
-	}
-
-	slog.Debug("session.GetUser")
-	session.user, err = session.Client.GetUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return &session, nil
-}
-
-// sessionFromLogin creates a session with common setup shared by
-// SessionFromLogin and SessionFromLoginWithHV. It returns the prepared
-// session and manager; the caller performs the actual login call.
-func sessionFromLogin(ctx context.Context, options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
-	session := &Session{}
-	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
-
-	jar, _ := cookiejar.New(nil)
-	session.cookieJar = jar
-
-	session.manager = proton.New(append(options, proton.WithCookieJar(jar))...)
-
-	if managerHook != nil {
-		managerHook(session.manager)
-	}
-
-	return session, session.manager
-}
-
 // Unlock decrypts the user's account keyring and all address keyrings.
 // The addresses slice is stored internally for backward compatibility with
 // Drive methods that still reference s.addresses until they move to
@@ -290,6 +219,61 @@ func (s *Session) AddDeauthHandler(handler proton.Handler) {
 // Stop closes the underlying API manager.
 func (s *Session) Stop() {
 	s.manager.Close()
+}
+
+// Manager returns the underlying proton.Manager. Used by api/account/
+// for session operations that need direct manager access (login, fork).
+func (s *Session) Manager() *proton.Manager { return s.manager }
+
+// SetManager sets the underlying proton.Manager.
+func (s *Session) SetManager(m *proton.Manager) { s.manager = m }
+
+// CachedAuthInfo returns the cached AuthInfo from the initial login attempt.
+func (s *Session) CachedAuthInfo() *proton.AuthInfo { return s.cachedAuthInfo }
+
+// SetCachedAuthInfo stores the AuthInfo for HV retry reuse.
+func (s *Session) SetCachedAuthInfo(info *proton.AuthInfo) { s.cachedAuthInfo = info }
+
+// AuthMu returns a reference to the session's auth mutex for serializing
+// auth handler updates. Used by api/account/ auth handlers.
+func (s *Session) AuthMu() *sync.Mutex { return &s.authMu }
+
+// InitSession initializes a new empty Session with Throttle, Semaphore,
+// cookie jar, and proton.Manager. This is the shared setup used by
+// SessionFromCredentials and sessionFromLogin. Returns the Session and
+// the Manager for callers that need direct manager access.
+func InitSession(ctx context.Context, options []proton.Option, managerHook func(*proton.Manager)) (*Session, *proton.Manager) {
+	session := &Session{}
+	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
+	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
+
+	jar, _ := cookiejar.New(nil)
+	session.cookieJar = jar
+
+	session.manager = proton.New(append(options, proton.WithCookieJar(jar))...)
+
+	if managerHook != nil {
+		managerHook(session.manager)
+	}
+
+	return session, session.manager
+}
+
+// InitSessionWithJar initializes a new empty Session with a pre-built
+// cookie jar and manager options. Used by restoreExistingCookieService
+// where the jar and manager options are constructed externally.
+func InitSessionWithJar(ctx context.Context, jar http.CookieJar, managerOpts []proton.Option, managerHook func(*proton.Manager)) *Session {
+	session := &Session{}
+	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
+	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
+	session.cookieJar = jar
+
+	session.manager = proton.New(managerOpts...)
+	if managerHook != nil {
+		managerHook(session.manager)
+	}
+
+	return session
 }
 
 // resolveAppVersion returns the x-pm-appversion value for the given request
@@ -438,594 +422,4 @@ func (s *Session) doRequest(ctx context.Context, method, path string, body, resu
 	}
 
 	return nil
-}
-
-// SessionRestore loads credentials from the store and creates an unlocked
-// session. Returns ErrNotLoggedIn if no session is stored. When the loaded
-// config has CookieAuth=true and cookieStore is non-nil, the cookie restore
-// path is used instead of the Bearer path.
-func SessionRestore(ctx context.Context, options []proton.Option, store SessionStore, cookieStore SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
-	config, err := store.Load()
-	if err != nil {
-		if errors.Is(err, ErrKeyNotFound) {
-			return nil, ErrNotLoggedIn
-		}
-		return nil, err
-	}
-
-	// Route to cookie restore when CookieAuth=true.
-	if config.CookieAuth && cookieStore != nil {
-		return CookieSessionRestore(ctx, options, cookieStore, config, managerHook)
-	}
-
-	slog.Debug("SessionRestore", "uid", config.UID, "access_token", "<redacted>", "refresh_token", "<redacted>")
-
-	// Staleness check.
-	if !config.LastRefresh.IsZero() {
-		age := time.Since(config.LastRefresh)
-		if age > TokenExpireAge {
-			slog.Warn("session tokens likely expired", "age", age)
-		} else if age > TokenWarnAge {
-			slog.Warn("session tokens near expiry", "age", age)
-		}
-	}
-
-	session, err := SessionFromCredentials(ctx, options, config, managerHook)
-	if err != nil {
-		return nil, err
-	}
-
-	// Restore persisted cookies into the session's jar.
-	LoadCookies(session.cookieJar, config.Cookies, CookieURL())
-
-	keypass, err := Base64Decode(config.SaltedKeyPass)
-	if err != nil {
-		return nil, err
-	}
-
-	addrs, err := session.Client.GetAddresses(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := session.Unlock(keypass, addrs); err != nil {
-		return nil, err
-	}
-
-	// Proactive refresh: make a lightweight API call to trigger
-	// go-proton-api's auto-refresh if the access token is expired.
-	if !config.LastRefresh.IsZero() && time.Since(config.LastRefresh) > TokenExpireAge {
-		if _, err := session.Client.GetUser(ctx); err != nil {
-			return nil, fmt.Errorf("proactive refresh: %w", err)
-		}
-	}
-
-	return session, nil
-}
-
-// ReadySession restores a session from the store, registers auth/deauth
-// handlers, and returns a fully initialized Session ready for use.
-// This is the recommended entry point for consumers that need an
-// authenticated session. When cookieStore is non-nil and the session has
-// CookieAuth=true, the cookie restore path is used.
-func ReadySession(ctx context.Context, options []proton.Option, store SessionStore, cookieStore SessionStore, managerHook func(*proton.Manager)) (*Session, error) {
-	session, err := SessionRestore(ctx, options, store, cookieStore, managerHook)
-	if err != nil {
-		return nil, err
-	}
-	session.AddAuthHandler(NewAuthHandler(store, session))
-	session.AddDeauthHandler(NewDeauthHandler())
-	return session, nil
-}
-
-// NeedsProactiveRefresh reports whether the session's LastRefresh age exceeds
-// ProactiveRefreshAge. A zero-valued LastRefresh always triggers refresh.
-func NeedsProactiveRefresh(lastRefresh time.Time) bool {
-	if lastRefresh.IsZero() {
-		return true
-	}
-	return time.Since(lastRefresh) > ProactiveRefreshAge
-}
-
-// NeedsCookieRefresh reports whether the cookie session's LastRefresh age
-// exceeds CookieRefreshAge. A zero-valued LastRefresh always triggers refresh.
-func NeedsCookieRefresh(lastRefresh time.Time) bool {
-	if lastRefresh.IsZero() {
-		return true
-	}
-	return time.Since(lastRefresh) > CookieRefreshAge
-}
-
-// IsStale reports whether a service session is stale relative to the account
-// session. A service session is stale when the account's LastRefresh is after
-// the service's LastRefresh, or when the service's LastRefresh is zero.
-func IsStale(accountRefresh, serviceRefresh time.Time) bool {
-	if serviceRefresh.IsZero() {
-		return true
-	}
-	return accountRefresh.After(serviceRefresh)
-}
-
-// proactiveRefresh checks the session's LastRefresh age and triggers a
-// refresh if the token is past the ProactiveRefreshAge threshold.
-// The auth handler callback updates Session.Auth and persists via SessionSave.
-func proactiveRefresh(ctx context.Context, session *Session, config *SessionCredentials) error {
-	if !NeedsProactiveRefresh(config.LastRefresh) {
-		return nil
-	}
-
-	slog.Debug("proactiveRefresh", "age", time.Since(config.LastRefresh))
-
-	if _, err := session.Client.GetUser(ctx); err != nil {
-		return fmt.Errorf("session expired, run `proton account login`: %w", err)
-	}
-
-	return nil
-}
-
-// shouldFork determines whether a service session needs to be forked from
-// the account session. Returns true when the service session is missing,
-// is a wildcard fallback, has no Service field (legacy), or is stale
-// relative to the account session.
-func shouldFork(svcConfig *SessionCredentials, svcErr error, acctConfig *SessionCredentials, service string) bool {
-	if svcErr != nil {
-		slog.Debug("service session not found, will fork", "service", service)
-		return true
-	}
-	if svcConfig.Service != service && svcConfig.Service != "" {
-		slog.Debug("service session is wildcard fallback, will fork", "service", service, "found_service", svcConfig.Service)
-		return true
-	}
-	if svcConfig.Service == "" {
-		slog.Debug("service session has no service field, will fork", "service", service)
-		return true
-	}
-	if IsStale(acctConfig.LastRefresh, svcConfig.LastRefresh) {
-		slog.Debug("service session is stale, will re-fork", "service", service)
-		return true
-	}
-	slog.Debug("service session is fresh", "service", service, "uid", svcConfig.UID, "svc_service", svcConfig.Service, "svc_last_refresh", svcConfig.LastRefresh, "acct_last_refresh", acctConfig.LastRefresh)
-	return false
-}
-
-// RestoreServiceSession restores or creates a service-specific session.
-// If no session exists for the service, it forks from the account session.
-// If no account session exists, it returns ErrNotLoggedIn.
-// forkUnlockAndSave completes the post-fork sequence: fetch user, save
-// session, fetch addresses, unlock keyrings, register auth/deauth handlers.
-// Used by both the cookie-fork and bearer-fork paths.
-func forkUnlockAndSave(ctx context.Context, child *Session, childKeyPass []byte, store SessionStore, service string) error {
-	childUser, err := child.Client.GetUser(ctx)
-	if err != nil {
-		return fmt.Errorf("restore service session %q: get user: %w", service, err)
-	}
-	child.user = childUser
-
-	if err := SessionSave(store, child, childKeyPass); err != nil {
-		return fmt.Errorf("restore service session %q: save fork: %w", service, err)
-	}
-
-	// Update the saved config with service metadata so shouldFork can
-	// identify this session on subsequent restores.
-	if cfg, loadErr := store.Load(); loadErr == nil {
-		cfg.Service = service
-		cfg.CookieAuth = child.Auth.AccessToken == ""
-		_ = store.Save(cfg)
-	}
-
-	addrs, err := child.Client.GetAddresses(ctx)
-	if err != nil {
-		return fmt.Errorf("restore service session %q: get addresses: %w", service, err)
-	}
-	slog.Debug("fork.unlock", "service", service, "child_uid", child.Auth.UID, "keypass_len", len(childKeyPass), "num_addresses", len(addrs))
-	if err := child.Unlock(childKeyPass, addrs); err != nil {
-		return fmt.Errorf("restore service session %q: unlock: %w", service, err)
-	}
-
-	child.AddAuthHandler(NewAuthHandler(store, child))
-	child.AddDeauthHandler(NewDeauthHandler())
-	return nil
-}
-
-// RestoreServiceSession restores or creates a service-specific session.
-// If no session exists for the service, it forks from the account session.
-// If no account session exists, it returns ErrNotLoggedIn.
-//
-// The flow:
-//  1. Load account session config from accountStore.
-//  2. If CookieAuth=true, use cookie fork path (CookieSessionRestore → cookieFork).
-//  3. Otherwise, build account session from credentials.
-//  4. If account session age > ProactiveRefreshAge, trigger proactive refresh.
-//  5. If service session missing or stale (account LastRefresh > service LastRefresh),
-//     fork from account session via ForkSessionWithKeyPass.
-//  6. Set session.BaseURL and AppVersion from the ServiceConfig.
-//  7. Return session.
-func RestoreServiceSession(ctx context.Context, service string, options []proton.Option, store SessionStore, accountStore SessionStore, cookieStore SessionStore, version string, managerHook func(*proton.Manager)) (*Session, error) {
-	svc, err := LookupService(service)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load account session config (needed for staleness check and fork source).
-	acctConfig, err := accountStore.Load()
-	if err != nil {
-		if errors.Is(err, ErrKeyNotFound) {
-			return nil, ErrNotLoggedIn
-		}
-		return nil, fmt.Errorf("restore service session %q: account: %w", service, err)
-	}
-
-	// When CookieAuth=true, restore the cookie session and fork to get
-	// service-specific scopes (e.g., "lumo"). The fork push uses cookie
-	// auth, and the child session uses the parent's cookie jar with
-	// CookieTransport — cookies have Domain=proton.me so they work for
-	// all *.proton.me subdomains.
-	if acctConfig.CookieAuth && cookieStore != nil {
-		slog.Debug("restore service session: cookie auth mode", "service", service)
-
-		// Check if the service session already exists and is fresh.
-		svcConfig, svcErr := store.Load()
-		if svcErr != nil && !errors.Is(svcErr, ErrKeyNotFound) {
-			return nil, fmt.Errorf("restore service session %q: %w", service, svcErr)
-		}
-
-		if !shouldFork(svcConfig, svcErr, acctConfig, service) {
-			// Service session is fresh — restore it with cookie auth.
-			// The saved session has empty Bearer tokens (cleared after
-			// cookie transition), so we restore via CookieSessionRestore
-			// using the service's own persisted cookies.
-			slog.Debug("restore service session: reusing fresh cookie session", "service", service)
-			return restoreExistingCookieService(ctx, svcConfig, store, cookieStore, acctConfig, svc, service, managerHook)
-		}
-
-		// Service session missing or stale — fork from account.
-		acctSession, err := CookieSessionRestore(ctx, options, cookieStore, acctConfig, managerHook)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: %w", service, err)
-		}
-
-		keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
-		}
-
-		child, childKeyPass, err := cookieFork(ctx, acctSession, acctConfig, svc, "", keypass, cookieStore)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
-		}
-
-		if err := forkUnlockAndSave(ctx, child, childKeyPass, store, service); err != nil {
-			return nil, err
-		}
-
-		return child, nil
-	}
-
-	// Build account session using account-specific options (not the service options).
-	// The passed-in options point to the target service host, but the account
-	// session must use the account host for proactive refresh and fork push.
-	acctSvc, _ := LookupService("account")
-	acctOpts := []proton.Option{
-		proton.WithHostURL(acctSvc.Host),
-		proton.WithAppVersion(acctSvc.AppVersion("")),
-	}
-	acctSession, err := SessionFromCredentials(ctx, acctOpts, acctConfig, managerHook)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: account credentials: %w", service, err)
-	}
-
-	// Set AppVersion and BaseURL on the session struct so DoJSON sends the
-	// x-pm-appversion header. SessionFromCredentials passes options to the
-	// proton.Manager (for Resty), but DoJSON uses Session.AppVersion directly.
-	acctSession.AppVersion = acctSvc.AppVersion("")
-	acctSession.BaseURL = acctSvc.Host
-
-	// Restore cookies into account session.
-	LoadCookies(acctSession.cookieJar, acctConfig.Cookies, CookieURL())
-
-	// Register auth handler on account session so proactive refresh persists tokens.
-	acctSession.AddAuthHandler(NewAuthHandler(accountStore, acctSession))
-	acctSession.AddDeauthHandler(NewDeauthHandler())
-
-	// Proactive refresh on account session.
-	if err := proactiveRefresh(ctx, acctSession, acctConfig); err != nil {
-		return nil, err
-	}
-
-	// Try loading the service session.
-	svcConfig, svcErr := store.Load()
-	if svcErr != nil && !errors.Is(svcErr, ErrKeyNotFound) {
-		return nil, fmt.Errorf("restore service session %q: %w", service, svcErr)
-	}
-
-	needsFork := shouldFork(svcConfig, svcErr, acctConfig, service)
-
-	if needsFork {
-		// Decrypt account keypass for fork blob.
-		keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
-		}
-
-		// The fork push goes to the account host with the account app version.
-		// The fork pull goes to the target service host with the target app version.
-
-		// Log cookies available for the target service host.
-		if targetURL, err := url.Parse(svc.Host); err == nil {
-			cookies := acctSession.cookieJar.Cookies(targetURL)
-			names := make([]string, len(cookies))
-			for i, c := range cookies {
-				names[i] = c.Name
-			}
-			slog.Debug("fork.cookies", "host", svc.Host, "cookies", names)
-		}
-
-		var child *Session
-		var childKeyPass []byte
-
-		if acctConfig.CookieAuth && cookieStore != nil {
-			// Cookie-aware fork: use CookieSession for the fork push.
-			child, childKeyPass, err = cookieFork(ctx, acctSession, acctConfig, svc, version, keypass, cookieStore)
-		} else {
-			// Bearer fork: existing behavior.
-			child, childKeyPass, err = ForkSessionWithKeyPass(ctx, acctSession, svc, version, keypass)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
-		}
-
-		if err := forkUnlockAndSave(ctx, child, childKeyPass, store, service); err != nil {
-			return nil, err
-		}
-
-		return child, nil
-	}
-
-	// Restore existing service session.
-	return restoreExistingService(ctx, options, svcConfig, store, svc, service, managerHook)
-}
-
-// restoreExistingService restores a service session from persisted credentials.
-// Used when the service session exists and is not stale.
-func restoreExistingService(ctx context.Context, options []proton.Option, svcConfig *SessionCredentials, store SessionStore, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
-	session, err := SessionFromCredentials(ctx, options, svcConfig, managerHook)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: credentials: %w", service, err)
-	}
-
-	LoadCookies(session.cookieJar, svcConfig.Cookies, CookieURL())
-
-	keypass, err := Base64Decode(svcConfig.SaltedKeyPass)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
-	}
-
-	addrs, err := session.Client.GetAddresses(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
-	}
-
-	if err := session.Unlock(keypass, addrs); err != nil {
-		return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
-	}
-
-	session.BaseURL = svc.Host
-	session.AppVersion = svc.AppVersion("")
-
-	session.AddAuthHandler(NewAuthHandler(store, session))
-	session.AddDeauthHandler(NewDeauthHandler())
-
-	return session, nil
-}
-
-// restoreExistingCookieService restores a service session that was created
-// via cookieFork. The saved session has empty Bearer tokens (cleared after
-// cookie transition) but valid cookies persisted in the service store.
-// Uses CookieTransport so Resty-based calls use cookie auth, with 401
-// retry via RefreshCookies.
-func restoreExistingCookieService(ctx context.Context, svcConfig *SessionCredentials, store SessionStore, _ SessionStore, acctConfig *SessionCredentials, svc ServiceConfig, service string, managerHook func(*proton.Manager)) (*Session, error) {
-	// Build cookie jar and inject persisted cookies from the service store.
-	jar, _ := cookiejar.New(nil)
-	loadProtonCookies(jar, svcConfig.Cookies, svc.Host)
-
-	// Proactive cookie refresh if stale.
-	if NeedsCookieRefresh(svcConfig.LastRefresh) {
-		slog.Debug("restoreExistingCookieService.proactiveRefresh", "service", service, "age", time.Since(svcConfig.LastRefresh))
-
-		cs := &CookieSession{
-			UID:        svcConfig.UID,
-			BaseURL:    svc.Host,
-			AppVersion: svc.AppVersion(""),
-			cookieJar:  jar,
-			Store:      store,
-		}
-		if refreshErr := cs.RefreshCookies(ctx); refreshErr != nil {
-			// Cookie refresh failed — fall back to re-fork.
-			slog.Debug("restoreExistingCookieService: refresh failed, will re-fork", "service", service, "error", refreshErr)
-			return nil, fmt.Errorf("restore service session %q: cookie refresh: %w", service, refreshErr)
-		}
-
-		// Rebuild the jar from the refreshed cookies to avoid
-		// duplicates. The old jar may contain stale cookies that
-		// weren't replaced by Set-Cookie (different path/domain).
-		refreshedCfg := cs.Config()
-		svcConfig.Cookies = refreshedCfg.Cookies
-		svcConfig.LastRefresh = refreshedCfg.LastRefresh
-
-		jar, _ = cookiejar.New(nil)
-		loadProtonCookies(jar, svcConfig.Cookies, svc.Host)
-
-		if saveErr := store.Save(svcConfig); saveErr != nil {
-			slog.Error("restoreExistingCookieService: persist refreshed cookies", "error", saveErr)
-		}
-	}
-
-	// Build proton.Manager with CookieTransport.
-	ct := &CookieTransport{Base: http.DefaultTransport}
-	managerOpts := []proton.Option{
-		proton.WithTransport(ct),
-		proton.WithCookieJar(jar),
-		proton.WithHostURL(svc.Host),
-		proton.WithAppVersion(svc.AppVersion("")),
-	}
-
-	session := &Session{}
-	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
-	session.cookieJar = jar
-
-	session.manager = proton.New(managerOpts...)
-	if managerHook != nil {
-		managerHook(session.manager)
-	}
-
-	// Attach cookie refresh handler to the transport for 401 retry.
-	attachCookieRefresh(ctx, svcConfig, jar, ct, store)
-
-	// Create client with UID, empty Bearer tokens (cookie auth only).
-	session.Client = session.manager.NewClient(svcConfig.UID, "", "")
-	session.Auth = proton.Auth{
-		UID:          svcConfig.UID,
-		AccessToken:  "",
-		RefreshToken: "",
-	}
-
-	// Load user and addresses from account cache, falling back to API.
-	// Use the account UID (not the service session UID) so all services
-	// for the same Proton account share the same cached data.
-	acctCache := newAccountCacheForUID(acctConfig.UID)
-	user := accountCacheGetUser(acctCache)
-	if user == nil {
-		u, err := session.Client.GetUser(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: get user: %w", service, err)
-		}
-		user = &u
-		accountCachePutUser(acctCache, u)
-	}
-	session.user = *user
-
-	addrs := accountCacheGetAddresses(acctCache)
-	if addrs == nil {
-		var err error
-		addrs, err = session.Client.GetAddresses(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("restore service session %q: get addresses: %w", service, err)
-		}
-		accountCachePutAddresses(acctCache, addrs)
-	}
-
-	keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
-	if err != nil {
-		return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
-	}
-	if err := session.Unlock(keypass, addrs); err != nil {
-		return nil, fmt.Errorf("restore service session %q: unlock: %w", service, err)
-	}
-
-	session.BaseURL = svc.Host
-	session.AppVersion = svc.AppVersion("")
-
-	session.AddAuthHandler(NewAuthHandler(store, session))
-	session.AddDeauthHandler(NewDeauthHandler())
-
-	return session, nil
-}
-
-// SessionSave persists session credentials, cookie jar state, and a refresh
-// timestamp to the store. Uses cookieQueryURL (path=/api/auth/refresh) so
-// the jar query matches both AUTH (path=/api/) and REFRESH
-// (path=/api/auth/refresh) cookies.
-func SessionSave(store SessionStore, session *Session, keypass []byte) error {
-	queryURL := cookieQueryURL(session.BaseURL)
-	config := &SessionCredentials{
-		UID:           session.Auth.UID,
-		AccessToken:   session.Auth.AccessToken,
-		RefreshToken:  session.Auth.RefreshToken,
-		SaltedKeyPass: Base64Encode(keypass),
-		Cookies:       SerializeCookies(session.cookieJar, queryURL),
-		LastRefresh:   time.Now(),
-	}
-	return store.Save(config)
-}
-
-// SessionRevoke revokes the API session and deletes it from the store.
-// If force is true, store deletion proceeds even when the API revoke fails.
-func SessionRevoke(ctx context.Context, session *Session, store SessionStore, force bool) error {
-	if session != nil {
-		slog.Debug("SessionRevoke", "uid", session.Auth.UID)
-		if err := session.Client.AuthRevoke(ctx, session.Auth.UID); err != nil {
-			if !force {
-				return err
-			}
-			slog.Error("SessionRevoke", "error", err)
-		}
-	}
-	return store.Delete()
-}
-
-// SessionList returns account names from the session store.
-func SessionList(store SessionStore) ([]string, error) {
-	return store.List()
-}
-
-// SessionFromLogin initializes a new session from the provided login/password.
-// If hvDetails is non-nil, the login includes the HV token for CAPTCHA retry.
-// The same manager (and cookie jar) is used for both initial and HV-retried
-// login attempts — this is required because Proton's backend correlates the
-// solved CAPTCHA with the session cookie from the initial attempt.
-//
-// On error, the returned *Session is intentionally non-nil and reusable for
-// SessionRetryWithHV. The manager and cookie jar must be preserved across
-// attempts so that the solved CAPTCHA correlates with the session cookie
-// established during the initial (failed) login request.
-func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, hvDetails *proton.APIHVDetails, managerHook func(*proton.Manager)) (*Session, error) {
-	session, manager := sessionFromLogin(ctx, options, managerHook)
-
-	slog.Debug("session.login", "username", username, "password", "<hidden>")
-
-	// Fetch AuthInfo separately so we can cache it for HV retries.
-	// The SRP session in AuthInfo is bound to the CAPTCHA token — reusing
-	// it on retry is required for the solved token to be accepted.
-	info, err := manager.AuthInfo(ctx, proton.AuthInfoReq{Username: username})
-	if err != nil {
-		return session, err
-	}
-	session.cachedAuthInfo = &info
-
-	session.Client, session.Auth, err = manager.NewClientWithLoginWithCachedInfo(ctx, info, username, []byte(password), hvDetails)
-	logCookies("session.login.done", session)
-	slog.Debug("session.login.done", "error", err)
-	if err != nil {
-		return session, err
-	}
-
-	return session, nil
-}
-
-// SessionRetryWithHV retries login on an existing session (reusing its
-// manager and cookie jar) with HV details after the user solved the CAPTCHA.
-// A fresh AuthInfo is fetched because the original SRP session is invalidated
-// by the 9001 response. The solved CAPTCHA composite token is NOT bound to
-// the SRP session — it's bound to the HumanVerificationToken.
-func SessionRetryWithHV(ctx context.Context, session *Session, username, password string, hv *proton.APIHVDetails) error {
-	logCookies("session.login.hv.before", session)
-	slog.Debug("session.login.hv", "username", username, "password", "<hidden>")
-
-	var err error
-	session.Client, session.Auth, err = session.manager.NewClientWithLoginWithHVToken(ctx, username, []byte(password), hv)
-	logCookies("session.login.hv.after", session)
-	return err
-}
-
-// logCookies logs the current cookie names in the session's jar for debugging.
-// Only names are logged — values are sensitive and must not appear in logs.
-func logCookies(label string, session *Session) {
-	u := cookieQueryURL(session.BaseURL)
-	cookies := session.cookieJar.Cookies(u)
-	names := make([]string, len(cookies))
-	for i, c := range cookies {
-		names[i] = c.Name
-	}
-	slog.Debug(label, "cookies", names)
 }

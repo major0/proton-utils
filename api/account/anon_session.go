@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
+
+	"github.com/major0/proton-cli/api"
 )
 
 // AnonSessionResp is the response from POST /auth/v4/sessions.
@@ -25,7 +27,7 @@ type AnonSessionResp struct {
 // for subsequent SRP login. The session is created on account.proton.me
 // matching the browser's flow exactly.
 func CreateAnonSession(ctx context.Context) (*AnonSessionResp, http.CookieJar, error) {
-	acctSvc, _ := LookupService("account")
+	acctSvc, _ := api.LookupService("account")
 	sessionURL := acctSvc.Host + "/auth/v4/sessions"
 
 	slog.Debug("createAnonSession", "url", sessionURL)
@@ -36,7 +38,7 @@ func CreateAnonSession(ctx context.Context) (*AnonSessionResp, http.CookieJar, e
 	}
 
 	// Match the browser's headers exactly.
-	req.Header.Set("accept", ProtonAccept)
+	req.Header.Set("accept", api.ProtonAccept)
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-enforce-unauthsession", "true")
 	req.Header.Set("x-pm-appversion", acctSvc.AppVersion(""))
@@ -62,7 +64,7 @@ func CreateAnonSession(ctx context.Context) (*AnonSessionResp, http.CookieJar, e
 	if resp.StatusCode != http.StatusOK {
 		var envelope apiEnvelope
 		if json.Unmarshal(body, &envelope) == nil && envelope.Code != 0 {
-			return nil, nil, &Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error, Details: envelope.Details}
+			return nil, nil, &api.Error{Status: resp.StatusCode, Code: envelope.Code, Message: envelope.Error, Details: envelope.Details}
 		}
 		return nil, nil, fmt.Errorf("anon session: HTTP %d", resp.StatusCode)
 	}

@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 	"pgregory.net/rapid"
 )
 
@@ -38,7 +39,7 @@ func TestForkResponseToSessionMapping_Property(t *testing.T) {
 			RefreshToken: refreshToken,
 		}
 
-		svc := ServiceConfig{
+		svc := api.ServiceConfig{
 			Name:     "test",
 			Host:     host,
 			ClientID: clientID,
@@ -68,8 +69,7 @@ func TestForkResponseToSessionMapping_Property(t *testing.T) {
 			t.Fatalf("BaseURL: got %q, want %q", session.BaseURL, host)
 		}
 
-		// Verify AppVersion format — uses service's default version, not the
-		// version parameter (which is for the Resty client).
+		// Verify AppVersion format.
 		wantAppVer := clientID + "@" + version + ""
 		if session.AppVersion != wantAppVer {
 			t.Fatalf("AppVersion: got %q, want %q", session.AppVersion, wantAppVer)
@@ -108,14 +108,14 @@ func TestForkPushRequestBody(t *testing.T) {
 	defer pushSrv.Close()
 
 	jar, _ := cookiejar.New(nil)
-	parent := &Session{
+	parent := &api.Session{
 		Auth: proton.Auth{
 			UID:         "parent-uid",
 			AccessToken: "parent-token",
 		},
-		BaseURL:   pushSrv.URL,
-		cookieJar: jar,
+		BaseURL: pushSrv.URL,
 	}
+	parent.SetCookieJar(jar)
 
 	pushReq := ForkPushReq{
 		ChildClientID: "web-lumo",
@@ -163,15 +163,15 @@ func TestForkPullGoesToCorrectHost(t *testing.T) {
 	defer childSrv.Close()
 
 	jar, _ := cookiejar.New(nil)
-	parent := &Session{
+	parent := &api.Session{
 		Auth: proton.Auth{
 			UID:         "parent-uid",
 			AccessToken: "parent-token",
 		},
 		AppVersion: "web-account@1.0.0",
 		UserAgent:  "proton-cli/test",
-		cookieJar:  jar,
 	}
+	parent.SetCookieJar(jar)
 
 	resp, err := forkPull(context.Background(), parent, childSrv.URL, "sel-123", "web-lumo@1.3.3.4")
 	if err != nil {
@@ -197,7 +197,7 @@ func TestForkPullGoesToCorrectHost(t *testing.T) {
 }
 
 // TestForkPullAPIError verifies that a non-1000 API code from the pull
-// endpoint returns an *Error.
+// endpoint returns an *api.Error.
 func TestForkPullAPIError(t *testing.T) {
 	childSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -209,19 +209,19 @@ func TestForkPullAPIError(t *testing.T) {
 	defer childSrv.Close()
 
 	jar, _ := cookiejar.New(nil)
-	parent := &Session{
-		Auth:      proton.Auth{UID: "uid", AccessToken: "at"},
-		cookieJar: jar,
+	parent := &api.Session{
+		Auth: proton.Auth{UID: "uid", AccessToken: "at"},
 	}
+	parent.SetCookieJar(jar)
 
 	_, err := forkPull(context.Background(), parent, childSrv.URL, "bad-sel", "web-lumo@1.3.3.4")
 	if err == nil {
 		t.Fatal("expected error from forkPull")
 	}
 
-	var apiErr *Error
+	var apiErr *api.Error
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected *Error, got %T: %v", err, err)
+		t.Fatalf("expected *api.Error, got %T: %v", err, err)
 	}
 	if apiErr.Code != 9100 {
 		t.Fatalf("Code = %d, want 9100", apiErr.Code)
@@ -254,7 +254,6 @@ func TestForkSessionEndToEnd(t *testing.T) {
 			t.Fatalf("push: ChildClientID = %q, want %q", req.ChildClientID, "web-lumo")
 		}
 
-		// Return the payload as-is (simulating the server storing it).
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"Code":     1000,
 			"Selector": "fork-sel-abc",
@@ -279,24 +278,20 @@ func TestForkSessionEndToEnd(t *testing.T) {
 	defer pullSrv.Close()
 
 	jar, _ := cookiejar.New(nil)
-	parent := &Session{
+	parent := &api.Session{
 		Auth: proton.Auth{
 			UID:         "parent-uid",
 			AccessToken: "parent-at",
 		},
-		BaseURL:   pushSrv.URL,
-		cookieJar: jar,
+		BaseURL: pushSrv.URL,
 	}
+	parent.SetCookieJar(jar)
 
-	targetSvc := ServiceConfig{
+	targetSvc := api.ServiceConfig{
 		Name:     "lumo",
 		Host:     pullSrv.URL,
 		ClientID: "web-lumo",
 	}
-
-	// We need to test the internal flow, so we'll call the pieces directly
-	// since ForkSession generates its own blob key.
-	// Instead, test the push/pull/build flow manually.
 
 	// Push.
 	pushReq := ForkPushReq{
@@ -330,7 +325,7 @@ func TestForkSessionEndToEnd(t *testing.T) {
 	}
 
 	// Build child session.
-	child := SessionFromForkPull(context.Background(), pullResp, targetSvc, DefaultVersion)
+	child := SessionFromForkPull(context.Background(), pullResp, targetSvc, api.DefaultVersion)
 	defer child.Stop()
 
 	if child.Auth.UID != "child-uid-123" {
@@ -357,7 +352,7 @@ func TestBuildChildSession(t *testing.T) {
 		RefreshToken: "rt-ghi",
 	}
 
-	svc := ServiceConfig{
+	svc := api.ServiceConfig{
 		Name:     "drive",
 		Host:     "https://drive-api.proton.me/api",
 		ClientID: "web-drive",
@@ -379,8 +374,8 @@ func TestBuildChildSession(t *testing.T) {
 	if session.Client == nil {
 		t.Fatal("Client is nil")
 	}
-	if session.cookieJar == nil {
-		t.Fatal("cookieJar is nil")
+	if session.CookieJar() == nil {
+		t.Fatal("CookieJar is nil")
 	}
 	if session.Sem == nil {
 		t.Fatal("Sem is nil")
@@ -392,7 +387,7 @@ func TestBuildChildSession(t *testing.T) {
 
 // TestErrForkFailed verifies the sentinel error.
 func TestErrForkFailed(t *testing.T) {
-	if ErrForkFailed.Error() != "session fork failed" {
-		t.Fatalf("ErrForkFailed = %q, want %q", ErrForkFailed.Error(), "session fork failed")
+	if ErrForkFailed.Error() != "account: session fork failed" {
+		t.Fatalf("ErrForkFailed = %q, want %q", ErrForkFailed.Error(), "account: session fork failed")
 	}
 }

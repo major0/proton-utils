@@ -10,6 +10,7 @@ import (
 
 	proton "github.com/ProtonMail/go-proton-api"
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/config"
 	cli "github.com/major0/proton-cli/cmd"
 	"pgregory.net/rapid"
@@ -1215,24 +1216,24 @@ func TestDefaultSaltKeyPassFn(t *testing.T) {
 func TestRenderAddresses(t *testing.T) {
 	tests := []struct {
 		name      string
-		addresses []proton.Address
+		addresses []addressInfo
 		wantSubs  []string
 	}{
 		{
 			"empty list",
-			[]proton.Address{},
+			[]addressInfo{},
 			[]string{"ADDRESS", "TYPE", "STATE"},
 		},
 		{
 			"single address",
-			[]proton.Address{
+			[]addressInfo{
 				{Email: "alice@proton.me", Type: 1, Status: 1},
 			},
 			[]string{"alice@proton.me"},
 		},
 		{
 			"multiple addresses",
-			[]proton.Address{
+			[]addressInfo{
 				{Email: "alice@proton.me", Type: 1, Status: 1},
 				{Email: "bob@pm.me", Type: 2, Status: 0},
 			},
@@ -1257,34 +1258,31 @@ func TestRenderAddresses(t *testing.T) {
 func TestRenderUserInfo(t *testing.T) {
 	tests := []struct {
 		name     string
-		user     proton.User
+		user     userInfo
 		wantSubs []string
 	}{
 		{
 			"basic user with storage",
-			proton.User{
-				ID:          "user-123",
-				DisplayName: "Alice",
-				Name:        "alice",
-				Email:       "alice@proton.me",
-				MaxSpace:    1073741824, // 1 GB
-				UsedSpace:   536870912,  // 512 MB
-				ProductUsedSpace: proton.ProductUsedSpace{
-					Mail:     268435456, // 256 MB
-					Drive:    134217728, // 128 MB
-					Calendar: 67108864,  // 64 MB
-					Pass:     33554432,  // 32 MB
-					Contact:  33554432,  // 32 MB
-				},
+			userInfo{
+				ID:                "user-123",
+				DisplayName:       "Alice",
+				Name:              "alice",
+				Email:             "alice@proton.me",
+				MaxSpace:          1073741824, // 1 GB
+				UsedSpace:         536870912,  // 512 MB
+				MailUsedSpace:     268435456,  // 256 MB
+				DriveUsedSpace:    134217728,  // 128 MB
+				CalendarUsedSpace: 67108864,   // 64 MB
+				PassUsedSpace:     33554432,   // 32 MB
+				ContactUsedSpace:  33554432,   // 32 MB
 			},
 			[]string{"user-123", "Alice", "alice", "alice@proton.me", "Storage:", "Mail", "Drive"},
 		},
 		{
 			"user with zero max space",
-			proton.User{
-				ID:       "user-456",
-				Name:     "bob",
-				MaxSpace: 0,
+			userInfo{
+				ID:   "user-456",
+				Name: "bob",
 			},
 			[]string{"user-456", "bob"},
 		},
@@ -1374,14 +1372,14 @@ func TestDeriveAndSave_CookieSession_Success(t *testing.T) {
 	}
 
 	var transitionCalled bool
-	wantCookieSess := &common.CookieSession{}
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+	wantCookieSess := &account.CookieSession{}
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
 		transitionCalled = true
 		return wantCookieSess, nil
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, cs *common.CookieSession, keypass []byte) error {
+	cookieLoginSaveFn = func(_ *common.Session, cs *account.CookieSession, keypass []byte) error {
 		cookieSaveCalled = true
 		if cs != wantCookieSess {
 			t.Error("CookieLoginSave received wrong CookieSession")
@@ -1435,12 +1433,12 @@ func TestDeriveAndSave_CookieSession_TransitionError(t *testing.T) {
 		return nil
 	}
 
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
 		return nil, fmt.Errorf("transition failed: server error")
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
 		cookieSaveCalled = true
 		return nil
 	}
@@ -1494,13 +1492,13 @@ func TestDeriveAndSave_NoCookieSession_BearerPath(t *testing.T) {
 	}
 
 	var transitionCalled bool
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
 		transitionCalled = true
 		return nil, nil
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
 		cookieSaveCalled = true
 		return nil
 	}
@@ -1595,12 +1593,12 @@ func TestDeriveAndSave_CookieAuthTrue_OverwritesAccountStore(t *testing.T) {
 		return nil
 	}
 
-	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*common.CookieSession, error) {
-		return &common.CookieSession{}, nil
+	transitionToCookiesFn = func(_ context.Context, _ *common.Session) (*account.CookieSession, error) {
+		return &account.CookieSession{}, nil
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, _ *common.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
 		cookieSaveCalled = true
 		return nil
 	}

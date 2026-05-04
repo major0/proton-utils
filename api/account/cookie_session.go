@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	proton "github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 )
 
 // AuthCookiesReq is the request body for POST /core/v4/auth/cookies.
@@ -37,7 +38,7 @@ type CookieSession struct {
 	AppVersion string               // x-pm-appversion header value
 	UserAgent  string               // User-Agent header value
 	HVDetails  *proton.APIHVDetails // when non-nil, HV headers are added to requests
-	Store      SessionStore         // when non-nil, cookies are persisted after refresh
+	Store      api.SessionStore     // when non-nil, cookies are persisted after refresh
 	cookieJar  http.CookieJar       // contains AUTH-<uid>, REFRESH-<uid>, Session-Id
 	mu         sync.Mutex           // serializes cookie refresh
 }
@@ -63,7 +64,7 @@ const CookieDomain = "proton.me"
 // domain scoping. For Proton domains (*.proton.me), Domain is set to
 // proton.me so cookies match all subdomains. For other domains (e.g.,
 // localhost in tests), the original domain is preserved.
-func loadProtonCookies(jar http.CookieJar, cookies []SerialCookie, baseURL string) {
+func loadProtonCookies(jar http.CookieJar, cookies []api.SerialCookie, baseURL string) {
 	if len(cookies) == 0 {
 		return
 	}
@@ -120,15 +121,35 @@ func loadProtonCookies(jar http.CookieJar, cookies []SerialCookie, baseURL strin
 // which matches both AUTH (parent path /api/) and REFRESH (exact path).
 func cookieQueryURL(baseURL string) *url.URL {
 	if baseURL == "" {
-		baseURL = AccountHost()
+		baseURL = api.AccountHost()
 	}
 	u, err := url.Parse(baseURL)
 	if err != nil {
-		u, _ = url.Parse(AccountHost() + "/auth/refresh")
+		u, _ = url.Parse(api.AccountHost() + "/auth/refresh")
 	}
 	// Override path to match the most restrictive cookie path.
 	u.Path = "/api/auth/refresh"
 	return u
+}
+
+// NewProtonCookieJar creates a new cookie jar and injects the given cookies
+// with Proton domain scoping. Used for session restore.
+func NewProtonCookieJar(cookies []api.SerialCookie, baseURL string) http.CookieJar {
+	jar, _ := cookiejar.New(nil)
+	loadProtonCookies(jar, cookies, baseURL)
+	return jar
+}
+
+// NewCookieSessionForRefresh creates a CookieSession suitable for proactive
+// cookie refresh. Used by restoreExistingCookieService.
+func NewCookieSessionForRefresh(uid, baseURL, appVersion string, jar http.CookieJar, store api.SessionStore) *CookieSession {
+	return &CookieSession{
+		UID:        uid,
+		BaseURL:    baseURL,
+		AppVersion: appVersion,
+		cookieJar:  jar,
+		Store:      store,
+	}
 }
 
 // logCookieSession logs the state of a CookieSession for debugging. Logs
@@ -152,7 +173,7 @@ func (cs *CookieSession) resolveAppVersion(reqURL string) string {
 	if err != nil || u.Host == "" {
 		return cs.AppVersion
 	}
-	svc, err := LookupServiceByHost(u.Hostname())
+	svc, err := api.LookupServiceByHost(u.Hostname())
 	if err != nil {
 		return cs.AppVersion
 	}
@@ -167,7 +188,7 @@ func (cs *CookieSession) buildURL(path string) string {
 	}
 	base := cs.BaseURL
 	if base == "" {
-		base = AccountHost()
+		base = api.AccountHost()
 	}
 	return base + path
 }
@@ -177,7 +198,7 @@ func (cs *CookieSession) buildURL(path string) string {
 // AUTH-<uid> cookie in the cookie jar. The x-pm-uid header is always set.
 //
 // On success (Code 1000), result is populated if non-nil. On API error,
-// returns *Error with Status, Code, and Message. On 401, attempts a cookie
+// returns *api.Error with Status, Code, and Message. On 401, attempts a cookie
 // refresh via RefreshCookies and retries the request once.
 func (cs *CookieSession) DoJSON(ctx context.Context, method, path string, body, result any) error {
 	reqURL := cs.buildURL(path)
@@ -189,7 +210,7 @@ func (cs *CookieSession) DoJSON(ctx context.Context, method, path string, body, 
 	}
 
 	// On 401: attempt cookie refresh and retry once.
-	var apiErr *Error
+	var apiErr *api.Error
 	if errors.As(err, &apiErr) && apiErr.Status == 401 {
 		slog.Debug("cookieSession.DoJSON.401-retry", "method", method, "url", reqURL)
 		if refreshErr := cs.RefreshCookies(ctx); refreshErr != nil {
@@ -230,7 +251,7 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Accept", ProtonAccept)
+	req.Header.Set("Accept", api.ProtonAccept)
 
 	// Add HV headers when a solved CAPTCHA token is present.
 	if cs.HVDetails != nil {
@@ -282,7 +303,7 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 
 	if envelope.Code != 1000 {
 		slog.Debug("cookieSession.doJSONOnce.error", "method", method, "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
-		return &Error{
+		return &api.Error{
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
@@ -297,6 +318,13 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 	}
 
 	return nil
+}
+
+// apiEnvelope is the standard Proton API response wrapper.
+type apiEnvelope struct {
+	Code    int             `json:"Code"`
+	Error   string          `json:"Error,omitempty"`
+	Details json.RawMessage `json:"Details,omitempty"`
 }
 
 // extractRefreshCookie finds the REFRESH-<uid> cookie in the jar for the
@@ -351,7 +379,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 		req.Header.Set("User-Agent", cs.UserAgent)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", ProtonAccept)
+	req.Header.Set("Accept", api.ProtonAccept)
 	// No Authorization: Bearer header — cookie auth only.
 
 	httpClient := &http.Client{Jar: cs.cookieJar}
@@ -372,7 +400,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	}
 
 	if envelope.Code != 1000 {
-		return &Error{
+		return &api.Error{
 			Status:  resp.StatusCode,
 			Code:    envelope.Code,
 			Message: envelope.Error,
@@ -392,7 +420,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 		if loadErr != nil {
 			slog.Error("RefreshCookies: load store for persist", "error", loadErr)
 		} else {
-			config.Cookies = SerializeCookies(cs.cookieJar, cookieQueryURL(cs.BaseURL))
+			config.Cookies = api.SerializeCookies(cs.cookieJar, cookieQueryURL(cs.BaseURL))
 			config.LastRefresh = time.Now()
 			if saveErr := cs.Store.Save(config); saveErr != nil {
 				slog.Error("RefreshCookies: persist cookies", "error", saveErr)
@@ -407,7 +435,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 // SSE streaming. The caller is responsible for closing the returned
 // io.ReadCloser. Sets cookie auth headers (x-pm-uid, x-pm-appversion,
 // User-Agent) plus Accept: text/event-stream. No Authorization: Bearer header
-// is sent. Returns an *Error on non-2xx HTTP status.
+// is sent. Returns an *api.Error on non-2xx HTTP status.
 func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.ReadCloser, error) {
 	reqURL := cs.buildURL(path)
 
@@ -451,19 +479,19 @@ func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.R
 		defer func() { _ = resp.Body.Close() }()
 		respBody, readErr := io.ReadAll(resp.Body)
 		if readErr != nil {
-			return nil, &Error{Status: resp.StatusCode}
+			return nil, &api.Error{Status: resp.StatusCode}
 		}
 		var envelope apiEnvelope
 		if json.Unmarshal(respBody, &envelope) == nil && envelope.Code != 0 {
 			slog.Debug("cookieSession.DoSSE.error", "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
-			return nil, &Error{
+			return nil, &api.Error{
 				Status:  resp.StatusCode,
 				Code:    envelope.Code,
 				Message: envelope.Error,
 				Details: envelope.Details,
 			}
 		}
-		return nil, &Error{Status: resp.StatusCode}
+		return nil, &api.Error{Status: resp.StatusCode}
 	}
 
 	return resp.Body, nil
@@ -473,7 +501,7 @@ func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.R
 // Bearer auth to cookie auth. After this call, the Bearer tokens in the
 // source session are INVALID server-side. Returns a CookieSession with the
 // AUTH and REFRESH cookies set in its jar.
-func TransitionToCookies(ctx context.Context, session *Session) (*CookieSession, error) {
+func TransitionToCookies(ctx context.Context, session *api.Session) (*CookieSession, error) {
 	req := AuthCookiesReq{
 		UID:          session.Auth.UID,
 		RefreshToken: session.Auth.RefreshToken,
@@ -526,10 +554,10 @@ func TransitionToCookies(ctx context.Context, session *Session) (*CookieSession,
 // CookieSessionConfig holds the minimal data to restore a CookieSession
 // without Resty. Stored separately from the Bearer SessionCredentials.
 type CookieSessionConfig struct {
-	UID         string         `json:"uid"`
-	Cookies     []SerialCookie `json:"cookies,omitempty"`
-	LastRefresh time.Time      `json:"last_refresh,omitempty"`
-	Service     string         `json:"service,omitempty"`
+	UID         string             `json:"uid"`
+	Cookies     []api.SerialCookie `json:"cookies,omitempty"`
+	LastRefresh time.Time          `json:"last_refresh,omitempty"`
+	Service     string             `json:"service,omitempty"`
 }
 
 // Config serializes the CookieSession's cookie jar into a CookieSessionConfig
@@ -539,7 +567,7 @@ func (cs *CookieSession) Config() *CookieSessionConfig {
 
 	return &CookieSessionConfig{
 		UID:         cs.UID,
-		Cookies:     SerializeCookies(cs.cookieJar, u),
+		Cookies:     api.SerializeCookies(cs.cookieJar, u),
 		LastRefresh: time.Now(),
 	}
 }
@@ -564,11 +592,11 @@ func CookieSessionFromConfig(config *CookieSessionConfig, baseURL string) *Cooki
 // a login-time cookie transition. The cookieStore receives the serialized
 // cookies, and the accountStore receives CookieAuth=true with empty Bearer
 // tokens (they are invalid after transition).
-func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, cookieSess *CookieSession, keypass []byte) error {
+func CookieLoginSave(cookieStore, accountStore api.SessionStore, session *api.Session, cookieSess *CookieSession, keypass []byte) error {
 	cfg := cookieSess.Config()
-	saltedKeyPass := Base64Encode(keypass)
+	saltedKeyPass := api.Base64Encode(keypass)
 
-	cookieConfig := &SessionCredentials{
+	cookieConfig := &api.SessionCredentials{
 		UID:           cfg.UID,
 		Cookies:       cfg.Cookies,
 		SaltedKeyPass: saltedKeyPass,
@@ -579,7 +607,7 @@ func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, c
 		return fmt.Errorf("cookie login save: cookie store: %w", err)
 	}
 
-	accountConfig := &SessionCredentials{
+	accountConfig := &api.SessionCredentials{
 		UID:           session.Auth.UID,
 		AccessToken:   "",
 		RefreshToken:  "",
@@ -599,16 +627,16 @@ func CookieLoginSave(cookieStore, accountStore SessionStore, session *Session, c
 // a proton.Manager with CookieTransport, and unlocks keyrings. The returned
 // Session uses cookie auth for all Resty-based API calls (GetUser,
 // GetAddresses, etc.). Session.Auth holds the UID but empty Bearer tokens.
-func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieStore SessionStore, acctConfig *SessionCredentials, managerHook func(*proton.Manager)) (*Session, error) {
+func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieStore api.SessionStore, acctConfig *api.SessionCredentials, managerHook func(*proton.Manager)) (*api.Session, error) {
 	cookieConfig, err := cookieStore.Load()
 	if err != nil {
-		if errors.Is(err, ErrKeyNotFound) {
-			return nil, ErrNotLoggedIn
+		if errors.Is(err, api.ErrKeyNotFound) {
+			return nil, api.ErrNotLoggedIn
 		}
 		return nil, fmt.Errorf("cookie session restore: load: %w", err)
 	}
 
-	acctSvc, _ := LookupService("account")
+	acctSvc, _ := api.LookupService("account")
 
 	// Build cookie jar and inject persisted cookies.
 	jar, _ := cookiejar.New(nil)
@@ -650,21 +678,13 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 	}
 	managerOpts = append(managerOpts, options...)
 
-	session := &Session{}
-	session.Throttle = NewThrottle(DefaultThrottleBackoff, DefaultThrottleMaxDelay)
-	session.Sem = NewSemaphore(ctx, DefaultMaxWorkers(), session.Throttle)
-	session.cookieJar = jar
-
-	session.manager = proton.New(managerOpts...)
-	if managerHook != nil {
-		managerHook(session.manager)
-	}
+	session := api.InitSessionWithJar(ctx, jar, managerOpts, managerHook)
 
 	// Attach cookie refresh handler to the transport for 401 retry.
 	attachCookieRefresh(ctx, cookieConfig, jar, ct, cookieStore)
 
 	// Create client with UID for x-pm-uid header, empty tokens (Bearer is dead).
-	session.Client = session.manager.NewClient(cookieConfig.UID, "", "")
+	session.Client = session.Manager().NewClient(cookieConfig.UID, "", "")
 	session.Auth = proton.Auth{
 		UID:          cookieConfig.UID,
 		AccessToken:  "",
@@ -672,31 +692,32 @@ func CookieSessionRestore(ctx context.Context, options []proton.Option, cookieSt
 	}
 
 	// Load user and addresses from account cache, falling back to API.
-	acctCache := newAccountCacheForUID(cookieConfig.UID)
-	cachedUser := accountCacheGetUser(acctCache)
+	acctCache := newAccountCache(cookieConfig.UID)
+	c := &Client{cache: acctCache}
+	cachedUser := c.getUser()
 	if cachedUser != nil {
-		session.user = *cachedUser
+		session.SetUser(*cachedUser)
 	} else {
 		user, err := session.Client.GetUser(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cookie session restore: get user: %w", err)
 		}
-		session.user = user
-		accountCachePutUser(acctCache, user)
+		session.SetUser(user)
+		c.putUser(user)
 	}
 
-	addrs := accountCacheGetAddresses(acctCache)
+	addrs := c.getAddresses()
 	if addrs == nil {
 		var err error
 		addrs, err = session.Client.GetAddresses(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cookie session restore: get addresses: %w", err)
 		}
-		accountCachePutAddresses(acctCache, addrs)
+		c.putAddresses(addrs)
 	}
 
 	// Unlock keyrings using SaltedKeyPass from the account config.
-	keypass, err := Base64Decode(acctConfig.SaltedKeyPass)
+	keypass, err := api.Base64Decode(acctConfig.SaltedKeyPass)
 	if err != nil {
 		return nil, fmt.Errorf("cookie session restore: decode keypass: %w", err)
 	}

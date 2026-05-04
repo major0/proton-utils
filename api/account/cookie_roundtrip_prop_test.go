@@ -1,4 +1,4 @@
-package api
+package account
 
 import (
 	"encoding/json"
@@ -6,12 +6,14 @@ import (
 	"net/http/cookiejar"
 	"testing"
 
+	"github.com/major0/proton-cli/api"
+
 	"pgregory.net/rapid"
 )
 
 // TestPropertyCookiePersistenceRoundTrip verifies that for any set of
-// SerialCookie values with non-empty Name and Value, serializing them into a
-// SessionCredentials, persisting to a mock store, loading back, and injecting into
+// api.SerialCookie values with non-empty Name and Value, serializing them into a
+// api.SessionCredentials, persisting to a mock store, loading back, and injecting into
 // a fresh cookie jar produces a jar where querying the account service URL
 // returns cookies with matching Name and Value for every original cookie.
 //
@@ -26,7 +28,7 @@ func TestPropertyCookiePersistenceRoundTrip(t *testing.T) {
 
 		// Generate cookies with unique names to avoid jar deduplication.
 		seen := make(map[string]bool, n)
-		cookies := make([]SerialCookie, 0, n)
+		cookies := make([]api.SerialCookie, 0, n)
 		for i := 0; i < n; i++ {
 			name := genCookieName(t, fmt.Sprintf("name%d", i))
 			if seen[name] {
@@ -34,27 +36,27 @@ func TestPropertyCookiePersistenceRoundTrip(t *testing.T) {
 			}
 			seen[name] = true
 			value := genCookieValue(t, fmt.Sprintf("value%d", i))
-			cookies = append(cookies, SerialCookie{
+			cookies = append(cookies, api.SerialCookie{
 				Name:  name,
 				Value: value,
 			})
 		}
 
-		// Serialize into a SessionCredentials.
-		config := &SessionCredentials{
+		// Serialize into a api.SessionCredentials.
+		config := &api.SessionCredentials{
 			UID:        "roundtrip-uid",
 			Cookies:    cookies,
 			CookieAuth: true,
 		}
 
 		// Persist to mock store via JSON marshal/unmarshal (simulates store save/load).
-		//nolint:gosec // G117: property test intentionally marshals SessionCredentials.
+		//nolint:gosec // G117: property test intentionally marshals api.SessionCredentials.
 		data, err := json.Marshal(config)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
 
-		var loaded SessionCredentials
+		var loaded api.SessionCredentials
 		if err := json.Unmarshal(data, &loaded); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
@@ -64,12 +66,12 @@ func TestPropertyCookiePersistenceRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cookiejar.New: %v", err)
 		}
-		u := cookieQueryURL(AccountHost())
+		u := cookieQueryURL(api.AccountHost())
 		u.Path = "/"
-		LoadCookies(jar, loaded.Cookies, u)
+		api.LoadCookies(jar, loaded.Cookies, u)
 
 		// Query the jar and assert Name+Value match for every original cookie.
-		queriedCookies := jar.Cookies(cookieQueryURL(AccountHost()))
+		queriedCookies := jar.Cookies(cookieQueryURL(api.AccountHost()))
 
 		type nv struct{ Name, Value string }
 		want := make(map[nv]bool, len(cookies))

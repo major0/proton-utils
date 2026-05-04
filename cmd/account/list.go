@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/jedib0t/go-pretty/v6/table"
-	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -15,7 +15,7 @@ var accountListCmd = &cobra.Command{
 	Long:  `List all accounts in the session store`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		rc := cli.GetContext(cmd)
-		accounts, err := common.SessionList(rc.SessionStore)
+		accounts, err := account.SessionList(rc.SessionStore)
 		if err != nil {
 			return err
 		}

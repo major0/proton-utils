@@ -1,18 +1,19 @@
-package api
+package account
 
 import (
 	"log/slog"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-cli/api"
 )
 
 // NewAuthHandler returns a proton.AuthHandler that persists updated tokens
 // and cookies to the session store. Uses the session's own cookie jar.
-func NewAuthHandler(store SessionStore, session *Session) proton.AuthHandler {
+func NewAuthHandler(store api.SessionStore, session *api.Session) proton.AuthHandler {
 	return func(auth proton.Auth) {
-		session.authMu.Lock()
-		defer session.authMu.Unlock()
+		session.AuthMu().Lock()
+		defer session.AuthMu().Unlock()
 
 		// Update in-memory tokens first.
 		session.Auth = auth
@@ -30,7 +31,7 @@ func NewAuthHandler(store SessionStore, session *Session) proton.AuthHandler {
 		config.UID = auth.UID
 		config.AccessToken = auth.AccessToken
 		config.RefreshToken = auth.RefreshToken
-		config.Cookies = SerializeCookies(session.cookieJar, cookieQueryURL(session.BaseURL))
+		config.Cookies = api.SerializeCookies(session.CookieJar(), cookieQueryURL(session.BaseURL))
 		config.LastRefresh = time.Now()
 
 		if err := store.Save(config); err != nil {

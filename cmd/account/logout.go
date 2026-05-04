@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	common "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/api/account"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +38,7 @@ var authLogoutCmd = &cobra.Command{
 			return err
 		}
 
-		if err := common.SessionRevoke(ctx, session, rc.SessionStore, authLogoutForce); err != nil {
+		if err := account.SessionRevoke(ctx, session, rc.SessionStore, authLogoutForce); err != nil {
 			return err
 		}
 
