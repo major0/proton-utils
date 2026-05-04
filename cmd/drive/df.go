@@ -93,12 +93,12 @@ func runDf(cmd *cobra.Command, _ []string) error {
 	rc := cli.GetContext(cmd)
 	ctx := context.Background()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.SetupSession(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

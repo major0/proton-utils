@@ -16,6 +16,7 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	common "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/account"
+	cli "github.com/major0/proton-cli/cmd"
 )
 
 // testKeyData holds pre-computed PGP key material for cookie login tests.
@@ -242,7 +243,7 @@ func TestCookieLogin_FullFlow(t *testing.T) {
 
 	// Mock cookieLoginSaveFn — capture args.
 	var savedArgs saveFnArgs
-	cookieLoginSaveFn = func(session *common.Session, cs *account.CookieSession, keypass []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, session *common.Session, cs *account.CookieSession, keypass []byte) error {
 		callOrder = append(callOrder, "save")
 		savedArgs = saveFnArgs{session: session, cookieSess: cs, keypass: keypass}
 		return nil
@@ -252,7 +253,7 @@ func TestCookieLogin_FullFlow(t *testing.T) {
 	authLoginParams.twoFA = ""
 
 	ctx := context.Background()
-	err := cookieLogin(ctx, "testuser", password, "")
+	err := cookieLogin(ctx, &cli.RuntimeContext{}, "testuser", password, "")
 	if err != nil {
 		t.Fatalf("cookieLogin() error: %v", err)
 	}
@@ -354,7 +355,7 @@ func TestCookieLogin_WithTwoFA(t *testing.T) {
 	}
 
 	// Mock cookieLoginSaveFn.
-	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, _ *common.Session, _ *account.CookieSession, _ []byte) error {
 		callOrder = append(callOrder, "save")
 		return nil
 	}
@@ -373,7 +374,7 @@ func TestCookieLogin_WithTwoFA(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err := cookieLogin(ctx, "testuser", password, "")
+	err := cookieLogin(ctx, &cli.RuntimeContext{}, "testuser", password, "")
 	if err != nil {
 		t.Fatalf("cookieLogin() error: %v", err)
 	}
@@ -454,7 +455,7 @@ func TestCookieLogin_WithTwoFA_FromFlag(t *testing.T) {
 		return nil
 	}
 
-	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, _ *common.Session, _ *account.CookieSession, _ []byte) error {
 		return nil
 	}
 
@@ -469,7 +470,7 @@ func TestCookieLogin_WithTwoFA_FromFlag(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err := cookieLogin(ctx, "testuser", password, "")
+	err := cookieLogin(ctx, &cli.RuntimeContext{}, "testuser", password, "")
 	if err != nil {
 		t.Fatalf("cookieLogin() error: %v", err)
 	}

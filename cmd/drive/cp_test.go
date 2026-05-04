@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	cli "github.com/major0/proton-cli/cmd"
 )
 
 func TestClassifyPath(t *testing.T) {
@@ -144,7 +142,6 @@ func TestArgSplitting(t *testing.T) {
 
 // resetFlags zeroes cpFlags so tests are independent.
 func resetFlags() {
-	cli.Timeout = 30 * time.Second
 	cpFlags = struct {
 		recursive   bool
 		archive     bool

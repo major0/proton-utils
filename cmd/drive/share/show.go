@@ -15,17 +15,17 @@ func init() {
 	shareShowCmd.RunE = runShareShow
 }
 
-func runShareShow(_ *cobra.Command, args []string) error {
+func runShareShow(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
 	ctx := context.Background()
 
-	session, err := restoreSessionFn(ctx)
+	session, err := setupSessionFn(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := newDriveClientFn(ctx, session)
+	dc, err := newDriveClientFn(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

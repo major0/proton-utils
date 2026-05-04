@@ -30,7 +30,7 @@ func parsePermissions(s string) (int, error) {
 	}
 }
 
-func runShareInvite(_ *cobra.Command, args []string) error {
+func runShareInvite(cmd *cobra.Command, args []string) error {
 	shareName := args[0]
 	email := args[1]
 
@@ -41,12 +41,12 @@ func runShareInvite(_ *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	session, err := restoreSessionFn(ctx)
+	session, err := setupSessionFn(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := newDriveClientFn(ctx, session)
+	dc, err := newDriveClientFn(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

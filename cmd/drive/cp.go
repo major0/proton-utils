@@ -134,12 +134,12 @@ func runCp(cmd *cobra.Command, args []string) error {
 
 	var dc *drive.Client
 	if needSession {
-		session, err := cli.RestoreSession(ctx)
+		session, err := cli.SetupSession(ctx, cmd)
 		if err != nil {
 			return err
 		}
 
-		dc, err = cli.NewDriveClient(ctx, session)
+		dc, err = cli.NewDriveClient(ctx, cmd, session)
 		if err != nil {
 			return err
 		}

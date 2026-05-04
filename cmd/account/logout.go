@@ -13,14 +13,14 @@ import (
 
 // logoutAccountStoreFn loads the account config to check CookieAuth.
 // It is a variable so tests can replace it.
-var logoutAccountStoreFn = func() (*common.SessionCredentials, error) {
-	return cli.AccountStoreVar.Load()
+var logoutAccountStoreFn = func(store common.SessionStore) (*common.SessionCredentials, error) {
+	return store.Load()
 }
 
 // logoutCookieDeleteFn deletes the cookie store entry.
 // It is a variable so tests can replace it.
-var logoutCookieDeleteFn = func() error {
-	return cli.CookieStoreVar.Delete()
+var logoutCookieDeleteFn = func(store common.SessionStore) error {
+	return store.Delete()
 }
 
 var authLogoutForce = false
@@ -33,7 +33,7 @@ var authLogoutCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 		defer cancel()
 
-		session, err := cli.RestoreSession(ctx)
+		session, err := cli.SetupSession(ctx, cmd)
 		if err != nil && !errors.Is(err, common.ErrNotLoggedIn) && !authLogoutForce {
 			return err
 		}
@@ -43,7 +43,7 @@ var authLogoutCmd = &cobra.Command{
 		}
 
 		// Clean up cookie store. Log warning on failure — don't fail the logout.
-		if err := logoutCookieDeleteFn(); err != nil {
+		if err := logoutCookieDeleteFn(rc.CookieStore); err != nil {
 			slog.Warn("logout: cookie store delete failed", "error", err)
 		}
 

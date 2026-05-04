@@ -30,15 +30,15 @@ func init() {
 	cli.BoolFlagP(driveMkdirCmd.Flags(), &mkdirFlags.verbose, "verbose", "v", false, "Print each directory as it is created")
 }
 
-func runMkdir(_ *cobra.Command, args []string) error {
+func runMkdir(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.SetupSession(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

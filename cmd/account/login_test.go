@@ -13,8 +13,27 @@ import (
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/config"
 	cli "github.com/major0/proton-cli/cmd"
+	"github.com/spf13/cobra"
 	"pgregory.net/rapid"
 )
+
+// testCmdWithRC creates a cobra.Command with a RuntimeContext that has
+// the given ProtonOpts. Used by tests that call attemptLogin directly.
+func testCmdWithRC() *cobra.Command {
+	cmd := &cobra.Command{}
+	cli.SetContext(cmd, &cli.RuntimeContext{})
+	return cmd
+}
+
+// setRCOnCmd sets a RuntimeContext with the given session store on a command.
+func setRCOnCmd(cmd *cobra.Command, store common.SessionStore) {
+	cli.SetContext(cmd, &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+	})
+}
 
 // hvDetailsJSON creates a JSON-encoded ErrDetails for HV test errors.
 func hvDetailsJSON(methods []string, token string) proton.ErrDetails {
@@ -443,7 +462,7 @@ func TestAttemptLogin_ErrorPaths(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			_, err := attemptLogin(ctx, "user", "pass")
+			_, err := attemptLogin(ctx, testCmdWithRC(), "user", "pass")
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -467,7 +486,7 @@ func TestAttemptLogin_Success(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	got, err := attemptLogin(ctx, "user", "pass")
+	got, err := attemptLogin(ctx, testCmdWithRC(), "user", "pass")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -514,7 +533,7 @@ func TestAttemptLogin_HVWithCaptcha(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	got, err := attemptLogin(ctx, "user", "pass")
+	got, err := attemptLogin(ctx, testCmdWithRC(), "user", "pass")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -548,7 +567,7 @@ func TestAttemptLogin_CaptchaSolveError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := attemptLogin(ctx, "user", "pass")
+	_, err := attemptLogin(ctx, testCmdWithRC(), "user", "pass")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -588,7 +607,7 @@ func TestAttemptLogin_RetryError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := attemptLogin(ctx, "user", "pass")
+	_, err := attemptLogin(ctx, testCmdWithRC(), "user", "pass")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -751,21 +770,21 @@ func TestDeriveAndSave(t *testing.T) {
 				return []byte("derived-key"), nil
 			}
 
-			sessionSaveFn = func(_ *common.Session, keypass []byte) error {
+			sessionSaveFn = func(_ common.SessionStore, _ *common.Session, keypass []byte) error {
 				if string(keypass) != "derived-key" {
 					t.Errorf("keypass = %q, want %q", string(keypass), "derived-key")
 				}
 				return tt.saveErr
 			}
 
-			cookieStoreDeleteFn = func() error { return nil }
+			cookieStoreDeleteFn = func(_ common.SessionStore) error { return nil }
 
 			session := &common.Session{
 				Auth: proton.Auth{PasswordMode: tt.passMode},
 			}
 
 			ctx := context.Background()
-			err := deriveAndSave(ctx, session, tt.password, tt.mboxpass, false)
+			err := deriveAndSave(ctx, &cli.RuntimeContext{}, session, tt.password, tt.mboxpass, false)
 
 			if tt.wantErr != "" {
 				if err == nil {
@@ -797,6 +816,8 @@ func TestAuthLoginCmd_RunE_LoginError(t *testing.T) {
 		userPromptFn = origPrompt
 	})
 
+	setRCOnCmd(authLoginCmd, &successStore{accounts: []string{}})
+
 	authLoginParams.username = "testuser"
 	authLoginParams.password = "testpass"
 
@@ -820,6 +841,8 @@ func TestAuthLoginCmd_RunE_PromptError(t *testing.T) {
 		authLoginParams = origParams
 		userPromptFn = origPrompt
 	})
+
+	setRCOnCmd(authLoginCmd, &successStore{accounts: []string{}})
 
 	// Force prompting by clearing flags.
 	authLoginParams.username = ""
@@ -845,10 +868,15 @@ func TestAccountCmd_Run(_ *testing.T) {
 }
 
 func TestAccountAddressCmd_RestoreError(t *testing.T) {
-	origStore := cli.SessionStoreVar
-	t.Cleanup(func() { cli.SessionStoreVar = origStore })
-
-	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("not logged in")}
+	store := &failingStore{err: fmt.Errorf("not logged in")}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(accountAddressCmd, rc)
 
 	err := accountAddressCmd.RunE(accountAddressCmd, nil)
 	if err == nil {
@@ -860,10 +888,15 @@ func TestAccountAddressCmd_RestoreError(t *testing.T) {
 }
 
 func TestAccountInfoCmd_RestoreError(t *testing.T) {
-	origStore := cli.SessionStoreVar
-	t.Cleanup(func() { cli.SessionStoreVar = origStore })
-
-	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("session expired")}
+	store := &failingStore{err: fmt.Errorf("session expired")}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(accountInfoCmd, rc)
 
 	err := accountInfoCmd.RunE(accountInfoCmd, nil)
 	if err == nil {
@@ -875,10 +908,15 @@ func TestAccountInfoCmd_RestoreError(t *testing.T) {
 }
 
 func TestAccountListCmd_RestoreError(t *testing.T) {
-	origStore := cli.SessionStoreVar
-	t.Cleanup(func() { cli.SessionStoreVar = origStore })
-
-	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("store corrupted")}
+	store := &failingStore{err: fmt.Errorf("store corrupted")}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(accountListCmd, rc)
 
 	err := accountListCmd.RunE(accountListCmd, nil)
 	if err == nil {
@@ -890,14 +928,20 @@ func TestAccountListCmd_RestoreError(t *testing.T) {
 }
 
 func TestAuthLogoutCmd_RestoreError(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 	})
 
-	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("disk error")}
+	store := &failingStore{err: fmt.Errorf("disk error")}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = false
 
 	err := authLogoutCmd.RunE(authLogoutCmd, nil)
@@ -910,19 +954,24 @@ func TestAuthLogoutCmd_RestoreError(t *testing.T) {
 }
 
 func TestAuthLogoutCmd_NotLoggedIn(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 		logoutCookieDeleteFn = origCookieDelete
 	})
 
-	// ErrKeyNotFound triggers ErrNotLoggedIn in RestoreSession.
-	cli.SessionStoreVar = &failingStore{err: common.ErrKeyNotFound}
+	store := &failingStore{err: common.ErrKeyNotFound}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = false
-	logoutCookieDeleteFn = func() error { return nil }
+	logoutCookieDeleteFn = func(_ common.SessionStore) error { return nil }
 
 	// When not logged in and not forced, it proceeds to SessionRevoke
 	// with nil session, which calls store.Delete().
@@ -934,18 +983,24 @@ func TestAuthLogoutCmd_NotLoggedIn(t *testing.T) {
 }
 
 func TestAuthLogoutCmd_ForceWithError(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 		logoutCookieDeleteFn = origCookieDelete
 	})
 
-	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("some error")}
+	store := &failingStore{err: fmt.Errorf("some error")}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = true
-	logoutCookieDeleteFn = func() error { return nil }
+	logoutCookieDeleteFn = func(_ common.SessionStore) error { return nil }
 
 	// With force=true, even non-ErrNotLoggedIn errors are ignored
 	// and SessionRevoke is called with nil session.
@@ -981,10 +1036,8 @@ func (s *successStore) List() ([]string, error)                 { return s.accou
 func (s *successStore) Switch(_ string) error                   { return nil }
 
 func TestAccountListCmd_Success(t *testing.T) {
-	origStore := cli.SessionStoreVar
-	t.Cleanup(func() { cli.SessionStoreVar = origStore })
 
-	cli.SessionStoreVar = &successStore{accounts: []string{"alice@proton.me", "bob@proton.me"}}
+	setRCOnCmd(accountListCmd, &successStore{accounts: []string{"alice@proton.me", "bob@proton.me"}})
 
 	err := accountListCmd.RunE(accountListCmd, nil)
 	if err != nil {
@@ -993,10 +1046,8 @@ func TestAccountListCmd_Success(t *testing.T) {
 }
 
 func TestAccountListCmd_Empty(t *testing.T) {
-	origStore := cli.SessionStoreVar
-	t.Cleanup(func() { cli.SessionStoreVar = origStore })
 
-	cli.SessionStoreVar = &successStore{accounts: []string{}}
+	setRCOnCmd(accountListCmd, &successStore{accounts: []string{}})
 
 	err := accountListCmd.RunE(accountListCmd, nil)
 	if err != nil {
@@ -1018,7 +1069,7 @@ func TestAttemptLogin_HVDetailsParseError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := attemptLogin(ctx, "user", "pass")
+	_, err := attemptLogin(ctx, testCmdWithRC(), "user", "pass")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1033,14 +1084,12 @@ func TestAuthLoginCmd_RunE_FullPath(t *testing.T) {
 	origSalt := saltKeyPassFn
 	origSave := sessionSaveFn
 	origParams := authLoginParams
-	origStore := cli.SessionStoreVar
 	origCookieDelete := cookieStoreDeleteFn
 	t.Cleanup(func() {
 		sessionFromLoginFn = origLogin
 		saltKeyPassFn = origSalt
 		sessionSaveFn = origSave
 		authLoginParams = origParams
-		cli.SessionStoreVar = origStore
 		cookieStoreDeleteFn = origCookieDelete
 	})
 
@@ -1067,13 +1116,13 @@ func TestAuthLoginCmd_RunE_FullPath(t *testing.T) {
 		return []byte("salted"), nil
 	}
 
-	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, _ []byte) error {
 		return nil
 	}
 
-	cookieStoreDeleteFn = func() error { return nil }
+	cookieStoreDeleteFn = func(_ common.SessionStore) error { return nil }
 
-	cli.SessionStoreVar = &successStore{accounts: []string{}}
+	setRCOnCmd(authLoginCmd, &successStore{accounts: []string{}})
 
 	err := authLoginCmd.RunE(authLoginCmd, nil)
 	if err != nil {
@@ -1085,12 +1134,10 @@ func TestAuthLoginCmd_RunE_TwoFAError(t *testing.T) {
 	origLogin := sessionFromLoginFn
 	origParams := authLoginParams
 	origPrompt := userPromptFn
-	origStore := cli.SessionStoreVar
 	t.Cleanup(func() {
 		sessionFromLoginFn = origLogin
 		authLoginParams = origParams
 		userPromptFn = origPrompt
-		cli.SessionStoreVar = origStore
 	})
 
 	authLoginParams.username = "testuser"
@@ -1114,7 +1161,7 @@ func TestAuthLoginCmd_RunE_TwoFAError(t *testing.T) {
 		return "", fmt.Errorf("2fa prompt failed")
 	}
 
-	cli.SessionStoreVar = &successStore{accounts: []string{}}
+	setRCOnCmd(authLoginCmd, &successStore{accounts: []string{}})
 
 	err := authLoginCmd.RunE(authLoginCmd, nil)
 	if err == nil {
@@ -1129,12 +1176,10 @@ func TestAuthLoginCmd_RunE_DeriveError(t *testing.T) {
 	origLogin := sessionFromLoginFn
 	origSalt := saltKeyPassFn
 	origParams := authLoginParams
-	origStore := cli.SessionStoreVar
 	t.Cleanup(func() {
 		sessionFromLoginFn = origLogin
 		saltKeyPassFn = origSalt
 		authLoginParams = origParams
-		cli.SessionStoreVar = origStore
 	})
 
 	authLoginParams.username = "testuser"
@@ -1159,7 +1204,7 @@ func TestAuthLoginCmd_RunE_DeriveError(t *testing.T) {
 		return nil, fmt.Errorf("salt error")
 	}
 
-	cli.SessionStoreVar = &successStore{accounts: []string{}}
+	setRCOnCmd(authLoginCmd, &successStore{accounts: []string{}})
 
 	err := authLoginCmd.RunE(authLoginCmd, nil)
 	if err == nil {
@@ -1171,10 +1216,8 @@ func TestAuthLoginCmd_RunE_DeriveError(t *testing.T) {
 }
 
 func TestDefaultSessionSaveFn(t *testing.T) {
-	origStore := cli.SessionStoreVar
-	t.Cleanup(func() { cli.SessionStoreVar = origStore })
 
-	cli.SessionStoreVar = &successStore{accounts: []string{}}
+	setRCOnCmd(authLoginCmd, &successStore{accounts: []string{}})
 
 	// Call the real sessionSaveFn default implementation.
 	// It calls common.SessionSave which needs a session with Auth data.
@@ -1190,7 +1233,7 @@ func TestDefaultSessionSaveFn(t *testing.T) {
 		}
 	}()
 
-	_ = sessionSaveFn(session, []byte("keypass"))
+	_ = sessionSaveFn(&successStore{accounts: []string{}}, session, []byte("keypass"))
 }
 
 func TestDefaultSaltKeyPassFn(t *testing.T) {
@@ -1308,40 +1351,26 @@ func TestLogLoginDiagnostics(_ *testing.T) {
 	logLoginDiagnostics()
 }
 
-// TestLoginUsesAccountService verifies that the login command uses
-// cli.ProtonOpts which, after SetService("account"), points to
-// account-api.proton.me.
+// TestLoginUsesAccountService verifies that SetServiceCmd("account")
+// configures the RuntimeContext with account service ProtonOpts.
 func TestLoginUsesAccountService(t *testing.T) {
-	origService := cli.ServiceName
-	origStore := cli.SessionStoreVar
-	origAcctStore := cli.AccountStoreVar
-	origOpts := cli.ProtonOpts
-	origDebug := cli.DebugHTTP
-	origConfig := cli.ConfigVar
-	origOverride := cli.AppVersionOverride
-	t.Cleanup(func() {
-		cli.ServiceName = origService
-		cli.SessionStoreVar = origStore
-		cli.AccountStoreVar = origAcctStore
-		cli.ProtonOpts = origOpts
-		cli.DebugHTTP = origDebug
-		cli.ConfigVar = origConfig
-		cli.AppVersionOverride = origOverride
-	})
+	cmd := &cobra.Command{}
+	rc := &cli.RuntimeContext{
+		Config:      config.DefaultConfig(),
+		SessionFile: "/tmp/test-sessions.db",
+		Account:     "default",
+	}
+	cli.SetContext(cmd, rc)
 
-	cli.DebugHTTP = false
-	cli.ConfigVar = config.DefaultConfig()
-	cli.AppVersionOverride = ""
+	cli.SetServiceCmd(cmd, "account")
 
-	cli.SetService("account")
-
-	if cli.ServiceName != "account" {
-		t.Errorf("ServiceName = %q, want %q", cli.ServiceName, "account")
+	if rc.ServiceName != "account" {
+		t.Errorf("ServiceName = %q, want %q", rc.ServiceName, "account")
 	}
 
-	// ProtonOpts should be non-empty after SetService.
-	if len(cli.ProtonOpts) == 0 {
-		t.Error("ProtonOpts is empty after SetService(account)")
+	// ProtonOpts should be non-empty after SetServiceCmd.
+	if len(rc.ProtonOpts) == 0 {
+		t.Error("ProtonOpts is empty after SetServiceCmd(account)")
 	}
 }
 
@@ -1366,7 +1395,7 @@ func TestDeriveAndSave_CookieSession_Success(t *testing.T) {
 	}
 
 	var bearerSaveCalled bool
-	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, _ []byte) error {
 		bearerSaveCalled = true
 		return nil
 	}
@@ -1379,7 +1408,7 @@ func TestDeriveAndSave_CookieSession_Success(t *testing.T) {
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, cs *account.CookieSession, keypass []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, _ *common.Session, cs *account.CookieSession, keypass []byte) error {
 		cookieSaveCalled = true
 		if cs != wantCookieSess {
 			t.Error("CookieLoginSave received wrong CookieSession")
@@ -1394,7 +1423,7 @@ func TestDeriveAndSave_CookieSession_Success(t *testing.T) {
 		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
 	}
 
-	err := deriveAndSave(context.Background(), session, "pass", "", true)
+	err := deriveAndSave(context.Background(), &cli.RuntimeContext{}, session, "pass", "", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1428,7 +1457,7 @@ func TestDeriveAndSave_CookieSession_TransitionError(t *testing.T) {
 	}
 
 	var bearerSaveCalled bool
-	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, _ []byte) error {
 		bearerSaveCalled = true
 		return nil
 	}
@@ -1438,7 +1467,7 @@ func TestDeriveAndSave_CookieSession_TransitionError(t *testing.T) {
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, _ *common.Session, _ *account.CookieSession, _ []byte) error {
 		cookieSaveCalled = true
 		return nil
 	}
@@ -1447,7 +1476,7 @@ func TestDeriveAndSave_CookieSession_TransitionError(t *testing.T) {
 		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
 	}
 
-	err := deriveAndSave(context.Background(), session, "pass", "", true)
+	err := deriveAndSave(context.Background(), &cli.RuntimeContext{}, session, "pass", "", true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1483,7 +1512,7 @@ func TestDeriveAndSave_NoCookieSession_BearerPath(t *testing.T) {
 	}
 
 	var bearerSaveCalled bool
-	sessionSaveFn = func(_ *common.Session, keypass []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, keypass []byte) error {
 		bearerSaveCalled = true
 		if string(keypass) != "derived-key" {
 			t.Errorf("keypass = %q, want %q", string(keypass), "derived-key")
@@ -1498,18 +1527,18 @@ func TestDeriveAndSave_NoCookieSession_BearerPath(t *testing.T) {
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, _ *common.Session, _ *account.CookieSession, _ []byte) error {
 		cookieSaveCalled = true
 		return nil
 	}
 
-	cookieStoreDeleteFn = func() error { return nil }
+	cookieStoreDeleteFn = func(_ common.SessionStore) error { return nil }
 
 	session := &common.Session{
 		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
 	}
 
-	err := deriveAndSave(context.Background(), session, "pass", "", false)
+	err := deriveAndSave(context.Background(), &cli.RuntimeContext{}, session, "pass", "", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1543,12 +1572,12 @@ func TestDeriveAndSave_CookieAuthFalse_DeletesCookieStore(t *testing.T) {
 		return []byte("derived-key"), nil
 	}
 
-	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, _ []byte) error {
 		return nil
 	}
 
 	var cookieDeleteCalled bool
-	cookieStoreDeleteFn = func() error {
+	cookieStoreDeleteFn = func(_ common.SessionStore) error {
 		cookieDeleteCalled = true
 		return nil
 	}
@@ -1557,7 +1586,7 @@ func TestDeriveAndSave_CookieAuthFalse_DeletesCookieStore(t *testing.T) {
 		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
 	}
 
-	err := deriveAndSave(context.Background(), session, "pass", "", false)
+	err := deriveAndSave(context.Background(), &cli.RuntimeContext{}, session, "pass", "", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1588,7 +1617,7 @@ func TestDeriveAndSave_CookieAuthTrue_OverwritesAccountStore(t *testing.T) {
 	}
 
 	var bearerSaveCalled bool
-	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, _ []byte) error {
 		bearerSaveCalled = true
 		return nil
 	}
@@ -1598,13 +1627,13 @@ func TestDeriveAndSave_CookieAuthTrue_OverwritesAccountStore(t *testing.T) {
 	}
 
 	var cookieSaveCalled bool
-	cookieLoginSaveFn = func(_ *common.Session, _ *account.CookieSession, _ []byte) error {
+	cookieLoginSaveFn = func(_ common.SessionStore, _ common.SessionStore, _ *common.Session, _ *account.CookieSession, _ []byte) error {
 		cookieSaveCalled = true
 		return nil
 	}
 
 	var cookieDeleteCalled bool
-	cookieStoreDeleteFn = func() error {
+	cookieStoreDeleteFn = func(_ common.SessionStore) error {
 		cookieDeleteCalled = true
 		return nil
 	}
@@ -1613,7 +1642,7 @@ func TestDeriveAndSave_CookieAuthTrue_OverwritesAccountStore(t *testing.T) {
 		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
 	}
 
-	err := deriveAndSave(context.Background(), session, "pass", "", true)
+	err := deriveAndSave(context.Background(), &cli.RuntimeContext{}, session, "pass", "", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1645,12 +1674,12 @@ func TestDeriveAndSave_CookieAuthFalse_DeleteErrorIgnored(t *testing.T) {
 	}
 
 	var bearerSaveCalled bool
-	sessionSaveFn = func(_ *common.Session, _ []byte) error {
+	sessionSaveFn = func(_ common.SessionStore, _ *common.Session, _ []byte) error {
 		bearerSaveCalled = true
 		return nil
 	}
 
-	cookieStoreDeleteFn = func() error {
+	cookieStoreDeleteFn = func(_ common.SessionStore) error {
 		return fmt.Errorf("cookie store not found")
 	}
 
@@ -1658,7 +1687,7 @@ func TestDeriveAndSave_CookieAuthFalse_DeleteErrorIgnored(t *testing.T) {
 		Auth: proton.Auth{PasswordMode: proton.OnePasswordMode},
 	}
 
-	err := deriveAndSave(context.Background(), session, "pass", "", false)
+	err := deriveAndSave(context.Background(), &cli.RuntimeContext{}, session, "pass", "", false)
 	if err != nil {
 		t.Fatalf("cookie delete error should be ignored, got: %v", err)
 	}

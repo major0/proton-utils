@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	cli "github.com/major0/proton-cli/cmd"
 )
 
 func TestRunCpArchiveMode(t *testing.T) {
@@ -112,11 +110,8 @@ func TestRunCpEmptySourceList(t *testing.T) {
 }
 
 func TestRunCpTimeout(t *testing.T) {
-	// Verify that cli.Timeout is respected (just ensure it doesn't panic).
+	// Verify that the timeout path doesn't panic.
 	resetFlags()
-	oldTimeout := cli.Timeout
-	cli.Timeout = 5 * time.Second
-	defer func() { cli.Timeout = oldTimeout }()
 
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "src.txt")

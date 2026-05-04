@@ -46,7 +46,7 @@ func init() {
 func runServe(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.SetupSession(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("no active session (run 'proton account login' first): %w", err)
 	}

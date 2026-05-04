@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -24,41 +23,6 @@ func (m *mockSessionStore) Save(_ *common.SessionCredentials) error { return nil
 func (m *mockSessionStore) Delete() error                           { return nil }
 func (m *mockSessionStore) List() ([]string, error)                 { return nil, nil }
 func (m *mockSessionStore) Switch(_ string) error                   { return nil }
-
-func TestRestoreSession(t *testing.T) {
-	tests := []struct {
-		name    string
-		store   common.SessionStore
-		wantErr string
-	}{
-		{
-			name:    "not logged in",
-			store:   &mockSessionStore{loadErr: common.ErrKeyNotFound},
-			wantErr: "not logged in",
-		},
-		{
-			name:    "store load error",
-			store:   &mockSessionStore{loadErr: errors.New("disk failure")},
-			wantErr: "disk failure",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore the package-level variable.
-			origStore := SessionStoreVar
-			t.Cleanup(func() { SessionStoreVar = origStore })
-			SessionStoreVar = tt.store
-
-			_, err := RestoreSession(context.Background())
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want substring %q", err.Error(), tt.wantErr)
-			}
-		})
-	}
-}
 
 func TestConfigFilePath(t *testing.T) {
 	// Set a known value and verify it's returned.
@@ -93,25 +57,8 @@ func TestAddCommand(t *testing.T) {
 }
 
 func TestPersistentPreRunE(t *testing.T) {
-	// Save originals.
 	origParams := rootParams
-	origTimeout := Timeout
-	origDebugHTTP := DebugHTTP
-	origAccount := Account
-	origOpts := ProtonOpts
-	origStore := SessionStoreVar
-	origConfig := ConfigVar
-	origCookieStore := CookieStoreVar
-	t.Cleanup(func() {
-		rootParams = origParams
-		Timeout = origTimeout
-		DebugHTTP = origDebugHTTP
-		Account = origAccount
-		ProtonOpts = origOpts
-		SessionStoreVar = origStore
-		ConfigVar = origConfig
-		CookieStoreVar = origCookieStore
-	})
+	t.Cleanup(func() { rootParams = origParams })
 
 	tests := []struct {
 		name    string
@@ -137,20 +84,25 @@ func TestPersistentPreRunE(t *testing.T) {
 				t.Fatalf("PersistentPreRunE: %v", err)
 			}
 
-			if Account != tt.account {
-				t.Errorf("Account = %q, want %q", Account, tt.account)
+			// Verify RuntimeContext was set correctly.
+			rc := GetContext(rootCmd)
+			if rc == nil {
+				t.Fatal("RuntimeContext is nil after PreRunE")
 			}
-			if Timeout != 5 {
-				t.Errorf("Timeout = %v, want 5", Timeout)
+			if rc.Account != tt.account {
+				t.Errorf("rc.Account = %q, want %q", rc.Account, tt.account)
 			}
-			if ConfigVar == nil {
-				t.Error("ConfigVar is nil after PreRunE")
+			if rc.Timeout != 5 {
+				t.Errorf("rc.Timeout = %v, want 5", rc.Timeout)
 			}
-			if tt.verbose >= 3 && !DebugHTTP {
-				t.Error("DebugHTTP should be true for verbose >= 3")
+			if rc.Config == nil {
+				t.Error("rc.Config is nil after PreRunE")
 			}
-			if tt.verbose < 3 && DebugHTTP {
-				t.Error("DebugHTTP should be false for verbose < 3")
+			if tt.verbose >= 3 && !rc.DebugHTTP {
+				t.Error("rc.DebugHTTP should be true for verbose >= 3")
+			}
+			if tt.verbose < 3 && rc.DebugHTTP {
+				t.Error("rc.DebugHTTP should be false for verbose < 3")
 			}
 		})
 	}
@@ -162,47 +114,20 @@ func contains(s, substr string) bool {
 }
 
 // TestExecute verifies that Execute runs the root command without error.
-// The root command's Run handler just prints help, so this exercises the
-// Execute → rootCmd.Execute path.
 func TestExecute(t *testing.T) {
-	// rootCmd.Execute() calls os.Exit on error, but the default Run
-	// handler (help) succeeds. We call rootCmd.Execute() directly to
-	// avoid the os.Exit wrapper.
 	rootCmd.SetArgs([]string{})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("rootCmd.Execute: %v", err)
 	}
 }
 
-// --- SetService and version resolution tests ---
+// --- SetServiceCmd and version resolution tests ---
 
-func TestSetService(t *testing.T) {
-	// Save originals.
-	origService := ServiceName
-	origStore := SessionStoreVar
-	origAcctStore := AccountStoreVar
-	origOpts := ProtonOpts
-	origDebug := DebugHTTP
-	origConfig := ConfigVar
-	origOverride := AppVersionOverride
+func TestSetServiceCmd(t *testing.T) {
 	origParams := rootParams
-	t.Cleanup(func() {
-		ServiceName = origService
-		SessionStoreVar = origStore
-		AccountStoreVar = origAcctStore
-		ProtonOpts = origOpts
-		DebugHTTP = origDebug
-		ConfigVar = origConfig
-		AppVersionOverride = origOverride
-		rootParams = origParams
-	})
+	t.Cleanup(func() { rootParams = origParams })
 
-	// Initialize required state.
 	rootParams.SessionFile = "/tmp/test-sessions.db"
-	Account = "default"
-	DebugHTTP = false
-	ConfigVar = config.DefaultConfig()
-	AppVersionOverride = ""
 
 	tests := []struct {
 		name        string
@@ -216,77 +141,22 @@ func TestSetService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SetService(tt.service)
+			cmd := &cobra.Command{}
+			rc := &RuntimeContext{
+				Account:     "default",
+				SessionFile: rootParams.SessionFile,
+			}
+			SetContext(cmd, rc)
 
-			if ServiceName != tt.wantService {
-				t.Errorf("ServiceName = %q, want %q", ServiceName, tt.wantService)
+			SetServiceCmd(cmd, tt.service)
+
+			if rc.ServiceName != tt.wantService {
+				t.Errorf("rc.ServiceName = %q, want %q", rc.ServiceName, tt.wantService)
 			}
 
 			// ProtonOpts should be rebuilt (non-nil, non-empty).
-			if len(ProtonOpts) == 0 {
-				t.Error("ProtonOpts is empty after SetService")
-			}
-		})
-	}
-}
-
-func TestResolveVersion(t *testing.T) {
-	origConfig := ConfigVar
-	origOverride := AppVersionOverride
-	t.Cleanup(func() {
-		ConfigVar = origConfig
-		AppVersionOverride = origOverride
-	})
-
-	tests := []struct {
-		name     string
-		override string
-		config   map[string]string
-		service  string
-		want     string
-	}{
-		{
-			"flag override takes precedence",
-			"1.2.3.4",
-			map[string]string{"drive": "9.9.9.9"},
-			"drive",
-			"1.2.3.4",
-		},
-		{
-			"config override used when no flag",
-			"",
-			map[string]string{"drive": "2.0.0.0"},
-			"drive",
-			"2.0.0.0",
-		},
-		{
-			"default version when no overrides",
-			"",
-			nil,
-			"drive",
-			common.DefaultVersion,
-		},
-		{
-			"config for different service not used",
-			"",
-			map[string]string{"lumo": "3.0.0.0"},
-			"drive",
-			common.DefaultVersion,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			AppVersionOverride = tt.override
-			cfg := config.DefaultConfig()
-			if tt.config != nil {
-				cfg.ServiceVersions = tt.config
-			}
-			ConfigVar = cfg
-
-			got := resolveVersion(tt.service)
-			if got != tt.want {
-				t.Errorf("resolveVersion(%q) = %q, want %q", tt.service, got, tt.want)
+			if len(rc.ProtonOpts) == 0 {
+				t.Error("rc.ProtonOpts is empty after SetServiceCmd")
 			}
 		})
 	}
@@ -318,53 +188,147 @@ func TestServiceVersionConfig(t *testing.T) {
 	}
 }
 
-func TestRestoreSession_ServiceAware(t *testing.T) {
-	// When ServiceName is set to a specific service, RestoreSession should
-	// attempt RestoreServiceSession. With a failing store, it should return
-	// an error (not panic).
-	origService := ServiceName
-	origStore := SessionStoreVar
-	origAcctStore := AccountStoreVar
-	origCookieStore := CookieStoreVar
-	origOpts := ProtonOpts
-	t.Cleanup(func() {
-		ServiceName = origService
-		SessionStoreVar = origStore
-		AccountStoreVar = origAcctStore
-		CookieStoreVar = origCookieStore
-		ProtonOpts = origOpts
-	})
+// --- SetupSession tests ---
 
-	ServiceName = "drive"
-	SessionStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
-	AccountStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
-	CookieStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
-
-	_, err := RestoreSession(context.Background())
-	if err == nil {
-		t.Fatal("expected error, got nil")
+func TestSetupSession_WildcardService(t *testing.T) {
+	cmd := &cobra.Command{}
+	rc := &RuntimeContext{
+		ServiceName:  "*",
+		SessionStore: &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		CookieStore:  &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		Config:       config.DefaultConfig(),
 	}
-}
+	SetContext(cmd, rc)
 
-func TestRestoreSession_WildcardFallback(t *testing.T) {
-	// When ServiceName is "*", RestoreSession should use the old path.
-	origService := ServiceName
-	origStore := SessionStoreVar
-	origOpts := ProtonOpts
-	t.Cleanup(func() {
-		ServiceName = origService
-		SessionStoreVar = origStore
-		ProtonOpts = origOpts
-	})
-
-	ServiceName = "*"
-	SessionStoreVar = &mockSessionStore{loadErr: common.ErrKeyNotFound}
-
-	_, err := RestoreSession(context.Background())
+	_, err := SetupSession(context.Background(), cmd)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if !contains(err.Error(), "not logged in") {
 		t.Errorf("error = %q, want containing %q", err.Error(), "not logged in")
 	}
+}
+
+func TestSetupSession_SpecificService(t *testing.T) {
+	cmd := &cobra.Command{}
+	rc := &RuntimeContext{
+		ServiceName:  "drive",
+		SessionStore: &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		AccountStore: &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		CookieStore:  &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		Config:       config.DefaultConfig(),
+	}
+	SetContext(cmd, rc)
+
+	_, err := SetupSession(context.Background(), cmd)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !contains(err.Error(), "not logged in") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "not logged in")
+	}
+}
+
+func TestSetupSession_EmptyService(t *testing.T) {
+	cmd := &cobra.Command{}
+	rc := &RuntimeContext{
+		ServiceName:  "",
+		SessionStore: &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		CookieStore:  &mockSessionStore{loadErr: common.ErrKeyNotFound},
+		Config:       config.DefaultConfig(),
+	}
+	SetContext(cmd, rc)
+
+	_, err := SetupSession(context.Background(), cmd)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !contains(err.Error(), "not logged in") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "not logged in")
+	}
+}
+
+func TestResolveVersionRC(t *testing.T) {
+	tests := []struct {
+		name     string
+		override string
+		config   map[string]string
+		service  string
+		want     string
+	}{
+		{
+			"flag override takes precedence",
+			"1.2.3.4",
+			map[string]string{"drive": "9.9.9.9"},
+			"drive",
+			"1.2.3.4",
+		},
+		{
+			"config override used when no flag",
+			"",
+			map[string]string{"drive": "2.0.0.0"},
+			"drive",
+			"2.0.0.0",
+		},
+		{
+			"empty when no overrides",
+			"",
+			nil,
+			"drive",
+			"",
+		},
+		{
+			"config for different service not used",
+			"",
+			map[string]string{"lumo": "3.0.0.0"},
+			"drive",
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			if tt.config != nil {
+				cfg.ServiceVersions = tt.config
+			}
+			rc := &RuntimeContext{
+				AppVersionOverride: tt.override,
+				Config:             cfg,
+			}
+
+			got := resolveVersionRC(rc, tt.service)
+			if got != tt.want {
+				t.Errorf("resolveVersionRC(%q) = %q, want %q", tt.service, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSessionConfigFromRC(t *testing.T) {
+	t.Run("nil config", func(t *testing.T) {
+		rc := &RuntimeContext{Config: nil}
+		got := sessionConfigFromRC(rc)
+		if got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+
+	t.Run("with config", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		cfg.Shares["test"] = common.ShareConfig{MemoryCache: common.CacheMetadata}
+		cfg.Defaults["drive"] = "myaccount"
+		rc := &RuntimeContext{Config: cfg}
+
+		got := sessionConfigFromRC(rc)
+		if got == nil {
+			t.Fatal("expected non-nil SessionConfig")
+		}
+		if got.Shares["test"].MemoryCache != common.CacheMetadata {
+			t.Errorf("Shares[test].MemoryCache = %v, want %v", got.Shares["test"].MemoryCache, common.CacheMetadata)
+		}
+		if got.Defaults["drive"] != "myaccount" {
+			t.Errorf("Defaults[drive] = %q, want %q", got.Defaults["drive"], "myaccount")
+		}
+	})
 }

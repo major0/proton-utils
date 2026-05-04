@@ -53,22 +53,22 @@ var authLoginCmd = &cobra.Command{
 		defer cancel()
 
 		if authLoginParams.cookieSession {
-			return cookieLogin(ctx, username, password, authLoginParams.mboxpass)
+			return cookieLogin(ctx, rc, username, password, authLoginParams.mboxpass)
 		}
 
-		session, err := attemptLogin(ctx, username, password)
+		session, err := attemptLogin(ctx, cmd, username, password)
 		if err != nil {
 			return err
 		}
 
-		session.AddAuthHandler(account.NewAuthHandler(cli.SessionStoreVar, session))
+		session.AddAuthHandler(account.NewAuthHandler(rc.SessionStore, session))
 		session.AddDeauthHandler(account.NewDeauthHandler())
 
 		if err := handleTwoFA(ctx, session); err != nil {
 			return err
 		}
 
-		if err := deriveAndSave(ctx, session, password, authLoginParams.mboxpass, false); err != nil {
+		if err := deriveAndSave(ctx, rc, session, password, authLoginParams.mboxpass, false); err != nil {
 			return err
 		}
 
@@ -110,8 +110,9 @@ var sessionFromLoginFn = account.SessionFromLogin
 var sessionRetryWithHVFn = account.SessionRetryWithHV
 
 // attemptLogin performs the initial login, handling HV/CAPTCHA if needed.
-func attemptLogin(ctx context.Context, username, password string) (*common.Session, error) {
-	session, err := sessionFromLoginFn(ctx, cli.ProtonOpts, username, password, nil, nil)
+func attemptLogin(ctx context.Context, cmd *cobra.Command, username, password string) (*common.Session, error) {
+	rc := cli.GetContext(cmd)
+	session, err := sessionFromLoginFn(ctx, rc.ProtonOpts, username, password, nil, nil)
 	if err != nil {
 		// Check for HV error (code 9001).
 		apiErr := new(proton.APIError)
@@ -189,9 +190,7 @@ var saltKeyPassFn = func(ctx context.Context, session *common.Session, password 
 
 // sessionSaveFn is the function used to save the session.
 // It is a variable so tests can replace it without real persistence.
-var sessionSaveFn = func(session *common.Session, keypass []byte) error {
-	return account.SessionSave(cli.SessionStoreVar, session, keypass)
-}
+var sessionSaveFn = account.SessionSave
 
 // transitionToCookiesFn is the function used to transition a Bearer session to cookie auth.
 // It is a variable so tests can replace it without making real API calls.
@@ -199,18 +198,16 @@ var transitionToCookiesFn = account.TransitionToCookies
 
 // cookieLoginSaveFn is the function used to save a cookie session after login.
 // It is a variable so tests can replace it without real persistence.
-var cookieLoginSaveFn = func(session *common.Session, cookieSess *account.CookieSession, keypass []byte) error {
-	return account.CookieLoginSave(cli.CookieStoreVar, cli.AccountStoreVar, session, cookieSess, keypass)
-}
+var cookieLoginSaveFn = account.CookieLoginSave
 
 // cookieStoreDeleteFn deletes the cookie store entry. Used during re-login
 // with cookieAuth=false to clean up stale cookie sessions.
 // It is a variable so tests can replace it.
-var cookieStoreDeleteFn = func() error {
-	return cli.CookieStoreVar.Delete()
+var cookieStoreDeleteFn = func(cookieStore common.SessionStore) error {
+	return cookieStore.Delete()
 }
 
-func deriveAndSave(ctx context.Context, session *common.Session, password, mboxpass string, cookieAuth bool) error {
+func deriveAndSave(ctx context.Context, rc *cli.RuntimeContext, session *common.Session, password, mboxpass string, cookieAuth bool) error {
 	passBytes, err := selectKeyPassword(session.Auth.PasswordMode, password, mboxpass)
 	if err != nil {
 		return err
@@ -234,14 +231,14 @@ func deriveAndSave(ctx context.Context, session *common.Session, password, mboxp
 		if err != nil {
 			return fmt.Errorf("cookie transition: %w", err)
 		}
-		return cookieLoginSaveFn(session, cookieSess, keypass)
+		return cookieLoginSaveFn(rc.CookieStore, rc.AccountStore, session, cookieSess, keypass)
 	}
 
 	// When switching from cookie→bearer, clean up any stale cookie session.
 	// Ignore errors — the cookie store may not exist if this is a fresh login.
-	_ = cookieStoreDeleteFn()
+	_ = cookieStoreDeleteFn(rc.CookieStore)
 
-	return sessionSaveFn(session, keypass)
+	return sessionSaveFn(rc.SessionStore, session, keypass)
 }
 
 // createAnonSessionFn is the function used to create an anonymous session.
@@ -263,7 +260,7 @@ var cookieTwoFAFn = account.CookieTwoFA
 // 4. 2FA if needed
 // 5. Account ops (GetUser, GetAddresses, keys/salts) via cookie session
 // 6. Key derivation and save
-func cookieLogin(ctx context.Context, username, password, mboxpass string) error {
+func cookieLogin(ctx context.Context, rc *cli.RuntimeContext, username, password, mboxpass string) error {
 	// Step 1: Create anonymous session on account.proton.me.
 	anon, jar, err := createAnonSessionFn(ctx)
 	if err != nil {
@@ -382,7 +379,7 @@ func cookieLogin(ctx context.Context, username, password, mboxpass string) error
 		return fmt.Errorf("cookie login: unlock: %w", err)
 	}
 
-	if err := cookieLoginSaveFn(session, cookieSess, saltedKeypass); err != nil {
+	if err := cookieLoginSaveFn(rc.CookieStore, rc.AccountStore, session, cookieSess, saltedKeypass); err != nil {
 		return err
 	}
 

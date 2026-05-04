@@ -29,15 +29,15 @@ func init() {
 	cli.BoolFlagP(driveMvCmd.Flags(), &mvFlags.verbose, "verbose", "v", false, "Print each move operation")
 }
 
-func runMv(_ *cobra.Command, args []string) error {
+func runMv(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.SetupSession(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

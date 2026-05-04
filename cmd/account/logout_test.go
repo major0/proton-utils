@@ -24,21 +24,26 @@ func (s *trackingStore) Delete() error {
 // TestLogout_DeletesCookieAndAccountStore verifies that logout deletes both
 // the session store and the cookie store.
 func TestLogout_DeletesCookieAndAccountStore(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 		logoutCookieDeleteFn = origCookieDelete
 	})
 
 	sessionStore := &trackingStore{failingStore: failingStore{err: common.ErrKeyNotFound}}
-	cli.SessionStoreVar = sessionStore
+	rc := &cli.RuntimeContext{
+		SessionStore: sessionStore,
+		AccountStore: sessionStore,
+		CookieStore:  sessionStore,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = false
 
 	var cookieDeleted bool
-	logoutCookieDeleteFn = func() error {
+	logoutCookieDeleteFn = func(_ common.SessionStore) error {
 		cookieDeleted = true
 		return nil
 	}
@@ -58,22 +63,28 @@ func TestLogout_DeletesCookieAndAccountStore(t *testing.T) {
 // TestLogout_ForceLogoutContinuesOnRestoreFailure verifies that with --force,
 // logout continues even when session restore fails.
 func TestLogout_ForceLogoutContinuesOnRestoreFailure(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 		logoutCookieDeleteFn = origCookieDelete
 	})
 
-	cli.SessionStoreVar = &trackingStore{
+	store := &trackingStore{
 		failingStore: failingStore{err: fmt.Errorf("disk error")},
 	}
+	rc := &cli.RuntimeContext{
+		SessionStore: store,
+		AccountStore: store,
+		CookieStore:  store,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = true
 
 	var cookieDeleted bool
-	logoutCookieDeleteFn = func() error {
+	logoutCookieDeleteFn = func(_ common.SessionStore) error {
 		cookieDeleted = true
 		return nil
 	}
@@ -90,20 +101,25 @@ func TestLogout_ForceLogoutContinuesOnRestoreFailure(t *testing.T) {
 // TestLogout_CookieStoreDeleteFailureLogged verifies that a cookie store
 // delete failure is logged but does not fail the logout.
 func TestLogout_CookieStoreDeleteFailureLogged(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 		logoutCookieDeleteFn = origCookieDelete
 	})
 
 	sessionStore := &trackingStore{failingStore: failingStore{err: common.ErrKeyNotFound}}
-	cli.SessionStoreVar = sessionStore
+	rc := &cli.RuntimeContext{
+		SessionStore: sessionStore,
+		AccountStore: sessionStore,
+		CookieStore:  sessionStore,
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = false
 
-	logoutCookieDeleteFn = func() error {
+	logoutCookieDeleteFn = func(_ common.SessionStore) error {
 		return fmt.Errorf("cookie keyring locked")
 	}
 
@@ -120,19 +136,24 @@ func TestLogout_CookieStoreDeleteFailureLogged(t *testing.T) {
 // TestLogout_RestoreErrorWithoutForce verifies that a non-ErrNotLoggedIn
 // restore error is returned when --force is not set.
 func TestLogout_RestoreErrorWithoutForce(t *testing.T) {
-	origStore := cli.SessionStoreVar
 	origForce := authLogoutForce
 	origCookieDelete := logoutCookieDeleteFn
 	t.Cleanup(func() {
-		cli.SessionStoreVar = origStore
 		authLogoutForce = origForce
 		logoutCookieDeleteFn = origCookieDelete
 	})
 
-	cli.SessionStoreVar = &failingStore{err: fmt.Errorf("disk error")}
+	rc := &cli.RuntimeContext{
+		SessionStore: &failingStore{err: fmt.Errorf("disk error")},
+		AccountStore: &failingStore{err: fmt.Errorf("disk error")},
+		CookieStore:  &failingStore{err: fmt.Errorf("disk error")},
+		ServiceName:  "account",
+		Timeout:      5,
+	}
+	cli.SetContext(authLogoutCmd, rc)
 	authLogoutForce = false
 
-	logoutCookieDeleteFn = func() error { return nil }
+	logoutCookieDeleteFn = func(_ common.SessionStore) error { return nil }
 
 	err := authLogoutCmd.RunE(authLogoutCmd, nil)
 	if err == nil {

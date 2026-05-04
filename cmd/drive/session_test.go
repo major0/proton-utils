@@ -10,6 +10,7 @@ import (
 
 	api "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/cmd"
+	"github.com/spf13/cobra"
 )
 
 // mockSessionStore implements api.SessionStore and always returns an error.
@@ -27,14 +28,23 @@ func (m mockSessionStore) Switch(_ string) error                { return nil }
 // allowing us to test the error paths of session-dependent functions.
 func withMockSession(t *testing.T) func() {
 	t.Helper()
-	oldStore := cli.SessionStoreVar
-	oldTimeout := cli.Timeout
-	cli.SessionStoreVar = mockSessionStore{}
-	cli.Timeout = 5 * time.Second
-	return func() {
-		cli.SessionStoreVar = oldStore
-		cli.Timeout = oldTimeout
+	rc := &cli.RuntimeContext{
+		Timeout:      5 * time.Second,
+		SessionStore: mockSessionStore{},
+		AccountStore: mockSessionStore{},
+		CookieStore:  mockSessionStore{},
+		ServiceName:  "drive",
 	}
+	// Set context on all drive commands that tests call.
+	cmds := []*cobra.Command{
+		driveListCmd, driveFindCmd, driveDfCmd,
+		driveMkdirCmd, driveMvCmd, driveRmCmd,
+		driveRmdirCmd, driveTrashEmptyCmd,
+	}
+	for _, cmd := range cmds {
+		cli.SetContext(cmd, rc)
+	}
+	return func() {}
 }
 
 func TestRunListSessionError(t *testing.T) {
@@ -129,7 +139,18 @@ func TestRunCpProtonDestSessionError(t *testing.T) {
 	src := tmp + "/src.txt"
 	_ = os.WriteFile(src, []byte("data"), 0600)
 
-	err := runCp(nil, []string{src, "proton:///dest.txt"})
+	// Create a command with RuntimeContext for runCp.
+	cmd := &cobra.Command{}
+	rc := &cli.RuntimeContext{
+		Timeout:      5 * time.Second,
+		SessionStore: mockSessionStore{},
+		AccountStore: mockSessionStore{},
+		CookieStore:  mockSessionStore{},
+		ServiceName:  "drive",
+	}
+	cli.SetContext(cmd, rc)
+
+	err := runCp(cmd, []string{src, "proton:///dest.txt"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -143,7 +164,18 @@ func TestRunCpProtonSourceSessionError(t *testing.T) {
 	tmp := t.TempDir()
 	dst := tmp + "/dst.txt"
 
-	err := runCp(nil, []string{"proton:///src.txt", dst})
+	// Create a command with RuntimeContext for runCp.
+	cmd := &cobra.Command{}
+	rc := &cli.RuntimeContext{
+		Timeout:      5 * time.Second,
+		SessionStore: mockSessionStore{},
+		AccountStore: mockSessionStore{},
+		CookieStore:  mockSessionStore{},
+		ServiceName:  "drive",
+	}
+	cli.SetContext(cmd, rc)
+
+	err := runCp(cmd, []string{"proton:///src.txt", dst})
 	if err == nil {
 		t.Fatal("expected error")
 	}

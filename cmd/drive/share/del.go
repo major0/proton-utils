@@ -33,12 +33,12 @@ func runShareDel(cmd *cobra.Command, args []string) error {
 	rc := cli.GetContext(cmd)
 	ctx := context.Background()
 
-	session, err := restoreSessionFn(ctx)
+	session, err := setupSessionFn(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := newDriveClientFn(ctx, session)
+	dc, err := newDriveClientFn(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

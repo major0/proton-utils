@@ -40,15 +40,15 @@ func init() {
 	driveCmd.AddCommand(driveTrashEmptyCmd)
 }
 
-func runRm(_ *cobra.Command, args []string) error {
+func runRm(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.SetupSession(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, cmd, session)
 	if err != nil {
 		return err
 	}
@@ -92,15 +92,15 @@ func rmOne(ctx context.Context, dc *drive.Client, rawPath string) error {
 	return nil
 }
 
-func runEmptyTrash(_ *cobra.Command, _ []string) error {
+func runEmptyTrash(cmd *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
-	session, err := cli.RestoreSession(ctx)
+	session, err := cli.SetupSession(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := cli.NewDriveClient(ctx, session)
+	dc, err := cli.NewDriveClient(ctx, cmd, session)
 	if err != nil {
 		return err
 	}

@@ -20,58 +20,17 @@ import (
 
 // rootParamsType holds the parsed root command flags.
 type rootParamsType struct {
-	Account     string
-	ConfigFile  string
-	LogLevel    string
-	MaxWorkers  int
-	SessionFile string
-	Verbose     int
-	Timeout     time.Duration
+	Account            string
+	ConfigFile         string
+	LogLevel           string
+	MaxWorkers         int
+	SessionFile        string
+	Verbose            int
+	Timeout            time.Duration
+	AppVersionOverride string
 }
 
 var (
-	// Timeout holds the global request timeout duration.
-	// Migration: subcommands should use GetContext(cmd).Timeout instead.
-	Timeout time.Duration
-
-	// DebugHTTP is true when verbosity >= 3, enabling HTTP debug logging.
-	// Migration: subcommands should use GetContext(cmd).DebugHTTP instead.
-	DebugHTTP bool
-
-	// ProtonOpts holds the base Proton API options (app version, user agent).
-	// Migration: subcommands should use GetContext(cmd).ProtonOpts instead.
-	ProtonOpts []proton.Option
-
-	// SessionStoreVar handles loading/saving session data.
-	// Migration: subcommands should use GetContext(cmd).SessionStore instead.
-	SessionStoreVar common.SessionStore
-
-	// AccountStoreVar handles loading/saving the account session data.
-	// Migration: subcommands should use GetContext(cmd).AccountStore instead.
-	AccountStoreVar common.SessionStore
-
-	// CookieStoreVar handles loading/saving cookie-based session data.
-	// Migration: subcommands should use GetContext(cmd).CookieStore instead.
-	CookieStoreVar common.SessionStore
-
-	// Account holds the current --account flag value.
-	// Migration: subcommands should use GetContext(cmd).Account instead.
-	Account string
-
-	// ServiceName holds the current service context. Default is "*" (wildcard).
-	// Migration: subcommands should use GetContext(cmd).ServiceName instead.
-	ServiceName string
-
-	// AppVersionOverride holds the --app-version flag value.
-	// Migration: subcommands should use GetContext(cmd).AppVersionOverride instead.
-	AppVersionOverride string
-
-	// ConfigVar holds the loaded application config.
-	// Migration: subcommands should use GetContext(cmd).Config instead.
-	ConfigVar *config.Config
-
-	// Private variables below this point
-
 	logLevel = new(slog.LevelVar)
 
 	// rootCmd parameter store. Only the results of Flags and our preRun
@@ -151,23 +110,12 @@ var (
 				CookieStore:        internal.NewSessionStore(rootParams.SessionFile, rootParams.Account, "cookie", internal.SystemKeyring{}),
 				Account:            rootParams.Account,
 				ServiceName:        "*",
-				AppVersionOverride: AppVersionOverride,
+				AppVersionOverride: rootParams.AppVersionOverride,
 				Config:             cfg,
 				SessionFile:        rootParams.SessionFile,
 				Verbose:            rootParams.Verbose,
 			}
 			SetContext(cmd, rc)
-
-			// Sync deprecated globals from RuntimeContext.
-			Timeout = rc.Timeout
-			DebugHTTP = rc.DebugHTTP
-			ProtonOpts = rc.ProtonOpts
-			SessionStoreVar = rc.SessionStore
-			AccountStoreVar = rc.AccountStore
-			CookieStoreVar = rc.CookieStore
-			Account = rc.Account
-			ServiceName = rc.ServiceName
-			ConfigVar = rc.Config
 
 			return nil
 		},
@@ -182,29 +130,9 @@ func AddCommand(cmd *cobra.Command) {
 	rootCmd.AddCommand(cmd)
 }
 
-// SetService configures the CLI for a specific service.
-// Migration: use SetServiceCmd instead.
-func SetService(service string) {
-	ServiceName = service
-	svc, _ := common.LookupService(service)
-
-	SessionStoreVar = internal.NewSessionStore(
-		rootParams.SessionFile, Account, service, internal.SystemKeyring{},
-	)
-
-	ProtonOpts = []proton.Option{
-		proton.WithHostURL(svc.Host),
-		proton.WithAppVersion(AppVersion),
-		proton.WithUserAgent(UserAgent),
-	}
-
-	if DebugHTTP {
-		ProtonOpts = append(ProtonOpts, proton.WithDebug(true))
-	}
-}
-
-// SetServiceCmd is the context-aware version of SetService. Subcommands
-// should migrate to this once they use GetContext.
+// SetServiceCmd configures the service context on a command. Subcommands
+// call this to set the service name, session store, and Proton options
+// on RuntimeContext.
 func SetServiceCmd(cmd *cobra.Command, service string) {
 	rc := GetContext(cmd)
 	rc.ServiceName = service
@@ -223,51 +151,71 @@ func SetServiceCmd(cmd *cobra.Command, service string) {
 	if rc.DebugHTTP {
 		rc.ProtonOpts = append(rc.ProtonOpts, proton.WithDebug(true))
 	}
-
-	// Sync deprecated globals.
-	SetService(service)
 }
 
-// resolveVersion returns the app version string for a service, checking
-// (in order): --app-version flag, config file override, DefaultVersion.
-func resolveVersion(service string) string {
-	if AppVersionOverride != "" {
-		return AppVersionOverride
+// resolveVersionRC returns the app version override for a service using
+// RuntimeContext values. Checks (in order): AppVersionOverride flag,
+// config file override. Returns empty string when no override is
+// configured, allowing the service's default version to be used.
+func resolveVersionRC(rc *RuntimeContext, service string) string {
+	if rc.AppVersionOverride != "" {
+		return rc.AppVersionOverride
 	}
-	if ConfigVar != nil {
-		if v := ConfigVar.ServiceVersion(service, ""); v != "" {
+	if rc.Config != nil {
+		if v := rc.Config.ServiceVersion(service, ""); v != "" {
 			return v
 		}
 	}
-	return common.DefaultVersion
+	return ""
 }
 
-// RestoreSession returns a fully initialized, ready-to-use session using
-// the package-level ProtonOpts and SessionStoreVar. When ServiceName is set
-// to a specific service (not "*"), it uses RestoreServiceSession which
-// handles auto-forking from the account session.
-func RestoreSession(ctx context.Context) (*common.Session, error) {
-	if ServiceName != "" && ServiceName != "*" {
-		svc, _ := common.LookupService(ServiceName)
+// SetupSession returns a fully initialized, ready-to-use session by
+// reading all per-invocation state from RuntimeContext. It calls
+// api/account/ restore primitives, sets BaseURL/AppVersion/UserAgent,
+// loads config onto Session.Config, and returns a ready session.
+//
+// When RuntimeContext.ServiceName is set to a specific service (not "*"),
+// it uses RestoreServiceSession which handles auto-forking from the
+// account session.
+func SetupSession(ctx context.Context, cmd *cobra.Command) (*common.Session, error) {
+	rc := GetContext(cmd)
+
+	if rc.ServiceName != "" && rc.ServiceName != "*" {
+		svc, _ := common.LookupService(rc.ServiceName)
+		version := resolveVersionRC(rc, rc.ServiceName)
 		session, err := account.RestoreServiceSession(
-			ctx, ServiceName, ProtonOpts,
-			SessionStoreVar, AccountStoreVar, CookieStoreVar,
-			svc.AppVersion(""), requestTimeoutHook,
+			ctx, rc.ServiceName, rc.ProtonOpts,
+			rc.SessionStore, rc.AccountStore, rc.CookieStore,
+			svc.AppVersion(version), requestTimeoutHook,
 		)
 		if err != nil {
 			return nil, err
 		}
 		session.UserAgent = UserAgent
+		session.Config = sessionConfigFromRC(rc)
 		return session, nil
 	}
 
-	session, err := account.ReadySession(ctx, ProtonOpts, SessionStoreVar, CookieStoreVar, requestTimeoutHook)
+	session, err := account.ReadySession(ctx, rc.ProtonOpts, rc.SessionStore, rc.CookieStore, requestTimeoutHook)
 	if err != nil {
 		return nil, err
 	}
 	session.AppVersion = AppVersion
 	session.UserAgent = UserAgent
+	session.Config = sessionConfigFromRC(rc)
 	return session, nil
+}
+
+// sessionConfigFromRC builds a SessionConfig from the RuntimeContext's
+// loaded application config. Returns nil when no config is available.
+func sessionConfigFromRC(rc *RuntimeContext) *common.SessionConfig {
+	if rc.Config == nil {
+		return nil
+	}
+	return &common.SessionConfig{
+		Shares:   rc.Config.Shares,
+		Defaults: rc.Config.Defaults,
+	}
 }
 
 // requestTimeoutHook sets a per-request timeout on the proton.Manager's
@@ -283,18 +231,21 @@ func requestTimeoutHook(_ *proton.Manager) {
 	// as its Base, so this applies to all API requests.
 	if t, ok := http.DefaultTransport.(*http.Transport); ok {
 		if t.ResponseHeaderTimeout == 0 {
-			t.ResponseHeaderTimeout = Timeout
+			t.ResponseHeaderTimeout = rootParams.Timeout
 		}
 	}
 }
 
-// NewDriveClient creates a drive client with the loaded config applied.
-func NewDriveClient(ctx context.Context, session *common.Session) (*drive.Client, error) {
+// NewDriveClient creates a drive client from a session and applies config
+// from RuntimeContext. The cmd parameter is used to retrieve the loaded
+// application config via GetContext.
+func NewDriveClient(ctx context.Context, cmd *cobra.Command, session *common.Session) (*drive.Client, error) {
 	dc, err := drive.NewClient(ctx, session)
 	if err != nil {
 		return nil, err
 	}
-	dc.Config = ConfigVar
+	rc := GetContext(cmd)
+	dc.Config = rc.Config
 	dc.InitObjectCache()
 	return dc, nil
 }
@@ -327,7 +278,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootParams.SessionFile, "session-file", "", "Session file to use. Defaults to value XDG_CACHE_FILE")
 	rootCmd.PersistentFlags().DurationVarP(&rootParams.Timeout, "timeout", "t", 60*time.Second, "Timeout for requests.")
 	rootCmd.PersistentFlags().IntVarP(&rootParams.MaxWorkers, "max-jobs", "j", 10, "Maximum number of jobs to run in parallel.")
-	rootCmd.PersistentFlags().StringVar(&AppVersionOverride, "app-version", "", "Override the app version string for this invocation")
+	rootCmd.PersistentFlags().StringVar(&rootParams.AppVersionOverride, "app-version", "", "Override the app version string for this invocation")
 
 	// Profile flag — only registers when built with -tags profile.
 	RegisterProfileFlag()

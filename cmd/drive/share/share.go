@@ -14,7 +14,7 @@ import (
 // restoreSessionFn, newDriveClientFn, resolveShareFn, and listSharesFn
 // are replaceable for testing.
 var (
-	restoreSessionFn = cli.RestoreSession
+	setupSessionFn   = cli.SetupSession
 	newDriveClientFn = cli.NewDriveClient
 	resolveShareFn   = func(ctx context.Context, dc *drive.Client, name string) (*drive.Share, error) {
 		return dc.ResolveShare(ctx, name, true)

@@ -11,13 +11,15 @@ import (
 	"github.com/major0/proton-cli/api/config"
 	"github.com/major0/proton-cli/api/drive"
 	cli "github.com/major0/proton-cli/cmd"
+	"github.com/spf13/cobra"
 )
 
 // saveAndRestore saves the current function variables and returns a cleanup
-// function that restores them.
+// function that restores them. It also sets up a RuntimeContext on all
+// share commands so GetContext works in tests.
 func saveAndRestore(t *testing.T) {
 	t.Helper()
-	origRestore := restoreSessionFn
+	origSetup := setupSessionFn
 	origNewClient := newDriveClientFn
 	origResolve := resolveShareFn
 	origList := listSharesFn
@@ -28,9 +30,8 @@ func saveAndRestore(t *testing.T) {
 	origRemove := removeMemberFn
 	origDelInv := deleteInvitationFn
 	origDelExt := deleteExternalInvitationFn
-	origStore := cli.SessionStoreVar
 	t.Cleanup(func() {
-		restoreSessionFn = origRestore
+		setupSessionFn = origSetup
 		newDriveClientFn = origNewClient
 		resolveShareFn = origResolve
 		listSharesFn = origList
@@ -41,54 +42,65 @@ func saveAndRestore(t *testing.T) {
 		removeMemberFn = origRemove
 		deleteInvitationFn = origDelInv
 		deleteExternalInvitationFn = origDelExt
-		cli.SessionStoreVar = origStore
 	})
+
+	// Set up a RuntimeContext on all share commands so GetContext works.
+	rc := &cli.RuntimeContext{
+		Config: config.DefaultConfig(),
+	}
+	cmds := []*cobra.Command{
+		shareCmd, shareAddCmd, shareDelCmd, shareListCmd,
+		shareShowCmd, shareRevokeCmd, shareCacheCmd, shareInviteCmd,
+	}
+	for _, cmd := range cmds {
+		cli.SetContext(cmd, rc)
+	}
 }
 
-// injectSessionError sets restoreSessionFn to return the given error.
+// injectSessionError sets setupSessionFn to return the given error.
 func injectSessionError(err error) {
-	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
+	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return nil, err
 	}
 }
 
-// injectClientError sets restoreSessionFn to succeed and newDriveClientFn
+// injectClientError sets setupSessionFn to succeed and newDriveClientFn
 // to return the given error.
 func injectClientError(err error) {
-	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
+	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return &api.Session{}, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
 		return nil, err
 	}
 }
 
-// injectTestClient sets restoreSessionFn to succeed and newDriveClientFn
+// injectTestClient sets setupSessionFn to succeed and newDriveClientFn
 // to return a Client with a real proton.Client that will fail on API calls.
 func injectTestClient() {
 	m := proton.New()
 	client := m.NewClient("test-uid", "test-acc", "test-ref")
 	session := &api.Session{Client: client}
 
-	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
+	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
 		return &drive.Client{Session: session}, nil
 	}
 }
 
-// injectResolvedShare sets up function variables so that restoreSession
+// injectResolvedShare sets up function variables so that setupSession
 // and newDriveClient succeed, and resolveShareFn returns the given share.
 func injectResolvedShare(share *drive.Share) {
 	m := proton.New()
 	client := m.NewClient("test-uid", "test-acc", "test-ref")
 	session := &api.Session{Client: client}
 
-	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
+	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
 		return &drive.Client{Session: session}, nil
 	}
 	resolveShareFn = func(_ context.Context, _ *drive.Client, _ string) (*drive.Share, error) {
@@ -103,10 +115,10 @@ func injectShareList(shares []*drive.Share) {
 	client := m.NewClient("test-uid", "test-acc", "test-ref")
 	session := &api.Session{Client: client}
 
-	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
+	setupSessionFn = func(_ context.Context, _ *cobra.Command) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *cobra.Command, _ *api.Session) (*drive.Client, error) {
 		return &drive.Client{Session: session}, nil
 	}
 	listSharesFn = func(_ context.Context, _ *drive.Client) ([]*drive.Share, error) {
@@ -587,9 +599,9 @@ func TestShareCacheCmd_ShowState(t *testing.T) {
 	injectResolvedShare(share)
 
 	// No toggle flags — should show current state.
-	origConfig := cli.ConfigVar
-	t.Cleanup(func() { cli.ConfigVar = origConfig })
-	cli.ConfigVar = nil
+	origConfig := cli.GetContext(shareCacheCmd).Config
+	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
+	cli.GetContext(shareCacheCmd).Config = nil
 
 	err := shareCacheCmd.RunE(shareCacheCmd, []string{"Shared Folder"})
 	if err != nil {
@@ -602,10 +614,10 @@ func TestShareCacheCmd_ToggleFlags(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared Folder")
 	injectResolvedShare(share)
 
-	origConfig := cli.ConfigVar
+	origConfig := cli.GetContext(shareCacheCmd).Config
 	origFlags := cacheFlags
 	t.Cleanup(func() {
-		cli.ConfigVar = origConfig
+		cli.GetContext(shareCacheCmd).Config = origConfig
 		cacheFlags = origFlags
 	})
 
@@ -613,7 +625,7 @@ func TestShareCacheCmd_ToggleFlags(t *testing.T) {
 	configPath := tmpDir + "/config.yaml"
 
 	cfg := config.DefaultConfig()
-	cli.ConfigVar = cfg
+	cli.GetContext(shareCacheCmd).Config = cfg
 
 	// Save a config so SaveConfig has a valid path.
 	if err := config.SaveConfig(configPath, cfg); err != nil {
@@ -694,10 +706,10 @@ func TestShareCacheCmd_DisableFlags(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Test Share")
 	injectResolvedShare(share)
 
-	origConfig := cli.ConfigVar
+	origConfig := cli.GetContext(shareCacheCmd).Config
 	origFlags := cacheFlags
 	t.Cleanup(func() {
-		cli.ConfigVar = origConfig
+		cli.GetContext(shareCacheCmd).Config = origConfig
 		cacheFlags = origFlags
 	})
 
@@ -706,7 +718,7 @@ func TestShareCacheCmd_DisableFlags(t *testing.T) {
 		MemoryCache: api.CacheMetadata,
 		DiskCache:   api.DiskCacheObjectStore,
 	}
-	cli.ConfigVar = cfg
+	cli.GetContext(shareCacheCmd).Config = cfg
 
 	cacheFlags.memoryCache = "disabled"
 	cacheFlags.diskCache = "disabled"
@@ -727,21 +739,21 @@ func TestShareCacheCmd_OnDiskToggle(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Disk Share")
 	injectResolvedShare(share)
 
-	origConfig := cli.ConfigVar
+	origConfig := cli.GetContext(shareCacheCmd).Config
 	origFlags := cacheFlags
 	t.Cleanup(func() {
-		cli.ConfigVar = origConfig
+		cli.GetContext(shareCacheCmd).Config = origConfig
 		cacheFlags = origFlags
 	})
 
-	cli.ConfigVar = config.DefaultConfig()
+	cli.GetContext(shareCacheCmd).Config = config.DefaultConfig()
 
 	cacheFlags.memoryCache = ""
 	cacheFlags.diskCache = "objectstore"
 
 	_ = shareCacheCmd.RunE(shareCacheCmd, []string{"Disk Share"})
 
-	sc := cli.ConfigVar.Shares["Disk Share"]
+	sc := cli.GetContext(shareCacheCmd).Config.Shares["Disk Share"]
 	if sc.DiskCache != api.DiskCacheObjectStore {
 		t.Error("expected disk cache objectstore")
 	}
@@ -767,12 +779,12 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared Folder")
 	injectResolvedShare(share)
 
-	origConfig := cli.ConfigVar
-	t.Cleanup(func() { cli.ConfigVar = origConfig })
+	origConfig := cli.GetContext(shareCacheCmd).Config
+	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
 
 	cfg := config.DefaultConfig()
 	cfg.Shares["Shared Folder"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
-	cli.ConfigVar = cfg
+	cli.GetContext(shareCacheCmd).Config = cfg
 
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
 		return nil
@@ -794,9 +806,9 @@ func TestShareDelCmd_SuccessNoConfig(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Other")
 	injectResolvedShare(share)
 
-	origConfig := cli.ConfigVar
-	t.Cleanup(func() { cli.ConfigVar = origConfig })
-	cli.ConfigVar = nil
+	origConfig := cli.GetContext(shareCacheCmd).Config
+	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
+	cli.GetContext(shareCacheCmd).Config = nil
 
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
 		return nil
@@ -974,14 +986,14 @@ func TestShareCacheCmd_SaveConfigError(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Save Test")
 	injectResolvedShare(share)
 
-	origConfig := cli.ConfigVar
+	origConfig := cli.GetContext(shareCacheCmd).Config
 	origFlags := cacheFlags
 	t.Cleanup(func() {
-		cli.ConfigVar = origConfig
+		cli.GetContext(shareCacheCmd).Config = origConfig
 		cacheFlags = origFlags
 	})
 
-	cli.ConfigVar = config.DefaultConfig()
+	cli.GetContext(shareCacheCmd).Config = config.DefaultConfig()
 
 	cacheFlags.memoryCache = "linkname"
 	cacheFlags.diskCache = ""
@@ -1000,14 +1012,14 @@ func TestShareDelCmd_ForceFlag(t *testing.T) {
 	injectResolvedShare(share)
 
 	origForce := delFlags.force
-	origConfig := cli.ConfigVar
+	origConfig := cli.GetContext(shareCacheCmd).Config
 	t.Cleanup(func() {
 		delFlags.force = origForce
-		cli.ConfigVar = origConfig
+		cli.GetContext(shareCacheCmd).Config = origConfig
 	})
 
 	delFlags.force = true
-	cli.ConfigVar = config.DefaultConfig()
+	cli.GetContext(shareCacheCmd).Config = config.DefaultConfig()
 
 	var gotForce bool
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, force bool) error {

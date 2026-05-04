@@ -57,7 +57,7 @@ var accountAddressCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), rc.Timeout)
 		defer cancel()
 
-		session, err := cli.RestoreSession(ctx)
+		session, err := cli.SetupSession(ctx, cmd)
 		if err != nil {
 			return err
 		}

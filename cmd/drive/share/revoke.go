@@ -71,18 +71,18 @@ func findRevokeTarget(arg string, members []drive.Member, invs []drive.Invitatio
 	}
 }
 
-func runShareRevoke(_ *cobra.Command, args []string) error {
+func runShareRevoke(cmd *cobra.Command, args []string) error {
 	shareName := args[0]
 	target := args[1]
 
 	ctx := context.Background()
 
-	session, err := restoreSessionFn(ctx)
+	session, err := setupSessionFn(ctx, cmd)
 	if err != nil {
 		return err
 	}
 
-	dc, err := newDriveClientFn(ctx, session)
+	dc, err := newDriveClientFn(ctx, cmd, session)
 	if err != nil {
 		return err
 	}
