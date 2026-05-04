@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/lumo"
-	"github.com/major0/proton-cli/api/lumo/openai"
 )
 
 // TestMapLumoError_Table verifies the error mapping table from Lumo sentinel
@@ -61,7 +60,7 @@ func TestModelsHandler(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want application/json", ct)
 	}
 
-	var resp openai.ModelList
+	var resp lumo.OAIModelList
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

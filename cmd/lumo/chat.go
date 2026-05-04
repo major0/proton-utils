@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -29,7 +28,7 @@ func init() {
 }
 
 // resolveSpace returns the space ID from the --space flag or the default space.
-func resolveSpace(ctx context.Context, client *lumoClient.Client) (string, error) {
+func resolveSpace(ctx context.Context, client *lumo.Client) (string, error) {
 	if chatSpaceFlag != "" {
 		return chatSpaceFlag, nil
 	}
@@ -135,7 +134,7 @@ func runChatResume(cmd *cobra.Command, args []string) error {
 	for _, msg := range messages {
 		content := decrypt(msg)
 		role := lumo.RoleUser
-		if msg.Role == lumoClient.RoleAssistant {
+		if msg.Role == lumo.WireRoleAssistant {
 			role = lumo.RoleAssistant
 		}
 		turns = append(turns, lumo.Turn{Role: role, Content: content})
@@ -167,7 +166,7 @@ func decryptMessageContent(msg lumo.Message, dek []byte, convTag string) string 
 	}
 
 	role := "user"
-	if msg.Role == lumoClient.RoleAssistant {
+	if msg.Role == lumo.WireRoleAssistant {
 		role = "assistant"
 	}
 
@@ -223,7 +222,7 @@ func runChatList(cmd *cobra.Command, _ []string) error {
 }
 
 // runChatListSpace lists conversations in a single space.
-func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID string, verbose bool) error {
+func runChatListSpace(ctx context.Context, client *lumo.Client, spaceID string, verbose bool) error {
 	convs, err := client.ListConversations(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("listing conversations: %w", err)
@@ -264,7 +263,7 @@ func runChatListSpace(ctx context.Context, client *lumoClient.Client, spaceID st
 }
 
 // runChatListAll lists conversations across all simple (non-project) spaces.
-func runChatListAll(ctx context.Context, client *lumoClient.Client, verbose bool) error {
+func runChatListAll(ctx context.Context, client *lumo.Client, verbose bool) error {
 	pairs, err := client.ListAllConversations(ctx)
 	if err != nil {
 		return fmt.Errorf("listing conversations: %w", err)
@@ -422,7 +421,7 @@ func runChatDelete(cmd *cobra.Command, args []string) error {
 
 // resolveConversationID resolves a short or full conversation ID against
 // all conversations across all spaces.
-func resolveConversationID(ctx context.Context, client *lumoClient.Client, input string) (string, error) {
+func resolveConversationID(ctx context.Context, client *lumo.Client, input string) (string, error) {
 	pairs, err := client.ListAllConversations(ctx)
 	if err != nil {
 		return "", fmt.Errorf("loading conversations: %w", err)

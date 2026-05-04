@@ -4,22 +4,21 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/lumo"
-	"github.com/major0/proton-cli/api/lumo/openai"
 	"pgregory.net/rapid"
 )
 
 // genOpenAIMessage generates an arbitrary OpenAI message with a known role.
-func genOpenAIMessage(t *rapid.T) openai.Message {
-	return openai.Message{
+func genOpenAIMessage(t *rapid.T) lumo.OAIMessage {
+	return lumo.OAIMessage{
 		Role:    rapid.SampledFrom([]string{"system", "user", "assistant"}).Draw(t, "role"),
 		Content: rapid.String().Draw(t, "content"),
 	}
 }
 
 // genOpenAIMessages generates a non-empty slice of OpenAI messages.
-func genOpenAIMessages(t *rapid.T) []openai.Message {
+func genOpenAIMessages(t *rapid.T) []lumo.OAIMessage {
 	n := rapid.IntRange(1, 20).Draw(t, "num_messages")
-	msgs := make([]openai.Message, n)
+	msgs := make([]lumo.OAIMessage, n)
 	for i := range msgs {
 		msgs[i] = genOpenAIMessage(t)
 	}

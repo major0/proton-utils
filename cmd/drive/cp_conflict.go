@@ -7,7 +7,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 )
 
 // handleConflict checks whether the destination already exists and
@@ -19,7 +18,7 @@ import (
 //   - --backup: rename local to <name>~ before copy
 //
 // Directories always merge — no conflict.
-func handleConflict(ctx context.Context, dc *driveClient.Client, dst *resolvedEndpoint, opts cpOptions) error {
+func handleConflict(ctx context.Context, dc *drive.Client, dst *resolvedEndpoint, opts cpOptions) error {
 	if dst.isDir() {
 		return nil
 	}

@@ -5,13 +5,12 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/lumo"
-	"github.com/major0/proton-cli/api/lumo/openai"
 )
 
 // MessagesToTurns converts OpenAI messages to Lumo turns.
 // Role mapping: system→RoleSystem, user→RoleUser, assistant→RoleAssistant.
 // Unknown roles default to RoleUser.
-func MessagesToTurns(msgs []openai.Message) []lumo.Turn {
+func MessagesToTurns(msgs []lumo.OAIMessage) []lumo.Turn {
 	turns := make([]lumo.Turn, len(msgs))
 	for i, m := range msgs {
 		turns[i] = lumo.Turn{
@@ -39,18 +38,18 @@ func mapRole(role string) lumo.Role {
 // ChunkToSSEEvent converts a Lumo response message to an OpenAI streaming
 // chunk. Returns the chunk and whether the message produced output
 // (token_data with non-empty content).
-func ChunkToSSEEvent(msg lumo.GenerationResponseMessage, id, model string) (openai.ChatCompletionChunk, bool) {
+func ChunkToSSEEvent(msg lumo.GenerationResponseMessage, id, model string) (lumo.ChatCompletionChunk, bool) {
 	if msg.Type != "token_data" || msg.Content == "" {
-		return openai.ChatCompletionChunk{}, false
+		return lumo.ChatCompletionChunk{}, false
 	}
-	return openai.ChatCompletionChunk{
+	return lumo.ChatCompletionChunk{
 		ID:      id,
 		Object:  "chat.completion.chunk",
 		Created: time.Now().Unix(),
 		Model:   model,
-		Choices: []openai.Choice{{
+		Choices: []lumo.Choice{{
 			Index: 0,
-			Delta: &openai.Message{
+			Delta: &lumo.OAIMessage{
 				Role:    "assistant",
 				Content: msg.Content,
 			},
@@ -60,16 +59,16 @@ func ChunkToSSEEvent(msg lumo.GenerationResponseMessage, id, model string) (open
 
 // AccumulateResponse builds a complete ChatCompletionResponse from
 // collected content after all chunks have been received.
-func AccumulateResponse(content, id, model string) openai.ChatCompletionResponse {
+func AccumulateResponse(content, id, model string) lumo.ChatCompletionResponse {
 	stop := "stop"
-	return openai.ChatCompletionResponse{
+	return lumo.ChatCompletionResponse{
 		ID:      id,
 		Object:  "chat.completion",
 		Created: time.Now().Unix(),
 		Model:   model,
-		Choices: []openai.Choice{{
+		Choices: []lumo.Choice{{
 			Index: 0,
-			Message: &openai.Message{
+			Message: &lumo.OAIMessage{
 				Role:    "assistant",
 				Content: content,
 			},

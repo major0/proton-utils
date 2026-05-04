@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -62,7 +61,7 @@ func runRm(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func rmOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
+func rmOne(ctx context.Context, dc *drive.Client, rawPath string) error {
 	if !strings.HasPrefix(rawPath, "proton://") {
 		return fmt.Errorf("invalid path: %s (must start with proton://)", rawPath)
 	}

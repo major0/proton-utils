@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"pgregory.net/rapid"
 )
 
@@ -130,7 +129,7 @@ func TestBuildCopyJobErrors(t *testing.T) {
 func TestLocalReader_BlockCount_Property(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		size := int64(rapid.IntRange(0, drive.BlockSize*20).Draw(t, "size"))
-		r := driveClient.NewLocalReader("/dev/null", size)
+		r := drive.NewLocalReader("/dev/null", size)
 		defer func() { _ = r.Close() }()
 
 		wantBlocks := drive.BlockCount(size)
@@ -168,7 +167,7 @@ func TestLocalReadWrite_RoundTrip_Property(t *testing.T) {
 			t.Fatalf("write: %v", err)
 		}
 
-		r := driveClient.NewLocalReader(srcPath, size)
+		r := drive.NewLocalReader(srcPath, size)
 		defer func() { _ = r.Close() }()
 
 		if r.BlockCount() != drive.BlockCount(size) {
@@ -194,7 +193,7 @@ func TestLocalReadWrite_RoundTrip_Property(t *testing.T) {
 
 // TestLocalReader_Describe returns the path.
 func TestLocalReader_Describe(t *testing.T) {
-	r := driveClient.NewLocalReader("/dev/null", 100)
+	r := drive.NewLocalReader("/dev/null", 100)
 	defer func() { _ = r.Close() }()
 	if got := r.Describe(); got != "/dev/null" {
 		t.Fatalf("Describe() = %q, want %q", got, "/dev/null")
@@ -208,7 +207,7 @@ func TestLocalWriter_Describe(t *testing.T) {
 	if err := os.WriteFile(f, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	w := driveClient.NewLocalWriter(f)
+	w := drive.NewLocalWriter(f)
 	defer func() { _ = w.Close() }()
 	if got := w.Describe(); got != f {
 		t.Fatalf("Describe() = %q, want %q", got, f)
@@ -217,7 +216,7 @@ func TestLocalWriter_Describe(t *testing.T) {
 
 // TestLocalReader_Close is a no-op on template (nil fd).
 func TestLocalReader_Close(t *testing.T) {
-	r := driveClient.NewLocalReader("/dev/null", 0)
+	r := drive.NewLocalReader("/dev/null", 0)
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
@@ -225,7 +224,7 @@ func TestLocalReader_Close(t *testing.T) {
 
 // TestLocalWriter_Close is a no-op on template (nil fd).
 func TestLocalWriter_Close(t *testing.T) {
-	w := driveClient.NewLocalWriter("/dev/null")
+	w := drive.NewLocalWriter("/dev/null")
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
@@ -234,7 +233,7 @@ func TestLocalWriter_Close(t *testing.T) {
 // TestLocalReader_BlockSize_BeyondEnd verifies BlockSize returns 0 for
 // indices beyond the file.
 func TestLocalReader_BlockSize_BeyondEnd(t *testing.T) {
-	r := driveClient.NewLocalReader("/dev/null", 100)
+	r := drive.NewLocalReader("/dev/null", 100)
 	defer func() { _ = r.Close() }()
 	if got := r.BlockSize(1); got != 0 {
 		t.Fatalf("BlockSize(1) = %d, want 0 for 100-byte file", got)
@@ -249,8 +248,8 @@ func TestCloneableReader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := driveClient.NewLocalReader(f, 11)
-	var cr driveClient.CloneableReader = r // compile-time check
+	r := drive.NewLocalReader(f, 11)
+	var cr drive.CloneableReader = r // compile-time check
 
 	clone, err := cr.CloneReader()
 	if err != nil {
@@ -276,8 +275,8 @@ func TestCloneableWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := driveClient.NewLocalWriter(f)
-	var cw driveClient.CloneableWriter = w // compile-time check
+	w := drive.NewLocalWriter(f)
+	var cw drive.CloneableWriter = w // compile-time check
 
 	clone, err := cw.CloneWriter()
 	if err != nil {

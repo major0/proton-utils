@@ -10,7 +10,6 @@ import (
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/config"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 )
 
@@ -59,7 +58,7 @@ func injectClientError(err error) {
 	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
 		return &api.Session{}, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*driveClient.Client, error) {
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
 		return nil, err
 	}
 }
@@ -74,8 +73,8 @@ func injectTestClient() {
 	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*driveClient.Client, error) {
-		return &driveClient.Client{Session: session}, nil
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+		return &drive.Client{Session: session}, nil
 	}
 }
 
@@ -89,10 +88,10 @@ func injectResolvedShare(share *drive.Share) {
 	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*driveClient.Client, error) {
-		return &driveClient.Client{Session: session}, nil
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+		return &drive.Client{Session: session}, nil
 	}
-	resolveShareFn = func(_ context.Context, _ *driveClient.Client, _ string) (*drive.Share, error) {
+	resolveShareFn = func(_ context.Context, _ *drive.Client, _ string) (*drive.Share, error) {
 		return share, nil
 	}
 }
@@ -107,10 +106,10 @@ func injectShareList(shares []*drive.Share) {
 	restoreSessionFn = func(_ context.Context) (*api.Session, error) {
 		return session, nil
 	}
-	newDriveClientFn = func(_ context.Context, _ *api.Session) (*driveClient.Client, error) {
-		return &driveClient.Client{Session: session}, nil
+	newDriveClientFn = func(_ context.Context, _ *api.Session) (*drive.Client, error) {
+		return &drive.Client{Session: session}, nil
 	}
-	listSharesFn = func(_ context.Context, _ *driveClient.Client) ([]*drive.Share, error) {
+	listSharesFn = func(_ context.Context, _ *drive.Client) ([]*drive.Share, error) {
 		return shares, nil
 	}
 }
@@ -497,17 +496,17 @@ func TestShareShowCmd_StandardShareType(t *testing.T) {
 	injectResolvedShare(share)
 
 	// Inject data for the print functions.
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return []drive.Member{
 			{MemberID: "m1", Email: "alice@test.local", Permissions: drive.PermViewer},
 		}, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return []drive.Invitation{
 			{InvitationID: "inv-1", InviteeEmail: "bob@test.local", Permissions: drive.PermEditor, CreateTime: 1705276800},
 		}, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return []drive.ExternalInvitation{
 			{ExternalInvitationID: "ext-1", InviteeEmail: "ext@test.local", Permissions: drive.PermViewer, CreateTime: 1705276800},
 		}, nil
@@ -524,13 +523,13 @@ func TestShareShowCmd_StandardShareEmptyLists(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Empty Share")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, nil
 	}
 
@@ -775,7 +774,7 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	cfg.Shares["Shared Folder"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
 	cli.ConfigVar = cfg
 
-	deleteShareFn = func(_ context.Context, _ *driveClient.Client, _ string, _ bool) error {
+	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
 		return nil
 	}
 
@@ -799,7 +798,7 @@ func TestShareDelCmd_SuccessNoConfig(t *testing.T) {
 	t.Cleanup(func() { cli.ConfigVar = origConfig })
 	cli.ConfigVar = nil
 
-	deleteShareFn = func(_ context.Context, _ *driveClient.Client, _ string, _ bool) error {
+	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
 		return nil
 	}
 
@@ -814,13 +813,13 @@ func TestShareRevokeCmd_NoMatch(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return []drive.Member{{MemberID: "m1", Email: "alice@test.local"}}, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, nil
 	}
 
@@ -838,16 +837,16 @@ func TestShareRevokeCmd_MemberMatch(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return []drive.Member{{MemberID: "m1", Email: "alice@test.local"}}, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, nil
 	}
-	removeMemberFn = func(_ context.Context, _ *driveClient.Client, _, _ string) error {
+	removeMemberFn = func(_ context.Context, _ *drive.Client, _, _ string) error {
 		return nil
 	}
 
@@ -862,10 +861,10 @@ func TestShareRevokeCmd_InvitationListError(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, fmt.Errorf("invitation list failed")
 	}
 
@@ -883,13 +882,13 @@ func TestShareRevokeCmd_ExternalInvitationListError(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, fmt.Errorf("ext list failed")
 	}
 
@@ -907,16 +906,16 @@ func TestShareRevokeCmd_InvitationMatch(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return []drive.Invitation{{InvitationID: "inv-1", InviteeEmail: "bob@test.local"}}, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, nil
 	}
-	deleteInvitationFn = func(_ context.Context, _ *driveClient.Client, _, _ string) error {
+	deleteInvitationFn = func(_ context.Context, _ *drive.Client, _, _ string) error {
 		return nil
 	}
 
@@ -931,16 +930,16 @@ func TestShareRevokeCmd_ExternalInvitationMatch(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return []drive.ExternalInvitation{{ExternalInvitationID: "ext-1", InviteeEmail: "ext@test.local"}}, nil
 	}
-	deleteExternalInvitationFn = func(_ context.Context, _ *driveClient.Client, _, _ string) error {
+	deleteExternalInvitationFn = func(_ context.Context, _ *drive.Client, _, _ string) error {
 		return nil
 	}
 
@@ -1011,7 +1010,7 @@ func TestShareDelCmd_ForceFlag(t *testing.T) {
 	cli.ConfigVar = config.DefaultConfig()
 
 	var gotForce bool
-	deleteShareFn = func(_ context.Context, _ *driveClient.Client, _ string, force bool) error {
+	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, force bool) error {
 		gotForce = force
 		return nil
 	}
@@ -1030,16 +1029,16 @@ func TestShareRevokeCmd_RemoveMemberError(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return []drive.Member{{MemberID: "m1", Email: "alice@test.local"}}, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, nil
 	}
-	removeMemberFn = func(_ context.Context, _ *driveClient.Client, _, _ string) error {
+	removeMemberFn = func(_ context.Context, _ *drive.Client, _, _ string) error {
 		return fmt.Errorf("remove failed")
 	}
 
@@ -1054,16 +1053,16 @@ func TestShareRevokeCmd_DeleteInvitationError(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return []drive.Invitation{{InvitationID: "inv-1", InviteeEmail: "bob@test.local"}}, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return nil, nil
 	}
-	deleteInvitationFn = func(_ context.Context, _ *driveClient.Client, _, _ string) error {
+	deleteInvitationFn = func(_ context.Context, _ *drive.Client, _, _ string) error {
 		return fmt.Errorf("delete inv failed")
 	}
 
@@ -1078,16 +1077,16 @@ func TestShareRevokeCmd_DeleteExternalInvitationError(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared")
 	injectResolvedShare(share)
 
-	listMembersFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Member, error) {
+	listMembersFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Member, error) {
 		return nil, nil
 	}
-	listInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.Invitation, error) {
+	listInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.Invitation, error) {
 		return nil, nil
 	}
-	listExternalInvitationsFn = func(_ context.Context, _ *driveClient.Client, _ string) ([]drive.ExternalInvitation, error) {
+	listExternalInvitationsFn = func(_ context.Context, _ *drive.Client, _ string) ([]drive.ExternalInvitation, error) {
 		return []drive.ExternalInvitation{{ExternalInvitationID: "ext-1", InviteeEmail: "ext@test.local"}}, nil
 	}
-	deleteExternalInvitationFn = func(_ context.Context, _ *driveClient.Client, _, _ string) error {
+	deleteExternalInvitationFn = func(_ context.Context, _ *drive.Client, _, _ string) error {
 		return fmt.Errorf("delete ext failed")
 	}
 

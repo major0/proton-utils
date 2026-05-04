@@ -12,7 +12,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 )
 
 func TestFmtTime(t *testing.T) {
@@ -126,7 +125,7 @@ func TestPrintMembers_Error(t *testing.T) {
 	m := proton.New()
 	client := m.NewClient("test-uid", "test-acc", "test-ref")
 	session := &api.Session{Client: client}
-	dc := &driveClient.Client{Session: session}
+	dc := &drive.Client{Session: session}
 
 	stderrOut := captureStdStreams(t, func() {
 		printMembers(context.Background(), dc, "fake-share-id")
@@ -141,7 +140,7 @@ func TestPrintInvitations_Error(t *testing.T) {
 	m := proton.New()
 	client := m.NewClient("test-uid", "test-acc", "test-ref")
 	session := &api.Session{Client: client}
-	dc := &driveClient.Client{Session: session}
+	dc := &drive.Client{Session: session}
 
 	stderrOut := captureStdStreams(t, func() {
 		printInvitations(context.Background(), dc, "fake-share-id")
@@ -156,7 +155,7 @@ func TestPrintExternalInvitations_Error(t *testing.T) {
 	m := proton.New()
 	client := m.NewClient("test-uid", "test-acc", "test-ref")
 	session := &api.Session{Client: client}
-	dc := &driveClient.Client{Session: session}
+	dc := &drive.Client{Session: session}
 
 	stderrOut := captureStdStreams(t, func() {
 		printExternalInvitations(context.Background(), dc, "fake-share-id")

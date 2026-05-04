@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -111,7 +110,7 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 }
 
 // runSpaceListEmpty identifies, verifies, and lists empty spaces.
-func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) error {
+func runSpaceListEmpty(ctx context.Context, client *lumo.Client, spaces []lumo.Space) error {
 	total := len(spaces)
 
 	// Phase 1: identify candidates (0 embedded conversations).
@@ -243,7 +242,7 @@ func runSpaceListEmpty(ctx context.Context, client *lumoClient.Client, spaces []
 // classifySpace returns "project", "simple", or "unknown" based on the
 // space's encrypted metadata. Unencrypted spaces are "simple". Spaces
 // that can't be decrypted are "unknown".
-func classifySpace(ctx context.Context, client *lumoClient.Client, s *lumo.Space) string {
+func classifySpace(ctx context.Context, client *lumo.Client, s *lumo.Space) string {
 	if s.Encrypted == "" {
 		return "simple"
 	}
@@ -270,7 +269,7 @@ type SpaceRow struct {
 // buildSpaceRows converts API spaces into display rows, decrypting
 // names where possible. The decrypted name is used only for display
 // and discarded after rendering.
-func buildSpaceRows(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []SpaceRow {
+func buildSpaceRows(ctx context.Context, client *lumo.Client, spaces []lumo.Space) []SpaceRow {
 	rows := make([]SpaceRow, len(spaces))
 	for i, s := range spaces {
 		name := decryptSpaceName(ctx, client, &s)
@@ -292,7 +291,7 @@ func buildSpaceRows(ctx context.Context, client *lumoClient.Client, spaces []lum
 // filterProjectSpaces returns only spaces that are project spaces
 // (isProject=true in encrypted metadata). Simple chat spaces and
 // spaces that can't be decrypted are excluded.
-func filterProjectSpaces(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []lumo.Space {
+func filterProjectSpaces(ctx context.Context, client *lumo.Client, spaces []lumo.Space) []lumo.Space {
 	var result []lumo.Space
 	for i := range spaces {
 		if classifySpace(ctx, client, &spaces[i]) == "project" {
@@ -304,7 +303,7 @@ func filterProjectSpaces(ctx context.Context, client *lumoClient.Client, spaces 
 
 // filterSimpleSpaces returns only spaces confirmed as simple chat spaces.
 // Spaces that can't be decrypted ("unknown") are excluded.
-func filterSimpleSpaces(ctx context.Context, client *lumoClient.Client, spaces []lumo.Space) []lumo.Space {
+func filterSimpleSpaces(ctx context.Context, client *lumo.Client, spaces []lumo.Space) []lumo.Space {
 	var result []lumo.Space
 	for i := range spaces {
 		if classifySpace(ctx, client, &spaces[i]) == "simple" {
@@ -319,7 +318,7 @@ func filterSimpleSpaces(ctx context.Context, client *lumoClient.Client, spaces [
 // spaces (no ProjectName), uses the title of the first conversation.
 // Returns "(empty)" when nothing is available, "(encrypted)" on
 // decryption failure.
-func decryptSpaceName(ctx context.Context, client *lumoClient.Client, s *lumo.Space) string {
+func decryptSpaceName(ctx context.Context, client *lumo.Client, s *lumo.Space) string {
 	if s.Encrypted == "" {
 		return "(empty)"
 	}

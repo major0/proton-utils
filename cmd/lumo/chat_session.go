@@ -10,12 +10,11 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 )
 
 // ChatSession holds the state for a single interactive chat session.
 type ChatSession struct {
-	Client           *lumoClient.Client
+	Client           *lumo.Client
 	Space            *lumo.Space
 	Conversation     *lumo.Conversation
 	SpaceID          string
@@ -87,7 +86,7 @@ func (s *ChatSession) Run(ctx context.Context) error {
 		}
 
 		// Persist user message.
-		_, err := s.Client.CreateMessage(ctx, s.Space, s.Conversation, lumoClient.RoleUser, line)
+		_, err := s.Client.CreateMessage(ctx, s.Space, s.Conversation, lumo.WireRoleUser, line)
 		if err != nil {
 			_, _ = fmt.Fprintf(s.Writer, "Warning: failed to save message: %v\n", err)
 		}
@@ -103,7 +102,7 @@ func (s *ChatSession) Run(ctx context.Context) error {
 		}
 
 		if response != "" {
-			_, err = s.Client.CreateMessage(ctx, s.Space, s.Conversation, lumoClient.RoleAssistant, response)
+			_, err = s.Client.CreateMessage(ctx, s.Space, s.Conversation, lumo.WireRoleAssistant, response)
 			if err != nil {
 				_, _ = fmt.Fprintf(s.Writer, "Warning: failed to save response: %v\n", err)
 			}
@@ -141,7 +140,7 @@ func (s *ChatSession) generate(ctx context.Context) (string, error) {
 		tools = append(tools, lumo.ToolWebSearch)
 	}
 
-	err := s.Client.Generate(genCtx, s.Turns, lumoClient.GenerateOpts{
+	err := s.Client.Generate(genCtx, s.Turns, lumo.GenerateOpts{
 		Targets: targets,
 		Tools:   tools,
 		ChunkCallback: func(msg lumo.GenerationResponseMessage) {

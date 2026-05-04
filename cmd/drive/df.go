@@ -9,7 +9,6 @@ import (
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -27,7 +26,7 @@ func init() {
 }
 
 // buildNameIndex resolves volume share names, logging errors at debug level.
-func buildNameIndex(ctx context.Context, dc *driveClient.Client, volumes []drive.Volume) map[string]string {
+func buildNameIndex(ctx context.Context, dc *drive.Client, volumes []drive.Volume) map[string]string {
 	nameIndex := make(map[string]string)
 	for _, v := range volumes {
 		share, err := dc.GetShare(ctx, v.ProtonVolume.Share.ShareID)

@@ -11,7 +11,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	api "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -133,7 +132,7 @@ func runCp(cmd *cobra.Command, args []string) error {
 	_ = rc
 	ctx := context.Background()
 
-	var dc *driveClient.Client
+	var dc *drive.Client
 	if needSession {
 		session, err := cli.RestoreSession(ctx)
 		if err != nil {
@@ -153,7 +152,7 @@ func runCp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build CopyJobs for all source/dest pairs.
-	var jobs []driveClient.CopyJob
+	var jobs []drive.CopyJob
 	var preserves []preserveEntry
 	for _, src := range sources {
 		srcEp, err := resolveSource(ctx, dc, src, opts)
@@ -246,7 +245,7 @@ func runCp(cmd *cobra.Command, args []string) error {
 		wp = api.NewSemaphore(ctx, api.DefaultMaxWorkers(), nil)
 	}
 
-	if err := driveClient.RunPipeline(ctx, wp, jobs, transferOpts(opts)); err != nil {
+	if err := drive.RunPipeline(ctx, wp, jobs, transferOpts(opts)); err != nil {
 		return err
 	}
 
@@ -258,7 +257,7 @@ func runCp(cmd *cobra.Command, args []string) error {
 // buildCopyJob constructs a CopyJob from resolved source and destination
 // endpoints. For Proton endpoints, uses CreateFile/OpenFile to get the
 // FileHandle with revision, session key, and block info.
-func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolvedEndpoint, opts cpOptions) (*driveClient.CopyJob, error) {
+func buildCopyJob(ctx context.Context, dc *drive.Client, src, dst *resolvedEndpoint, opts cpOptions) (*drive.CopyJob, error) {
 	// Check for same source and destination.
 	if src.pathType == PathLocal && dst.pathType == PathLocal && src.localPath == dst.localPath {
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
@@ -268,19 +267,19 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		return nil, fmt.Errorf("cp: %s: source and destination are the same", src.raw)
 	}
 
-	var job driveClient.CopyJob
+	var job drive.CopyJob
 
 	// Build source reader.
 	switch src.pathType {
 	case PathLocal:
-		job.Src = driveClient.NewLocalReader(src.localPath, src.localInfo.Size())
+		job.Src = drive.NewLocalReader(src.localPath, src.localInfo.Size())
 	case PathProton:
 		fh, err := dc.OpenFile(ctx, src.link)
 		if err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", src.raw, err)
 		}
 		store := dc.InternalBlockStore()
-		job.Src = driveClient.NewProtonReader(fh.LinkID, fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
+		job.Src = drive.NewProtonReader(fh.LinkID, fh.Blocks, fh.SessionKey, fh.FileSize, nil, store)
 	}
 
 	// Build destination writer. Pre-create local files so workers can
@@ -294,7 +293,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 		if err := f.Close(); err != nil {
 			return nil, fmt.Errorf("cp: %s: %w", dst.localPath, err)
 		}
-		job.Dst = driveClient.NewLocalWriter(dst.localPath)
+		job.Dst = drive.NewLocalWriter(dst.localPath)
 	case PathProton:
 		name := filepath.Base(dst.raw)
 
@@ -313,7 +312,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 				fh, err := dc.OverwriteFile(ctx, dst.share, dst.link)
 				if err == nil {
 					store := dc.InternalBlockStore()
-					job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)
+					job.Dst = drive.NewProtonWriter(fh, store, dc.Session)
 					return &job, nil
 				}
 				// OverwriteFile failed (stale link, server-side
@@ -417,7 +416,7 @@ func buildCopyJob(ctx context.Context, dc *driveClient.Client, src, dst *resolve
 			}
 		}
 		store := dc.InternalBlockStore()
-		job.Dst = driveClient.NewProtonWriter(fh, store, dc.Session)
+		job.Dst = drive.NewProtonWriter(fh, store, dc.Session)
 	}
 
 	return &job, nil

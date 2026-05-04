@@ -7,7 +7,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/spf13/cobra"
 )
 
@@ -71,7 +70,7 @@ func runShareInvite(_ *cobra.Command, args []string) error {
 	return inviteExternalUser(ctx, dc, session, email, shareID, perms)
 }
 
-func inviteInternalUser(ctx context.Context, dc *driveClient.Client, resolved *drive.Share, session *api.Session, email, shareID string, perms int, pubKeys proton.PublicKeys) error {
+func inviteInternalUser(ctx context.Context, dc *drive.Client, resolved *drive.Share, session *api.Session, email, shareID string, perms int, pubKeys proton.PublicKeys) error {
 	// Build invitee keyring from public keys.
 	inviteeKR, err := pubKeys.GetKeyRing()
 	if err != nil {
@@ -116,7 +115,7 @@ func inviteInternalUser(ctx context.Context, dc *driveClient.Client, resolved *d
 	return nil
 }
 
-func inviteExternalUser(ctx context.Context, dc *driveClient.Client, session *api.Session, email, shareID string, perms int) error {
+func inviteExternalUser(ctx context.Context, dc *drive.Client, session *api.Session, email, shareID string, perms int) error {
 	// For external users, we need the inviter's address ID.
 	// Use the first available address.
 	addrKRs := session.AddressKeyRings()

@@ -45,7 +45,7 @@ type Share struct {
 	MemoryCacheLevel api.MemoryCacheLevel
 
 	// DiskCacheLevel controls on-disk caching of encrypted API objects.
-	// Default: DiskCacheDisabled. Handled in api/drive/client/.
+	// Default: DiskCacheDisabled.
 	DiskCacheLevel api.DiskCacheLevel
 }
 

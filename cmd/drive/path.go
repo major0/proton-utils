@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/shortid"
 )
 
@@ -92,7 +91,7 @@ func parsePath(rawPath string) string {
 }
 
 // ResolveProtonPath parses a proton:// URI and resolves it to a Link and Share.
-func ResolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath string) (*drive.Link, *drive.Share, error) {
+func ResolveProtonPath(ctx context.Context, dc *drive.Client, rawPath string) (*drive.Link, *drive.Share, error) {
 	sharePart, pathPart, err := parseProtonURI(rawPath)
 	if err != nil {
 		return nil, nil, err
@@ -134,7 +133,7 @@ func ResolveProtonPath(ctx context.Context, dc *driveClient.Client, rawPath stri
 // resolveShareByShortID attempts to resolve a share component as a short
 // ID prefix. Loads all share metadata, collects share IDs, and uses
 // shortid.Resolve to find the unique match.
-func resolveShareByShortID(ctx context.Context, dc *driveClient.Client, prefix string) (*drive.Share, error) {
+func resolveShareByShortID(ctx context.Context, dc *drive.Client, prefix string) (*drive.Share, error) {
 	metas, err := dc.ListSharesMetadata(ctx, true)
 	if err != nil {
 		return nil, err

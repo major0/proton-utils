@@ -12,7 +12,6 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/major0/proton-cli/api/shortid"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
@@ -248,7 +247,7 @@ func collectEntries(ctx context.Context, dir *drive.Link, opts listOpts) ([]list
 	return entries, nil
 }
 
-func resolveEntries(ctx context.Context, dc *driveClient.Client, args []string, opts listOpts) ([]listEntry, error) {
+func resolveEntries(ctx context.Context, dc *drive.Client, args []string, opts listOpts) ([]listEntry, error) {
 	// No args → list root share contents (same as proton:///).
 	if len(args) == 0 {
 		share, err := dc.ResolveShareByType(ctx, proton.ShareTypeMain)

@@ -9,7 +9,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -185,7 +184,7 @@ func runFind(_ *cobra.Command, args []string) error {
 	preds := buildPredicates()
 
 	for i, root := range roots {
-		results := make(chan driveClient.WalkEntry, 64)
+		results := make(chan drive.WalkEntry, 64)
 		var walkErr error
 
 		go func() {

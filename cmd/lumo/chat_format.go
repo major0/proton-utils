@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 )
 
 // fmtLocalTime parses an ISO 8601 timestamp and formats it in the
@@ -65,9 +64,9 @@ func FormatHistory(messages []lumo.Message, decrypt func(lumo.Message) string) s
 	for _, msg := range messages {
 		content := decrypt(msg)
 		switch msg.Role {
-		case lumoClient.RoleUser:
+		case lumo.WireRoleUser:
 			b.WriteString("You: ")
-		case lumoClient.RoleAssistant:
+		case lumo.WireRoleAssistant:
 			b.WriteString("Lumo: ")
 		default:
 			b.WriteString("?: ")

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/major0/proton-cli/api/lumo/openai"
+	"github.com/major0/proton-cli/api/lumo"
 )
 
 // authMiddleware validates the Authorization: Bearer <token> header using
@@ -32,8 +32,8 @@ func authMiddleware(apiKey string, next http.Handler) http.Handler {
 func writeAuthError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(openai.ErrorResponse{
-		Error: openai.ErrorBody{
+	_ = json.NewEncoder(w).Encode(lumo.OAIErrorResponse{
+		Error: lumo.OAIErrorBody{
 			Message: "Invalid API key",
 			Type:    "invalid_api_key",
 		},

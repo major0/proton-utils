@@ -11,15 +11,13 @@ import (
 	"time"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
-	"github.com/major0/proton-cli/api/lumo/openai"
 )
 
 // chatHandler returns an http.HandlerFunc that proxies OpenAI-format chat
 // completion requests to Lumo via the provided client.
-func chatHandler(client *lumoClient.Client) http.HandlerFunc {
+func chatHandler(client *lumo.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req openai.ChatCompletionRequest
+		var req lumo.ChatCompletionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request_error", "Invalid JSON: "+err.Error())
 			return
@@ -38,7 +36,7 @@ func chatHandler(client *lumoClient.Client) http.HandlerFunc {
 }
 
 // streamResponse handles streaming (SSE) chat completions.
-func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumoClient.Client, turns []lumo.Turn, id, model string) {
+func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Client, turns []lumo.Turn, id, model string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "server_error", "Streaming not supported")
@@ -50,7 +48,7 @@ func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumoClie
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
-	err := client.Generate(ctx, turns, lumoClient.GenerateOpts{
+	err := client.Generate(ctx, turns, lumo.GenerateOpts{
 		ChunkCallback: func(msg lumo.GenerationResponseMessage) {
 			chunk, ok := ChunkToSSEEvent(msg, id, model)
 			if !ok {
@@ -68,8 +66,8 @@ func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumoClie
 	if err != nil {
 		// Mid-stream error: write error as final SSE event.
 		status, errType, message := mapLumoError(err)
-		errResp := openai.ErrorResponse{
-			Error: openai.ErrorBody{
+		errResp := lumo.OAIErrorResponse{
+			Error: lumo.OAIErrorBody{
 				Message: message,
 				Type:    errType,
 			},
@@ -86,10 +84,10 @@ func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumoClie
 }
 
 // nonStreamResponse handles non-streaming chat completions.
-func nonStreamResponse(ctx context.Context, w http.ResponseWriter, client *lumoClient.Client, turns []lumo.Turn, id, model string) {
+func nonStreamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Client, turns []lumo.Turn, id, model string) {
 	var content strings.Builder
 
-	err := client.Generate(ctx, turns, lumoClient.GenerateOpts{
+	err := client.Generate(ctx, turns, lumo.GenerateOpts{
 		ChunkCallback: func(msg lumo.GenerationResponseMessage) {
 			if msg.Type == "token_data" && msg.Content != "" {
 				content.WriteString(msg.Content)
@@ -111,9 +109,9 @@ func nonStreamResponse(ctx context.Context, w http.ResponseWriter, client *lumoC
 // modelsHandler returns an http.HandlerFunc that serves the static model list.
 func modelsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		resp := openai.ModelList{
+		resp := lumo.OAIModelList{
 			Object: "list",
-			Data: []openai.Model{{
+			Data: []lumo.OAIModel{{
 				ID:      "lumo",
 				Object:  "model",
 				Created: 0,
@@ -163,8 +161,8 @@ func (sw *statusWriter) Flush() {
 func writeError(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(openai.ErrorResponse{
-		Error: openai.ErrorBody{
+	_ = json.NewEncoder(w).Encode(lumo.OAIErrorResponse{
+		Error: lumo.OAIErrorBody{
 			Message: message,
 			Type:    errType,
 		},

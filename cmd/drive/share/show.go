@@ -8,7 +8,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +62,7 @@ func printShareMetadata(ctx context.Context, s *drive.Share) {
 	fmt.Printf("Created:  %s\n", fmtTime(meta.CreationTime))
 }
 
-func printMembers(ctx context.Context, dc *driveClient.Client, shareID string) {
+func printMembers(ctx context.Context, dc *drive.Client, shareID string) {
 	members, err := listMembersFn(ctx, dc, shareID)
 	if err != nil {
 		slog.Error("share show: listing members", "error", err)
@@ -85,7 +84,7 @@ func printMembers(ctx context.Context, dc *driveClient.Client, shareID string) {
 	}
 }
 
-func printInvitations(ctx context.Context, dc *driveClient.Client, shareID string) {
+func printInvitations(ctx context.Context, dc *drive.Client, shareID string) {
 	invs, err := listInvitationsFn(ctx, dc, shareID)
 	if err != nil {
 		slog.Error("share show: listing invitations", "error", err)
@@ -108,7 +107,7 @@ func printInvitations(ctx context.Context, dc *driveClient.Client, shareID strin
 	}
 }
 
-func printExternalInvitations(ctx context.Context, dc *driveClient.Client, shareID string) {
+func printExternalInvitations(ctx context.Context, dc *drive.Client, shareID string) {
 	exts, err := listExternalInvitationsFn(ctx, dc, shareID)
 	if err != nil {
 		slog.Error("share show: listing external invitations", "error", err)

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
+	"github.com/major0/proton-cli/api/lumo"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -51,7 +51,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("no active session (run 'proton account login' first): %w", err)
 	}
 
-	client := lumoClient.NewClient(session)
+	client := lumo.NewClient(session)
 
 	apiKey, err := resolveAPIKey(sFlags)
 	if err != nil {

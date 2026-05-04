@@ -7,7 +7,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -53,7 +52,7 @@ func runMkdir(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func mkdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error {
+func mkdirOne(ctx context.Context, dc *drive.Client, rawPath string) error {
 	sharePart, pathPart, err := parseProtonURI(rawPath)
 	if err != nil {
 		return fmt.Errorf("mkdir: %w", err)
@@ -82,7 +81,7 @@ func mkdirOne(ctx context.Context, dc *driveClient.Client, rawPath string) error
 	return mkdirSingle(ctx, dc, share, pathPart)
 }
 
-func mkdirSingle(ctx context.Context, dc *driveClient.Client, share *drive.Share, relPath string) error {
+func mkdirSingle(ctx context.Context, dc *drive.Client, share *drive.Share, relPath string) error {
 	relPath = strings.TrimSuffix(relPath, "/")
 	dir := ""
 	name := relPath

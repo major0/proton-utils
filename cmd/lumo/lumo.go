@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +33,7 @@ func init() {
 
 // restoreClient restores the session and creates a Lumo client.
 // Lumo requires cookie-based authentication; Bearer sessions are rejected.
-func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
+func restoreClient(cmd *cobra.Command) (*lumo.Client, error) {
 	rc := cli.GetContext(cmd)
 
 	// Lumo requires cookie auth. Check the account config before
@@ -51,7 +50,7 @@ func restoreClient(cmd *cobra.Command) (*lumoClient.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no active session (run 'proton account login' first): %w", err)
 	}
-	return lumoClient.NewClient(session), nil
+	return lumo.NewClient(session), nil
 }
 
 // AddCommand registers a subcommand under the lumo command group.
@@ -60,7 +59,7 @@ func AddCommand(cmd *cobra.Command) {
 }
 
 // resolveSpaceAndDEK loads a space by ID and derives its decryption key.
-func resolveSpaceAndDEK(ctx context.Context, client *lumoClient.Client, spaceID string) (*lumo.Space, []byte, error) {
+func resolveSpaceAndDEK(ctx context.Context, client *lumo.Client, spaceID string) (*lumo.Space, []byte, error) {
 	space, err := client.GetSpace(ctx, spaceID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading space: %w", err)

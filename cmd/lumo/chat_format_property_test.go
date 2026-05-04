@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/lumo"
-	lumoClient "github.com/major0/proton-cli/api/lumo/client"
 	"pgregory.net/rapid"
 )
 
@@ -194,9 +193,9 @@ func TestFormatHistory_Property(t *testing.T) {
 		msgs := make([]lumo.Message, n)
 		contents := make([]string, n)
 		for i := range msgs {
-			role := lumoClient.RoleUser
+			role := lumo.WireRoleUser
 			if i%2 == 1 {
-				role = lumoClient.RoleAssistant
+				role = lumo.WireRoleAssistant
 			}
 			content := rapid.StringMatching(`[a-zA-Z0-9 ]{1,40}`).Draw(t, "content")
 			msgs[i] = lumo.Message{
@@ -228,9 +227,9 @@ func TestFormatHistory_Property(t *testing.T) {
 			}
 			var label string
 			switch msg.Role {
-			case lumoClient.RoleUser:
+			case lumo.WireRoleUser:
 				label = "You:"
-			case lumoClient.RoleAssistant:
+			case lumo.WireRoleAssistant:
 				label = "Lumo:"
 			}
 			if !strings.Contains(result, label) {

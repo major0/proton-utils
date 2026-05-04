@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/ProtonMail/go-proton-api"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
+	"github.com/major0/proton-cli/api/drive"
 )
 
 // resolveDest resolves the destination path with coreutils cp semantics.
@@ -16,7 +16,7 @@ import (
 // non-existent paths, verifies the parent exists and returns an endpoint
 // with the parent info (localPath set but localInfo nil for local;
 // link pointing to parent for Proton).
-func resolveDest(ctx context.Context, dc *driveClient.Client, arg pathArg, multiSource bool) (*resolvedEndpoint, error) {
+func resolveDest(ctx context.Context, dc *drive.Client, arg pathArg, multiSource bool) (*resolvedEndpoint, error) {
 	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
 
 	switch arg.pathType {
@@ -112,7 +112,7 @@ var errSkipSymlink = errors.New("skipping symbolic link")
 // resolveSource resolves a source path argument to a resolvedEndpoint.
 // For local paths, uses os.Lstat to detect symlinks. With -L, follows
 // symlinks via os.Stat. Without -L, returns errSkipSymlink.
-func resolveSource(ctx context.Context, dc *driveClient.Client, arg pathArg, opts cpOptions) (*resolvedEndpoint, error) {
+func resolveSource(ctx context.Context, dc *drive.Client, arg pathArg, opts cpOptions) (*resolvedEndpoint, error) {
 	ep := &resolvedEndpoint{pathType: arg.pathType, raw: arg.raw}
 	switch arg.pathType {
 	case PathProton:

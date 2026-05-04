@@ -10,7 +10,7 @@ import (
 
 // LinkResolver is the interface that Link depends on for operations
 // requiring API calls or client-owned state. Implemented by
-// api/drive/client.Client.
+// Client.
 //
 // This interface breaks the Link ↔ Client dependency cycle and enables
 // testing Link behavior with mock resolvers.

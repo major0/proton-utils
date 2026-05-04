@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
+	"github.com/major0/proton-cli/api/drive"
 	"pgregory.net/rapid"
 )
 
@@ -29,15 +29,15 @@ func TestTypedErrorsMatchable(t *testing.T) {
 	}{
 		{
 			name: "FileExistsError is matchable",
-			err:  &driveClient.FileExistsError{},
+			err:  &drive.FileExistsError{},
 		},
 		{
 			name: "DirExistsError is matchable",
-			err:  &driveClient.DirExistsError{},
+			err:  &drive.DirExistsError{},
 		},
 		{
 			name: "DraftExistsError is matchable",
-			err:  &driveClient.DraftExistsError{},
+			err:  &drive.DraftExistsError{},
 		},
 	}
 
@@ -47,9 +47,9 @@ func TestTypedErrorsMatchable(t *testing.T) {
 			wrapped := fmt.Errorf("some context: %w", tt.err)
 
 			// Verify errors.As can extract the typed error.
-			var fileErr *driveClient.FileExistsError
-			var dirErr *driveClient.DirExistsError
-			var draftErr *driveClient.DraftExistsError
+			var fileErr *drive.FileExistsError
+			var dirErr *drive.DirExistsError
+			var draftErr *drive.DraftExistsError
 
 			switch {
 			case errors.As(tt.err, &fileErr):

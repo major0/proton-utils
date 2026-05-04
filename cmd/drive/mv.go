@@ -7,7 +7,6 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
 	cli "github.com/major0/proton-cli/cmd"
 	"github.com/spf13/cobra"
 )
@@ -56,7 +55,7 @@ func runMv(_ *cobra.Command, args []string) error {
 // mvSingle handles: mv src dest
 // If dest is an existing directory, move src into it.
 // If dest doesn't exist, rename src to dest (parent must exist).
-func mvSingle(ctx context.Context, dc *driveClient.Client, srcPath, destPath string) error {
+func mvSingle(ctx context.Context, dc *drive.Client, srcPath, destPath string) error {
 	src, srcShare, err := ResolveProtonPath(ctx, dc, srcPath)
 	if err != nil {
 		return fmt.Errorf("mv: %s: %w", srcPath, err)
@@ -88,7 +87,7 @@ func mvSingle(ctx context.Context, dc *driveClient.Client, srcPath, destPath str
 
 // mvMultiple handles: mv src1 src2 ... dest
 // Dest must be an existing directory.
-func mvMultiple(ctx context.Context, dc *driveClient.Client, srcPaths []string, destPath string) error {
+func mvMultiple(ctx context.Context, dc *drive.Client, srcPaths []string, destPath string) error {
 	dest, destShare, err := ResolveProtonPath(ctx, dc, destPath)
 	if err != nil {
 		return fmt.Errorf("mv: %s: %w", destPath, err)
@@ -113,7 +112,7 @@ func mvMultiple(ctx context.Context, dc *driveClient.Client, srcPaths []string, 
 	return nil
 }
 
-func doMove(ctx context.Context, dc *driveClient.Client, srcShare *drive.Share, src *drive.Link, _ *drive.Share, destParent *drive.Link, newName string) error {
+func doMove(ctx context.Context, dc *drive.Client, srcShare *drive.Share, src *drive.Link, _ *drive.Share, destParent *drive.Link, newName string) error {
 	// Currently only support moves within the same volume.
 	if !drive.SameDevice(src, destParent) {
 		return fmt.Errorf("mv: cross-volume moves not supported (source and destination are on different volumes)")

@@ -13,7 +13,7 @@ import (
 	common "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/config"
-	driveClient "github.com/major0/proton-cli/api/drive/client"
+	"github.com/major0/proton-cli/api/drive"
 	"github.com/major0/proton-cli/internal"
 	"github.com/spf13/cobra"
 )
@@ -289,8 +289,8 @@ func requestTimeoutHook(_ *proton.Manager) {
 }
 
 // NewDriveClient creates a drive client with the loaded config applied.
-func NewDriveClient(ctx context.Context, session *common.Session) (*driveClient.Client, error) {
-	dc, err := driveClient.NewClient(ctx, session)
+func NewDriveClient(ctx context.Context, session *common.Session) (*drive.Client, error) {
+	dc, err := drive.NewClient(ctx, session)
 	if err != nil {
 		return nil, err
 	}
