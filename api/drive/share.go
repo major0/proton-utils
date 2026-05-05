@@ -99,3 +99,30 @@ func (s *Share) getKeyRing() (*crypto.KeyRing, error) {
 	}
 	return s.protonShare.GetKeyRing(linkKR)
 }
+
+// VolumeOrigin returns "root", "photos", or "unknown" for a given volumeID
+// by comparing against the account's known share types. If any share on the
+// same volume is the main share, the origin is "root". If any share on the
+// same volume is the photos share, the origin is "photos".
+// Pure lookup against cached metadata — no additional API calls beyond the
+// initial ListSharesMetadata (which is cached by the session).
+func (c *Client) VolumeOrigin(ctx context.Context, volumeID string) string {
+	metas, err := c.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return "unknown"
+	}
+
+	for _, meta := range metas {
+		if meta.VolumeID != volumeID {
+			continue
+		}
+		switch meta.Type {
+		case proton.ShareTypeMain:
+			return "root"
+		case ShareTypePhotos:
+			return "photos"
+		}
+	}
+
+	return "unknown"
+}
