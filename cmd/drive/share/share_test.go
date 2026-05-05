@@ -316,7 +316,8 @@ func TestShareAddCmd_ArgsValidation(t *testing.T) {
 	}{
 		{"no args", []string{}, true},
 		{"one arg valid", []string{"proton://path"}, false},
-		{"two args", []string{"a", "b"}, true},
+		{"two args valid", []string{"MyShare", "proton://path"}, false},
+		{"three args", []string{"a", "b", "c"}, true},
 	}
 
 	for _, tt := range tests {

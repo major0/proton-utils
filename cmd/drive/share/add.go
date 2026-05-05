@@ -12,10 +12,10 @@ import (
 )
 
 var shareAddCmd = &cobra.Command{
-	Use:   "add <proton-path>",
+	Use:   "add [share-name] <proton-path>",
 	Short: "Create a share from an existing file or folder",
-	Long:  "Create a share from an existing Proton Drive file or folder. The share name is the link's decrypted name.",
-	Args:  cobra.ExactArgs(1),
+	Long:  "Create a share from an existing Proton Drive file or folder. If share-name is provided, the share is renamed after creation.",
+	Args:  cobra.RangeArgs(1, 2),
 	RunE:  runShareAdd,
 }
 
@@ -24,7 +24,20 @@ func init() {
 }
 
 func runShareAdd(cmd *cobra.Command, args []string) error {
-	protonPath := args[0]
+	var shareName, protonPath string
+	if len(args) == 2 {
+		shareName = args[0]
+		protonPath = args[1]
+	} else {
+		protonPath = args[0]
+	}
+
+	// Validate share name early if provided.
+	if shareName != "" {
+		if err := drive.ValidateShareName(shareName); err != nil {
+			return fmt.Errorf("share add: %w", err)
+		}
+	}
 
 	ctx := context.Background()
 
@@ -109,7 +122,23 @@ func runShareAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("share add: %s: %w", protonPath, err)
 	}
 
-	fmt.Printf("Created share %q (%s)\n", linkName, shareID)
+	// Determine the effective display name.
+	effectiveName := linkName
+	if shareName != "" {
+		effectiveName = shareName
+	}
+
+	// Rename the share if a custom name was provided.
+	if shareName != "" {
+		resolved, err := dc.GetShare(ctx, shareID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: share created but rename failed (resolve): %v\n", err)
+		} else if err := shareRenameFn(ctx, dc, resolved, shareName); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: share created but rename failed: %v\n", err)
+		}
+	}
+
+	fmt.Printf("Created share %q (%s)\n", effectiveName, shareID)
 	fmt.Fprintf(os.Stderr, "warning: share will be garbage-collected unless shared with another user or a public URL is enabled\n")
 	return nil
 }
