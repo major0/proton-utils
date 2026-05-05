@@ -3,6 +3,7 @@ package shareCmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api/drive"
@@ -109,5 +110,6 @@ func runShareAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Created share %q (%s)\n", linkName, shareID)
+	fmt.Fprintf(os.Stderr, "warning: share will be garbage-collected unless shared with another user or a public URL is enabled\n")
 	return nil
 }

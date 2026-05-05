@@ -34,6 +34,7 @@ func saveAndRestore(t *testing.T) {
 	origDeleteURL := deleteShareURLFn
 	origListURLs := listShareURLsFn
 	origUpdatePW := updateShareURLPasswordFn
+	origRename := shareRenameFn
 	t.Cleanup(func() {
 		setupSessionFn = origSetup
 		newDriveClientFn = origNewClient
@@ -50,6 +51,7 @@ func saveAndRestore(t *testing.T) {
 		deleteShareURLFn = origDeleteURL
 		listShareURLsFn = origListURLs
 		updateShareURLPasswordFn = origUpdatePW
+		shareRenameFn = origRename
 	})
 
 	// Set up a RuntimeContext on all share commands so GetContext works.
@@ -60,6 +62,7 @@ func saveAndRestore(t *testing.T) {
 		shareCmd, shareAddCmd, shareDelCmd, shareListCmd,
 		shareShowCmd, shareRevokeCmd, shareCacheCmd, shareInviteCmd,
 		shareURLCmd, shareURLEnableCmd, shareURLDisableCmd, shareURLPasswordCmd,
+		shareRenameCmd,
 	}
 	for _, cmd := range cmds {
 		cli.SetContext(cmd, rc)
@@ -181,7 +184,7 @@ func TestShareCmd_Run(_ *testing.T) {
 
 // TestShareCmd_Subcommands verifies all expected subcommands are registered.
 func TestShareCmd_Subcommands(t *testing.T) {
-	want := []string{"show", "invite", "revoke", "add", "del", "list", "cache", "url"}
+	want := []string{"show", "invite", "revoke", "add", "del", "list", "cache", "url", "rename"}
 	cmds := shareCmd.Commands()
 
 	names := make(map[string]bool, len(cmds))

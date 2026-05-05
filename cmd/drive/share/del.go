@@ -24,7 +24,7 @@ var shareDelCmd = &cobra.Command{
 
 func init() {
 	shareCmd.AddCommand(shareDelCmd)
-	shareDelCmd.Flags().BoolVar(&delFlags.force, "force", false, "Force delete even if members exist")
+	shareDelCmd.Flags().BoolVarP(&delFlags.force, "force", "f", false, "Force delete even if members exist")
 }
 
 func runShareDel(cmd *cobra.Command, args []string) error {
@@ -51,6 +51,9 @@ func runShareDel(cmd *cobra.Command, args []string) error {
 	shareID := resolved.Metadata().ShareID
 
 	if err := deleteShareFn(ctx, dc, shareID, delFlags.force); err != nil {
+		if !delFlags.force {
+			return fmt.Errorf("share del: %s: %w (use --force to override)", name, err)
+		}
 		return fmt.Errorf("share del: %s: %w", name, err)
 	}
 
