@@ -44,12 +44,11 @@ func runShareURLEnable(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("share url enable: %s: share not found", name)
 	}
 
-	password, _, err := createShareURLFn(ctx, dc, resolved)
+	_, _, err = createShareURLFn(ctx, dc, resolved)
 	if err != nil {
 		return fmt.Errorf("share url enable: %s: %w", name, err)
 	}
 
-	// Output password as single line to stdout (machine-readable).
-	fmt.Println(password)
+	fmt.Printf("Enabled public URL for %s\n", name)
 	return nil
 }

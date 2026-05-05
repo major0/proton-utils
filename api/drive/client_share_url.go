@@ -39,15 +39,26 @@ func (c *Client) CreateShareURL(ctx context.Context, share *Share) (string, *Sha
 	}
 	password := base64.RawURLEncoding.EncodeToString(randBytes)[:32]
 
-	// Get address keyring for encryption.
+	// Get address keyring for decryption/signing and public keyring for encryption.
 	addrID := share.ProtonShare().AddressID
 	addrKR, ok := c.AddressKeyRing(addrID)
 	if !ok {
 		return "", nil, fmt.Errorf("drive.CreateShareURL %s: address keyring not found", shareID)
 	}
 
+	// Fetch public keys for encryption (addrKR is private-only, can't encrypt-to).
+	creatorEmail := share.Metadata().Creator
+	pubKeys, _, err := c.Session.Client.GetPublicKeys(ctx, creatorEmail)
+	if err != nil {
+		return "", nil, fmt.Errorf("drive.CreateShareURL %s: fetch public keys: %w", shareID, err)
+	}
+	pubKR, err := pubKeys.GetKeyRing()
+	if err != nil {
+		return "", nil, fmt.Errorf("drive.CreateShareURL %s: build public keyring: %w", shareID, err)
+	}
+
 	// Encrypt password with address public key.
-	encPassword, err := encryptShareURLPassword(password, addrKR)
+	encPassword, err := encryptShareURLPassword(password, pubKR)
 	if err != nil {
 		return "", nil, fmt.Errorf("drive.CreateShareURL %s: %w", shareID, err)
 	}
@@ -74,9 +85,6 @@ func (c *Client) CreateShareURL(ctx context.Context, share *Share) (string, *Sha
 	if err != nil {
 		return "", nil, fmt.Errorf("drive.CreateShareURL %s: %w", shareID, err)
 	}
-
-	// Get creator email from the share's address.
-	creatorEmail := share.Metadata().Creator
 
 	// Build payload.
 	payload := CreateShareURLPayload{
@@ -142,7 +150,18 @@ func (c *Client) UpdateShareURLPassword(ctx context.Context, share *Share, share
 		return fmt.Errorf("drive.UpdateShareURLPassword %s: address keyring not found", shareID)
 	}
 
-	encPassword, err := encryptShareURLPassword(password, addrKR)
+	// Fetch public keys for encryption (addrKR is private-only, can't encrypt-to).
+	creatorEmail := share.Metadata().Creator
+	pubKeys, _, err := c.Session.Client.GetPublicKeys(ctx, creatorEmail)
+	if err != nil {
+		return fmt.Errorf("drive.UpdateShareURLPassword %s: fetch public keys: %w", shareID, err)
+	}
+	pubKR, err := pubKeys.GetKeyRing()
+	if err != nil {
+		return fmt.Errorf("drive.UpdateShareURLPassword %s: build public keyring: %w", shareID, err)
+	}
+
+	encPassword, err := encryptShareURLPassword(password, pubKR)
 	if err != nil {
 		return fmt.Errorf("drive.UpdateShareURLPassword %s: %w", shareID, err)
 	}
