@@ -11,7 +11,7 @@ import (
 // GenerateKeyPacket encrypts the share's session key for the invitee.
 // It decrypts the share passphrase using shareKR, re-encrypts the resulting
 // session key with inviteeKR, and signs the key packet with inviterAddrKR.
-// Returns (keyPacketBase64, keyPacketSignatureArmored, error).
+// Returns (keyPacketBase64, keyPacketSignatureBase64, error).
 // The decrypted session key is not retained beyond this function call.
 func GenerateKeyPacket(shareKR, inviterAddrKR, inviteeKR *crypto.KeyRing, sharePassphrase string) (string, string, error) {
 	// Decrypt the share passphrase to obtain the session key material.
@@ -41,12 +41,9 @@ func GenerateKeyPacket(shareKR, inviterAddrKR, inviteeKR *crypto.KeyRing, shareP
 		return "", "", fmt.Errorf("generate key packet: sign: %w", err)
 	}
 
-	sigArmored, err := sig.GetArmored()
-	if err != nil {
-		return "", "", fmt.Errorf("generate key packet: armor signature: %w", err)
-	}
+	sigB64 := base64.StdEncoding.EncodeToString(sig.GetBinary())
 
-	return keyPacketB64, sigArmored, nil
+	return keyPacketB64, sigB64, nil
 }
 
 // GenerateShareCrypto produces all crypto fields needed for CreateDriveSharePayload.
@@ -181,4 +178,30 @@ func GenerateShareCrypto(addrKR, linkNodeKR, parentKR *crypto.KeyRing,
 	clear(rawPassphrase)
 
 	return shareKeyArmored, encPassphraseArmored, sigArmored, passphraseKPB64, nameKPB64, nil
+}
+
+// UnlockShareKey reconstructs a share keyring from the armored private key
+// and its encrypted passphrase. The passphrase is decrypted using addrKR.
+func UnlockShareKey(shareKeyArmored, encPassphraseArmored string, addrKR *crypto.KeyRing) (*crypto.KeyRing, error) {
+	enc, err := crypto.NewPGPMessageFromArmored(encPassphraseArmored)
+	if err != nil {
+		return nil, fmt.Errorf("unlock share key: parse passphrase: %w", err)
+	}
+
+	dec, err := addrKR.Decrypt(enc, nil, crypto.GetUnixTime())
+	if err != nil {
+		return nil, fmt.Errorf("unlock share key: decrypt passphrase: %w", err)
+	}
+
+	lockedKey, err := crypto.NewKeyFromArmored(shareKeyArmored)
+	if err != nil {
+		return nil, fmt.Errorf("unlock share key: parse key: %w", err)
+	}
+
+	unlockedKey, err := lockedKey.Unlock(dec.GetBinary())
+	if err != nil {
+		return nil, fmt.Errorf("unlock share key: unlock: %w", err)
+	}
+
+	return crypto.NewKeyRing(unlockedKey)
 }

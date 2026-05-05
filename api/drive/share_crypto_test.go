@@ -105,10 +105,12 @@ func TestGenerateKeyPacketRoundTrip_Property(t *testing.T) {
 		}
 
 		// Verify the signature is valid (signed by inviter).
-		sig, err := crypto.NewPGPSignatureFromArmored(sigArmored)
+		sigBytes, err := base64.StdEncoding.DecodeString(sigArmored)
 		if err != nil {
-			t.Fatalf("parse signature: %v", err)
+			t.Fatalf("decode signature: %v", err)
 		}
+
+		sig := crypto.NewPGPSignature(sigBytes)
 
 		if err := inviterKR.VerifyDetached(crypto.NewPlainMessage(keyPacketBytes), sig, crypto.GetUnixTime()); err != nil {
 			t.Fatalf("signature verification failed: %v", err)
