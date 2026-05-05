@@ -30,6 +30,10 @@ func saveAndRestore(t *testing.T) {
 	origRemove := removeMemberFn
 	origDelInv := deleteInvitationFn
 	origDelExt := deleteExternalInvitationFn
+	origCreateURL := createShareURLFn
+	origDeleteURL := deleteShareURLFn
+	origListURLs := listShareURLsFn
+	origUpdatePW := updateShareURLPasswordFn
 	t.Cleanup(func() {
 		setupSessionFn = origSetup
 		newDriveClientFn = origNewClient
@@ -42,6 +46,10 @@ func saveAndRestore(t *testing.T) {
 		removeMemberFn = origRemove
 		deleteInvitationFn = origDelInv
 		deleteExternalInvitationFn = origDelExt
+		createShareURLFn = origCreateURL
+		deleteShareURLFn = origDeleteURL
+		listShareURLsFn = origListURLs
+		updateShareURLPasswordFn = origUpdatePW
 	})
 
 	// Set up a RuntimeContext on all share commands so GetContext works.
@@ -51,6 +59,7 @@ func saveAndRestore(t *testing.T) {
 	cmds := []*cobra.Command{
 		shareCmd, shareAddCmd, shareDelCmd, shareListCmd,
 		shareShowCmd, shareRevokeCmd, shareCacheCmd, shareInviteCmd,
+		shareURLCmd, shareURLEnableCmd, shareURLDisableCmd, shareURLPasswordCmd,
 	}
 	for _, cmd := range cmds {
 		cli.SetContext(cmd, rc)
@@ -172,7 +181,7 @@ func TestShareCmd_Run(_ *testing.T) {
 
 // TestShareCmd_Subcommands verifies all expected subcommands are registered.
 func TestShareCmd_Subcommands(t *testing.T) {
-	want := []string{"show", "invite", "revoke", "add", "del", "list", "cache"}
+	want := []string{"show", "invite", "revoke", "add", "del", "list", "cache", "url"}
 	cmds := shareCmd.Commands()
 
 	names := make(map[string]bool, len(cmds))
