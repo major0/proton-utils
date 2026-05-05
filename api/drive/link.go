@@ -54,6 +54,21 @@ func (l *Link) Type() proton.LinkType { return l.protonLink.Type }
 // State returns the link state without decryption.
 func (l *Link) State() proton.LinkState { return l.protonLink.State }
 
+// IsDir returns true if the link is a folder.
+func (l *Link) IsDir() bool { return l.protonLink.Type == proton.LinkTypeFolder }
+
+// IsFile returns true if the link is a file.
+func (l *Link) IsFile() bool { return l.protonLink.Type == proton.LinkTypeFile }
+
+// IsActive returns true if the link state is active.
+func (l *Link) IsActive() bool { return l.protonLink.State == proton.LinkStateActive }
+
+// IsTrashed returns true if the link state is trashed.
+func (l *Link) IsTrashed() bool { return l.protonLink.State == proton.LinkStateTrashed }
+
+// IsDraft returns true if the link state is draft.
+func (l *Link) IsDraft() bool { return l.protonLink.State == proton.LinkStateDraft }
+
 // CreateTime returns the creation timestamp without decryption.
 func (l *Link) CreateTime() int64 { return l.protonLink.CreateTime }
 
@@ -75,6 +90,25 @@ func (l *Link) Size() int64 {
 		return l.protonLink.FileProperties.ActiveRevision.Size
 	}
 	return 0
+}
+
+// HasActiveRevision returns true if the link is a file with a committed
+// active revision. A file in state Active but with no active revision is
+// a "ghost" file, not a draft.
+func (l *Link) HasActiveRevision() bool {
+	return l.protonLink.Type == proton.LinkTypeFile &&
+		l.protonLink.FileProperties != nil &&
+		l.protonLink.FileProperties.ActiveRevision.ID != "" &&
+		l.protonLink.FileProperties.ActiveRevision.State == proton.RevisionStateActive
+}
+
+// RevisionID returns the active revision ID if file properties exist,
+// or empty string otherwise.
+func (l *Link) RevisionID() string {
+	if l.protonLink.FileProperties != nil {
+		return l.protonLink.FileProperties.ActiveRevision.ID
+	}
+	return ""
 }
 
 // MIMEType returns the MIME type without decryption.
