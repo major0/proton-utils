@@ -2,8 +2,14 @@
 
 A command-line interface for [Proton][] services.
 
-> **Status:** Early development. Core operations work but the tool is
-> not yet stable.
+> **Status:** Experimental — not production ready. Core operations work
+> but the tool is under active development and APIs may change without
+> notice.
+
+> **⚠️ `api/` package:** The `api/` package is in extreme flux and is
+> not suitable for external consumers. It will not stabilize until well
+> after the `cmd/` and filesystem interfaces are stable, at which point
+> it will undergo further optimization and refactoring.
 
 ## Features
 

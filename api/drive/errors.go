@@ -12,4 +12,10 @@ var (
 	ErrNotEmpty = errors.New("directory not empty")
 	// ErrInvalidPath indicates that the provided path is malformed.
 	ErrInvalidPath = errors.New("invalid path")
+	// ErrShareURLExists indicates that a ShareURL already exists for the share.
+	ErrShareURLExists = errors.New("drive: share URL already exists")
+	// ErrNoShareURL indicates that no ShareURL exists for the share.
+	ErrNoShareURL = errors.New("drive: no share URL exists")
+	// ErrNotStandardShare indicates that the operation requires a standard share.
+	ErrNotStandardShare = errors.New("drive: operation requires a standard share")
 )
