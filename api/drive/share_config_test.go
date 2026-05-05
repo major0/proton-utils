@@ -12,9 +12,13 @@ import (
 )
 
 func testShare(name string, st proton.ShareType) *Share {
+	return testShareWithID(name, "s", st)
+}
+
+func testShareWithID(name, shareID string, st proton.ShareType) *Share {
 	resolver := &mockResolver{}
 	pShare := &proton.Share{
-		ShareMetadata: proton.ShareMetadata{ShareID: "s", Type: st},
+		ShareMetadata: proton.ShareMetadata{ShareID: shareID, Type: st},
 	}
 	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
 	root := NewTestLink(rootPLink, nil, nil, resolver, name)
@@ -47,7 +51,7 @@ func TestApplyShareConfig_MatchingName(t *testing.T) {
 	c := &Client{
 		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
-				"MyFolder": {
+				"s": {
 					MemoryCache: api.CacheMetadata,
 					DiskCache:   api.DiskCacheObjectStore,
 				},
@@ -145,7 +149,7 @@ func TestApplyShareConfig_LinkNameLevel(t *testing.T) {
 	c := &Client{
 		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
-				"MyFolder": {
+				"s": {
 					MemoryCache: api.CacheLinkName,
 					DiskCache:   api.DiskCacheDisabled,
 				},
@@ -168,7 +172,7 @@ func TestApplyShareConfig_NoMatch(t *testing.T) {
 	c := &Client{
 		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
-				"MyFolder": {MemoryCache: api.CacheMetadata},
+				"different-id": {MemoryCache: api.CacheMetadata},
 			},
 		},
 	}
@@ -189,7 +193,7 @@ func TestApplyShareConfig_RootForced(t *testing.T) {
 	c := &Client{
 		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
-				"root": {
+				"s": {
 					MemoryCache: api.CacheMetadata,
 					DiskCache:   api.DiskCacheObjectStore,
 				},
@@ -209,7 +213,7 @@ func TestApplyShareConfig_PhotosForced(t *testing.T) {
 	c := &Client{
 		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
-				"Photos": {
+				"s": {
 					MemoryCache: api.CacheMetadata,
 					DiskCache:   api.DiskCacheObjectStore,
 				},
@@ -272,8 +276,9 @@ func TestPropertyRootPhotosDisabled(t *testing.T) {
 		memLevel := memoryLevelGen.Draw(t, "memoryLevel")
 		diskLevel := diskLevelGen.Draw(t, "diskLevel")
 		name := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9]{2,15}`).Draw(t, "name")
+		shareID := rapid.StringMatching(`[a-zA-Z0-9]{8,16}`).Draw(t, "shareID")
 
-		share := testShare(name, st)
+		share := testShareWithID(name, shareID, st)
 
 		// Pre-set the share to the drawn levels to simulate a share
 		// that somehow had caching enabled before applyShareConfig.
@@ -283,7 +288,7 @@ func TestPropertyRootPhotosDisabled(t *testing.T) {
 		c := &Client{
 			Config: &api.SessionConfig{
 				Shares: map[string]api.ShareConfig{
-					name: {
+					shareID: {
 						MemoryCache: memLevel,
 						DiskCache:   diskLevel,
 					},
@@ -298,6 +303,68 @@ func TestPropertyRootPhotosDisabled(t *testing.T) {
 		}
 		if share.DiskCacheLevel != api.DiskCacheDisabled {
 			t.Fatalf("share type %d: DiskCacheLevel = %v, want disabled", st, share.DiskCacheLevel)
+		}
+	})
+}
+
+// TestPropertyConfigKeyingPreservesSettingsAcrossRename verifies that
+// config entries keyed by ShareID survive a share rename (name change).
+// Since applyShareConfig looks up by ShareID, changing the share's
+// decrypted name has no effect on config resolution.
+//
+// **Property 5: Config keying preserves settings across rename**
+// **Validates: Requirements 5.1, 6.1**
+func TestPropertyConfigKeyingPreservesSettingsAcrossRename(t *testing.T) {
+	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{
+		api.CacheDisabled, api.CacheLinkName, api.CacheMetadata,
+	})
+	diskLevelGen := rapid.SampledFrom([]api.DiskCacheLevel{
+		api.DiskCacheDisabled, api.DiskCacheObjectStore,
+	})
+
+	rapid.Check(t, func(t *rapid.T) {
+		shareID := rapid.StringMatching(`[a-zA-Z0-9]{8,20}`).Draw(t, "shareID")
+		oldName := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{2,15}`).Draw(t, "oldName")
+		newName := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{2,15}`).Draw(t, "newName")
+		memLevel := memoryLevelGen.Draw(t, "memoryLevel")
+		diskLevel := diskLevelGen.Draw(t, "diskLevel")
+
+		// Create a share with the old name and the given ShareID.
+		share := testShareWithID(oldName, shareID, proton.ShareTypeStandard)
+
+		// Config keyed by ShareID.
+		c := &Client{
+			Config: &api.SessionConfig{
+				Shares: map[string]api.ShareConfig{
+					shareID: {
+						MemoryCache: memLevel,
+						DiskCache:   diskLevel,
+					},
+				},
+			},
+		}
+
+		// Apply config — should match by ShareID.
+		c.applyShareConfig(share)
+
+		if share.MemoryCacheLevel != memLevel {
+			t.Fatalf("before rename: MemoryCacheLevel = %v, want %v", share.MemoryCacheLevel, memLevel)
+		}
+		if share.DiskCacheLevel != diskLevel {
+			t.Fatalf("before rename: DiskCacheLevel = %v, want %v", share.DiskCacheLevel, diskLevel)
+		}
+
+		// Simulate rename: create a new share with the same ShareID but different name.
+		renamedShare := testShareWithID(newName, shareID, proton.ShareTypeStandard)
+
+		// Apply config again — should still match by ShareID.
+		c.applyShareConfig(renamedShare)
+
+		if renamedShare.MemoryCacheLevel != memLevel {
+			t.Fatalf("after rename: MemoryCacheLevel = %v, want %v", renamedShare.MemoryCacheLevel, memLevel)
+		}
+		if renamedShare.DiskCacheLevel != diskLevel {
+			t.Fatalf("after rename: DiskCacheLevel = %v, want %v", renamedShare.DiskCacheLevel, diskLevel)
 		}
 	})
 }

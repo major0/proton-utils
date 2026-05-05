@@ -57,8 +57,8 @@ func runShareDel(cmd *cobra.Command, args []string) error {
 	// Remove cache config entry if present.
 	cfg := rc.Config
 	if cfg != nil {
-		if _, ok := cfg.Shares[name]; ok {
-			delete(cfg.Shares, name)
+		if _, ok := cfg.Shares[shareID]; ok {
+			delete(cfg.Shares, shareID)
 			if err := config.SaveConfig(cli.ConfigFilePath(), cfg); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to update config: %v\n", err)
 			}

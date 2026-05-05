@@ -783,7 +783,7 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
 
 	cfg := config.DefaultConfig()
-	cfg.Shares["Shared Folder"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
+	cfg.Shares["share-std"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
 	cli.GetContext(shareCacheCmd).Config = cfg
 
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
@@ -796,7 +796,7 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	}
 
 	// Verify config entry was removed.
-	if _, ok := cfg.Shares["Shared Folder"]; ok {
+	if _, ok := cfg.Shares["share-std"]; ok {
 		t.Error("expected config entry to be removed")
 	}
 }

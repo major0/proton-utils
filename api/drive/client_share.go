@@ -123,7 +123,7 @@ func (c *Client) GetShare(ctx context.Context, id string) (*Share, error) {
 
 // applyShareConfig sets cache levels on a share based on the loaded config.
 // Root and photos shares are always forced to disabled. Looks up the share
-// by its decrypted root link name.
+// by its ShareID (not decrypted name).
 func (c *Client) applyShareConfig(share *Share) {
 	// Root and photos shares: caching prohibited.
 	st := share.ProtonShare().Type
@@ -137,15 +137,9 @@ func (c *Client) applyShareConfig(share *Share) {
 		return
 	}
 
-	// Look up by decrypted name.
-	name, err := share.Link.Name()
-	if err != nil {
-		return
-	}
-
-	sc, ok := c.Config.Shares[name]
+	sc, ok := c.Config.Shares[share.Metadata().ShareID]
 	if !ok {
-		return // defaults to disabled
+		return
 	}
 
 	share.MemoryCacheLevel = sc.MemoryCache
@@ -168,31 +162,67 @@ func (c *Client) ResolveShareByType(ctx context.Context, st proton.ShareType) (*
 	return nil, ErrFileNotFound
 }
 
-// ResolveShare finds a share by its root link name.
-// Fetches metadata first, then decrypts shares one at a time until a
-// match is found — avoids decrypting all shares upfront.
-func (c *Client) ResolveShare(ctx context.Context, name string, all bool) (*Share, error) {
+// ResolveShare finds a share by name or ShareID prefix.
+// Full-scans all shares: tries nameOrID as a share name first, then as a
+// ShareID prefix (case-sensitive). Returns an ambiguity error if both
+// interpretations match different shares, or if multiple shares match.
+func (c *Client) ResolveShare(ctx context.Context, nameOrID string, all bool) (*Share, error) {
 	metas, err := c.ListSharesMetadata(ctx, all)
 	if err != nil {
 		return nil, err
 	}
 
+	var nameMatch *Share
+	var nameMatchCount int
+	var idMatch *Share
+	var idMatchCount int
+
 	for _, meta := range metas {
+		// Check ID prefix (cheap, no decryption needed).
+		isIDMatch := strings.HasPrefix(meta.ShareID, nameOrID)
+
+		// Always resolve the share for name check (full scan).
 		share, err := c.GetShare(ctx, meta.ShareID)
 		if err != nil {
 			slog.Debug("ResolveShare: skip", "shareID", meta.ShareID, "error", err)
 			continue
 		}
+
+		if isIDMatch {
+			idMatch = share
+			idMatchCount++
+		}
+
 		shareName, err := share.Link.Name()
 		if err != nil {
 			continue
 		}
-		if shareName == name {
-			return share, nil
+		if shareName == nameOrID {
+			nameMatch = share
+			nameMatchCount++
 		}
 	}
 
-	return nil, ErrFileNotFound
+	// Resolution logic.
+	switch {
+	case nameMatchCount == 1 && idMatchCount == 0:
+		return nameMatch, nil
+	case nameMatchCount == 0 && idMatchCount == 1:
+		return idMatch, nil
+	case nameMatchCount == 1 && idMatchCount == 1:
+		// Both match — same share or different?
+		if nameMatch.Metadata().ShareID == idMatch.Metadata().ShareID {
+			return nameMatch, nil
+		}
+		return nil, fmt.Errorf("ambiguous: %q matches share name %q and ID prefix %q — use full ID to disambiguate",
+			nameOrID, nameMatch.Metadata().ShareID, idMatch.Metadata().ShareID)
+	case nameMatchCount > 1:
+		return nil, fmt.Errorf("ambiguous: multiple shares named %q — use share ID to disambiguate", nameOrID)
+	case idMatchCount > 1:
+		return nil, fmt.Errorf("ambiguous: %q matches multiple share IDs — use a longer prefix", nameOrID)
+	default:
+		return nil, ErrFileNotFound
+	}
 }
 
 // ResolvePath resolves a slash-separated path to a link across all shares.
