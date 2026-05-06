@@ -60,7 +60,7 @@ func saveAndRestore(t *testing.T) {
 	}
 	cmds := []*cobra.Command{
 		shareCmd, shareAddCmd, shareDelCmd, shareListCmd,
-		shareShowCmd, shareRevokeCmd, shareCacheCmd, shareInviteCmd,
+		shareShowCmd, shareRevokeCmd, shareInviteCmd,
 		shareURLCmd, shareURLEnableCmd, shareURLDisableCmd, shareURLPasswordCmd,
 		shareRenameCmd,
 	}
@@ -184,7 +184,7 @@ func TestShareCmd_Run(_ *testing.T) {
 
 // TestShareCmd_Subcommands verifies all expected subcommands are registered.
 func TestShareCmd_Subcommands(t *testing.T) {
-	want := []string{"show", "invite", "revoke", "add", "del", "list", "cache", "url", "rename"}
+	want := []string{"show", "invite", "revoke", "add", "del", "list", "url", "rename"}
 	cmds := shareCmd.Commands()
 
 	names := make(map[string]bool, len(cmds))
@@ -196,6 +196,11 @@ func TestShareCmd_Subcommands(t *testing.T) {
 		if !names[w] {
 			t.Errorf("missing subcommand %q", w)
 		}
+	}
+
+	// Verify "cache" is no longer registered (replaced by proton config).
+	if names["cache"] {
+		t.Error("'cache' subcommand should no longer be registered")
 	}
 }
 
@@ -283,16 +288,6 @@ func TestShareRevokeCmd_ClientError(t *testing.T) {
 	}
 }
 
-func TestShareCacheCmd_ClientError(t *testing.T) {
-	saveAndRestore(t)
-	injectClientError(fmt.Errorf("client init failed"))
-
-	err := shareCacheCmd.RunE(shareCacheCmd, []string{"myshare"})
-	if err == nil || !strings.Contains(err.Error(), "client init failed") {
-		t.Fatalf("error = %v, want 'client init failed'", err)
-	}
-}
-
 func TestShareInviteCmd_ClientError(t *testing.T) {
 	saveAndRestore(t)
 	origPerms := inviteFlags.permissions
@@ -373,27 +368,6 @@ func TestShareInviteCmd_ArgsValidation(t *testing.T) {
 	}
 }
 
-func TestShareCacheCmd_ArgsValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{"no args", []string{}, true},
-		{"one arg valid", []string{"share"}, false},
-		{"two args", []string{"a", "b"}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := shareCacheCmd.Args(shareCacheCmd, tt.args)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Args(%v) error = %v, wantErr %v", tt.args, err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // --- Tests with injected test client (API calls fail with network error) ---
 
 func TestShareDelCmd_ResolveShareError(t *testing.T) {
@@ -427,19 +401,6 @@ func TestShareRevokeCmd_ResolveShareError(t *testing.T) {
 	injectTestClient()
 
 	err := shareRevokeCmd.RunE(shareRevokeCmd, []string{"nonexistent", "user@test.local"})
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "share not found") {
-		t.Errorf("error = %q, want 'share not found'", err.Error())
-	}
-}
-
-func TestShareCacheCmd_ResolveShareError(t *testing.T) {
-	saveAndRestore(t)
-	injectTestClient()
-
-	err := shareCacheCmd.RunE(shareCacheCmd, []string{"nonexistent"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -592,74 +553,6 @@ func TestShareRevokeCmd_PhotosShareType(t *testing.T) {
 	}
 }
 
-func TestShareCacheCmd_ProhibitedShareType(t *testing.T) {
-	saveAndRestore(t)
-	share := makeTestShare("share-main", proton.ShareTypeMain, "My Files")
-	injectResolvedShare(share)
-
-	err := shareCacheCmd.RunE(shareCacheCmd, []string{"My Files"})
-	if err == nil {
-		t.Fatal("expected error for prohibited share type")
-	}
-	if !strings.Contains(err.Error(), "caching only allowed") {
-		t.Errorf("error = %q, want 'caching only allowed'", err.Error())
-	}
-}
-
-func TestShareCacheCmd_ShowState(t *testing.T) {
-	saveAndRestore(t)
-	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared Folder")
-	injectResolvedShare(share)
-
-	// No toggle flags — should show current state.
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
-	cli.GetContext(shareCacheCmd).Config = nil
-
-	err := shareCacheCmd.RunE(shareCacheCmd, []string{"Shared Folder"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestShareCacheCmd_ToggleFlags(t *testing.T) {
-	saveAndRestore(t)
-	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared Folder")
-	injectResolvedShare(share)
-
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	origFlags := cacheFlags
-	t.Cleanup(func() {
-		cli.GetContext(shareCacheCmd).Config = origConfig
-		cacheFlags = origFlags
-	})
-
-	tmpDir := t.TempDir()
-	configPath := tmpDir + "/config.yaml"
-
-	cfg := config.DefaultConfig()
-	cli.GetContext(shareCacheCmd).Config = cfg
-
-	// Save a config so SaveConfig has a valid path.
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-
-	cacheFlags.memoryCache = "metadata"
-	cacheFlags.diskCache = ""
-
-	// The SaveConfig call will use cli.ConfigFilePath() which returns
-	// rootParams.ConfigFile. Since we can't set that, the save may fail.
-	// But the toggle logic before the save is what we're testing.
-	_ = shareCacheCmd.RunE(shareCacheCmd, []string{"Shared Folder"})
-
-	// Verify the in-memory config was updated.
-	sc := cfg.Shares["Shared Folder"]
-	if sc.MemoryCache != api.CacheMetadata {
-		t.Error("expected memory cache metadata")
-	}
-}
-
 func TestShareListCmd_WithShares(t *testing.T) {
 	saveAndRestore(t)
 	shares := []*drive.Share{
@@ -714,64 +607,6 @@ func TestShareRevokeCmd_StandardShareListError(t *testing.T) {
 	}
 }
 
-func TestShareCacheCmd_DisableFlags(t *testing.T) {
-	saveAndRestore(t)
-	share := makeTestShare("share-std", proton.ShareTypeStandard, "Test Share")
-	injectResolvedShare(share)
-
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	origFlags := cacheFlags
-	t.Cleanup(func() {
-		cli.GetContext(shareCacheCmd).Config = origConfig
-		cacheFlags = origFlags
-	})
-
-	cfg := config.DefaultConfig()
-	cfg.Shares["Test Share"] = api.ShareConfig{
-		MemoryCache: api.CacheMetadata,
-		DiskCache:   api.DiskCacheObjectStore,
-	}
-	cli.GetContext(shareCacheCmd).Config = cfg
-
-	cacheFlags.memoryCache = "disabled"
-	cacheFlags.diskCache = "disabled"
-
-	_ = shareCacheCmd.RunE(shareCacheCmd, []string{"Test Share"})
-
-	sc := cfg.Shares["Test Share"]
-	if sc.MemoryCache != api.CacheDisabled {
-		t.Error("expected memory cache disabled")
-	}
-	if sc.DiskCache != api.DiskCacheDisabled {
-		t.Error("expected disk cache disabled")
-	}
-}
-
-func TestShareCacheCmd_OnDiskToggle(t *testing.T) {
-	saveAndRestore(t)
-	share := makeTestShare("share-std", proton.ShareTypeStandard, "Disk Share")
-	injectResolvedShare(share)
-
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	origFlags := cacheFlags
-	t.Cleanup(func() {
-		cli.GetContext(shareCacheCmd).Config = origConfig
-		cacheFlags = origFlags
-	})
-
-	cli.GetContext(shareCacheCmd).Config = config.DefaultConfig()
-
-	cacheFlags.memoryCache = ""
-	cacheFlags.diskCache = "objectstore"
-
-	_ = shareCacheCmd.RunE(shareCacheCmd, []string{"Disk Share"})
-
-	sc := cli.GetContext(shareCacheCmd).Config.Shares["Disk Share"]
-	if sc.DiskCache != api.DiskCacheObjectStore {
-		t.Error("expected disk cache objectstore")
-	}
-}
-
 func TestShareInviteCmd_ResolveShareErrorWithValidPerms(t *testing.T) {
 	saveAndRestore(t)
 	origPerms := inviteFlags.permissions
@@ -792,12 +627,12 @@ func TestShareDelCmd_SuccessWithConfig(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Shared Folder")
 	injectResolvedShare(share)
 
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
+	origConfig := cli.GetContext(shareCmd).Config
+	t.Cleanup(func() { cli.GetContext(shareCmd).Config = origConfig })
 
 	cfg := config.DefaultConfig()
 	cfg.Shares["share-std"] = api.ShareConfig{MemoryCache: api.CacheLinkName}
-	cli.GetContext(shareCacheCmd).Config = cfg
+	cli.GetContext(shareCmd).Config = cfg
 
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
 		return nil
@@ -819,9 +654,9 @@ func TestShareDelCmd_SuccessNoConfig(t *testing.T) {
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Other")
 	injectResolvedShare(share)
 
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	t.Cleanup(func() { cli.GetContext(shareCacheCmd).Config = origConfig })
-	cli.GetContext(shareCacheCmd).Config = nil
+	origConfig := cli.GetContext(shareCmd).Config
+	t.Cleanup(func() { cli.GetContext(shareCmd).Config = origConfig })
+	cli.GetContext(shareCmd).Config = nil
 
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, _ bool) error {
 		return nil
@@ -994,45 +829,20 @@ func TestShareInviteCmd_GetPublicKeysError(t *testing.T) {
 	}
 }
 
-func TestShareCacheCmd_SaveConfigError(t *testing.T) {
-	saveAndRestore(t)
-	share := makeTestShare("share-std", proton.ShareTypeStandard, "Save Test")
-	injectResolvedShare(share)
-
-	origConfig := cli.GetContext(shareCacheCmd).Config
-	origFlags := cacheFlags
-	t.Cleanup(func() {
-		cli.GetContext(shareCacheCmd).Config = origConfig
-		cacheFlags = origFlags
-	})
-
-	cli.GetContext(shareCacheCmd).Config = config.DefaultConfig()
-
-	cacheFlags.memoryCache = "linkname"
-	cacheFlags.diskCache = ""
-
-	// ConfigFilePath() returns empty string, so SaveConfig will fail.
-	// The error should be returned.
-	err := shareCacheCmd.RunE(shareCacheCmd, []string{"Save Test"})
-	// SaveConfig may or may not fail depending on the path.
-	// Either way, the toggle logic is exercised.
-	_ = err
-}
-
 func TestShareDelCmd_ForceFlag(t *testing.T) {
 	saveAndRestore(t)
 	share := makeTestShare("share-std", proton.ShareTypeStandard, "Force Del")
 	injectResolvedShare(share)
 
 	origForce := delFlags.force
-	origConfig := cli.GetContext(shareCacheCmd).Config
+	origConfig := cli.GetContext(shareCmd).Config
 	t.Cleanup(func() {
 		delFlags.force = origForce
-		cli.GetContext(shareCacheCmd).Config = origConfig
+		cli.GetContext(shareCmd).Config = origConfig
 	})
 
 	delFlags.force = true
-	cli.GetContext(shareCacheCmd).Config = config.DefaultConfig()
+	cli.GetContext(shareCmd).Config = config.DefaultConfig()
 
 	var gotForce bool
 	deleteShareFn = func(_ context.Context, _ *drive.Client, _ string, force bool) error {
