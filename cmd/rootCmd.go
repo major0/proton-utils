@@ -154,15 +154,18 @@ func SetServiceCmd(cmd *cobra.Command, service string) {
 
 // resolveVersionRC returns the app version override for a service using
 // RuntimeContext values. Checks (in order): AppVersionOverride flag,
-// config file override. Returns empty string when no override is
+// subsystem config, core config. Returns empty string when no override is
 // configured, allowing the service's default version to be used.
 func resolveVersionRC(rc *RuntimeContext, service string) string {
 	if rc.AppVersionOverride != "" {
 		return rc.AppVersionOverride
 	}
 	if rc.Config != nil {
-		if v := rc.Config.ServiceVersion(service, ""); v != "" {
-			return v
+		if sub, ok := rc.Config.Subsystems[service]; ok && sub.AppVersion.IsSet() {
+			return sub.AppVersion.Value()
+		}
+		if rc.Config.AppVersion.IsSet() {
+			return rc.Config.AppVersion.Value()
 		}
 	}
 	return ""
@@ -211,9 +214,15 @@ func sessionConfigFromRC(rc *RuntimeContext) *common.SessionConfig {
 	if rc.Config == nil {
 		return nil
 	}
+	defaults := make(map[string]string)
+	for name, sub := range rc.Config.Subsystems {
+		if sub.Account.IsSet() {
+			defaults[name] = sub.Account.Value()
+		}
+	}
 	return &common.SessionConfig{
 		Shares:   rc.Config.Shares,
-		Defaults: rc.Config.Defaults,
+		Defaults: defaults,
 	}
 }
 

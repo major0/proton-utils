@@ -175,16 +175,24 @@ func TestAppVersionFlag(t *testing.T) {
 
 func TestServiceVersionConfig(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ServiceVersions["drive"] = "1.0.0.0"
+	cfg.Subsystems["drive"] = &config.CoreConfig{
+		MaxJobs:    config.NewParam(10),
+		Account:    config.NewParam("default"),
+		AppVersion: config.NewParam(""),
+	}
+	cfg.Subsystems["drive"].AppVersion.SetFile("1.0.0.0")
 
-	got := cfg.ServiceVersion("drive", common.DefaultVersion)
+	rc := &RuntimeContext{
+		Config: cfg,
+	}
+	got := resolveVersionRC(rc, "drive")
 	if got != "1.0.0.0" {
-		t.Errorf("ServiceVersion(drive) = %q, want %q", got, "1.0.0.0")
+		t.Errorf("resolveVersionRC(drive) = %q, want %q", got, "1.0.0.0")
 	}
 
-	got = cfg.ServiceVersion("lumo", common.DefaultVersion)
-	if got != common.DefaultVersion {
-		t.Errorf("ServiceVersion(lumo) = %q, want %q", got, common.DefaultVersion)
+	got = resolveVersionRC(rc, "lumo")
+	if got != "" {
+		t.Errorf("resolveVersionRC(lumo) = %q, want %q", got, "")
 	}
 }
 
@@ -252,21 +260,41 @@ func TestResolveVersionRC(t *testing.T) {
 	tests := []struct {
 		name     string
 		override string
-		config   map[string]string
+		subsys   map[string]*config.CoreConfig
 		service  string
 		want     string
 	}{
 		{
 			"flag override takes precedence",
 			"1.2.3.4",
-			map[string]string{"drive": "9.9.9.9"},
+			map[string]*config.CoreConfig{
+				"drive": func() *config.CoreConfig {
+					c := &config.CoreConfig{
+						MaxJobs:    config.NewParam(10),
+						Account:    config.NewParam("default"),
+						AppVersion: config.NewParam(""),
+					}
+					c.AppVersion.SetFile("9.9.9.9")
+					return c
+				}(),
+			},
 			"drive",
 			"1.2.3.4",
 		},
 		{
 			"config override used when no flag",
 			"",
-			map[string]string{"drive": "2.0.0.0"},
+			map[string]*config.CoreConfig{
+				"drive": func() *config.CoreConfig {
+					c := &config.CoreConfig{
+						MaxJobs:    config.NewParam(10),
+						Account:    config.NewParam("default"),
+						AppVersion: config.NewParam(""),
+					}
+					c.AppVersion.SetFile("2.0.0.0")
+					return c
+				}(),
+			},
 			"drive",
 			"2.0.0.0",
 		},
@@ -280,7 +308,17 @@ func TestResolveVersionRC(t *testing.T) {
 		{
 			"config for different service not used",
 			"",
-			map[string]string{"lumo": "3.0.0.0"},
+			map[string]*config.CoreConfig{
+				"lumo": func() *config.CoreConfig {
+					c := &config.CoreConfig{
+						MaxJobs:    config.NewParam(10),
+						Account:    config.NewParam("default"),
+						AppVersion: config.NewParam(""),
+					}
+					c.AppVersion.SetFile("3.0.0.0")
+					return c
+				}(),
+			},
 			"drive",
 			"",
 		},
@@ -289,8 +327,8 @@ func TestResolveVersionRC(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.DefaultConfig()
-			if tt.config != nil {
-				cfg.ServiceVersions = tt.config
+			if tt.subsys != nil {
+				cfg.Subsystems = tt.subsys
 			}
 			rc := &RuntimeContext{
 				AppVersionOverride: tt.override,
@@ -317,7 +355,12 @@ func TestSessionConfigFromRC(t *testing.T) {
 	t.Run("with config", func(t *testing.T) {
 		cfg := config.DefaultConfig()
 		cfg.Shares["test"] = common.ShareConfig{MemoryCache: common.CacheMetadata}
-		cfg.Defaults["drive"] = "myaccount"
+		cfg.Subsystems["drive"] = &config.CoreConfig{
+			MaxJobs:    config.NewParam(10),
+			Account:    config.NewParam("default"),
+			AppVersion: config.NewParam(""),
+		}
+		cfg.Subsystems["drive"].Account.SetFile("myaccount")
 		rc := &RuntimeContext{Config: cfg}
 
 		got := sessionConfigFromRC(rc)
