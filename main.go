@@ -6,6 +6,7 @@ import (
 	_ "github.com/major0/proton-cli/cmd/account"
 
 	// _ "github.com/major0/proton-cli/cmd/calendar"
+	_ "github.com/major0/proton-cli/cmd/config"
 	_ "github.com/major0/proton-cli/cmd/drive"
 	_ "github.com/major0/proton-cli/cmd/drive/share"
 	_ "github.com/major0/proton-cli/cmd/lumo"

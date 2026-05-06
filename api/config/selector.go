@@ -84,7 +84,7 @@ func Parse(input string) (Selector, error) {
 			// Split inner on '='.
 			eqIdx := strings.IndexByte(inner, '=')
 			if eqIdx < 0 {
-				raw := input[bracketStart : pos]
+				raw := input[bracketStart:pos]
 				return Selector{}, fmt.Errorf("selector: missing '=' in index at segment %q", name+raw)
 			}
 
