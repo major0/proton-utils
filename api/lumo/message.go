@@ -74,11 +74,27 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*Message, er
 	return &resp.Message, nil
 }
 
-// ListMessages fetches all messages in a conversation.
+// ListMessages fetches all messages in a conversation. The
+// GET /conversations/:id endpoint returns shallow messages (no Encrypted
+// field), so each message is then fetched individually via
+// GET /messages/:id to get the full encrypted content.
 func (c *Client) ListMessages(ctx context.Context, conversationID string) ([]Message, error) {
-	var resp ListMessagesResponse
-	if err := c.Session.DoJSON(ctx, "GET", c.url("/lumo/v1/conversations/"+conversationID+"/messages"), nil, &resp); err != nil {
+	conv, err := c.GetConversation(ctx, conversationID)
+	if err != nil {
 		return nil, fmt.Errorf("lumo: list messages: %w", err)
 	}
-	return resp.Messages, nil
+
+	if len(conv.Messages) == 0 {
+		return nil, nil
+	}
+
+	full := make([]Message, 0, len(conv.Messages))
+	for _, s := range conv.Messages {
+		msg, err := c.GetMessage(ctx, s.ID)
+		if err != nil {
+			return nil, fmt.Errorf("lumo: list messages: fetch %s: %w", s.ID, err)
+		}
+		full = append(full, *msg)
+	}
+	return full, nil
 }

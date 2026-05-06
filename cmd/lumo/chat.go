@@ -159,10 +159,6 @@ func runChatResume(cmd *cobra.Command, args []string) error {
 
 // decryptMessageContent decrypts a message's encrypted content, returning
 // the plaintext. Returns an empty string on decryption failure.
-//
-// The messages slice is used to resolve msg.ParentID (a server remote ID)
-// to the parent's MessageTag, which is what the web client uses in the AD.
-// If the parent is not found in messages, parentTag stays empty.
 func decryptMessageContent(msg lumo.Message, dek []byte, convTag string, messages []lumo.Message) string {
 	if msg.Encrypted == "" {
 		return ""
@@ -173,7 +169,7 @@ func decryptMessageContent(msg lumo.Message, dek []byte, convTag string, message
 		role = "assistant"
 	}
 
-	// Resolve ParentID (server remote ID) → parent's MessageTag.
+	// Try with ParentID resolved to parent's MessageTag first (web client behavior).
 	parentTag := ""
 	if msg.ParentID != "" {
 		for _, m := range messages {
@@ -187,7 +183,12 @@ func decryptMessageContent(msg lumo.Message, dek []byte, convTag string, message
 	ad := lumo.MessageAD(msg.MessageTag, role, parentTag, convTag)
 	plainJSON, err := lumo.DecryptString(msg.Encrypted, dek, ad)
 	if err != nil {
-		return ""
+		// Fallback: try with raw ParentID (in case the API uses server IDs directly).
+		ad = lumo.MessageAD(msg.MessageTag, role, msg.ParentID, convTag)
+		plainJSON, err = lumo.DecryptString(msg.Encrypted, dek, ad)
+		if err != nil {
+			return ""
+		}
 	}
 
 	var priv struct {

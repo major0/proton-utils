@@ -19,6 +19,7 @@ func TestChatCommandRegistration(t *testing.T) {
 		"resume": false,
 		"list":   false,
 		"delete": false,
+		"log":    false,
 	}
 
 	for _, sub := range subs {

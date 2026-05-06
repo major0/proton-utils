@@ -40,14 +40,15 @@ type Asset struct {
 
 // Conversation is a conversation from the API.
 type Conversation struct {
-	ID              string `json:"ID"`
-	SpaceID         string `json:"SpaceID"`
-	ConversationTag string `json:"ConversationTag"`
-	Encrypted       string `json:"Encrypted,omitempty"`
-	IsStarred       bool   `json:"IsStarred,omitempty"`
-	CreateTime      string `json:"CreateTime"`
-	UpdateTime      string `json:"UpdateTime,omitempty"`
-	DeleteTime      string `json:"DeleteTime,omitempty"`
+	ID              string    `json:"ID"`
+	SpaceID         string    `json:"SpaceID"`
+	ConversationTag string    `json:"ConversationTag"`
+	Encrypted       string    `json:"Encrypted,omitempty"`
+	IsStarred       bool      `json:"IsStarred,omitempty"`
+	CreateTime      string    `json:"CreateTime"`
+	UpdateTime      string    `json:"UpdateTime,omitempty"`
+	DeleteTime      string    `json:"DeleteTime,omitempty"`
+	Messages        []Message `json:"Messages,omitempty"` // embedded by GET /conversations/:id
 }
 
 // Message is a message from the API.
