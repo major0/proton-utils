@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -343,10 +344,104 @@ func TestResolveVersionRC(t *testing.T) {
 	}
 }
 
+func TestResolveMaxJobs(t *testing.T) {
+	tests := []struct {
+		name        string
+		flagChanged bool
+		flagValue   int
+		coreSet     bool
+		coreValue   int
+		subsys      string
+		subsysSet   bool
+		subsysValue int
+		service     string
+		want        int
+	}{
+		{
+			"CLI flag takes precedence over everything",
+			true, 20,
+			true, 8,
+			"drive", true, 4,
+			"drive",
+			20,
+		},
+		{
+			"subsystem override used when no CLI flag",
+			false, 10,
+			true, 8,
+			"drive", true, 4,
+			"drive",
+			4,
+		},
+		{
+			"core config used when no subsystem override",
+			false, 10,
+			true, 8,
+			"", false, 0,
+			"drive",
+			8,
+		},
+		{
+			"DefaultMaxWorkers when nothing configured",
+			false, 10,
+			false, 0,
+			"", false, 0,
+			"drive",
+			common.DefaultMaxWorkers(),
+		},
+		{
+			"subsystem for different service not used",
+			false, 10,
+			false, 0,
+			"lumo", true, 4,
+			"drive",
+			common.DefaultMaxWorkers(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.PersistentFlags().IntVarP(&rootParams.MaxWorkers, "max-jobs", "j", 10, "")
+			if tt.flagChanged {
+				rootParams.MaxWorkers = tt.flagValue
+				_ = cmd.PersistentFlags().Set("max-jobs", fmt.Sprintf("%d", tt.flagValue))
+			}
+
+			cfg := config.DefaultConfig()
+			if tt.coreSet {
+				cfg.MaxJobs.SetFile(tt.coreValue)
+			}
+			if tt.subsys != "" && tt.subsysSet {
+				cfg.Subsystems[tt.subsys] = &config.CoreConfig{
+					MaxJobs:    config.NewParam(common.DefaultMaxWorkers()),
+					Account:    config.NewParam("default"),
+					AppVersion: config.NewParam(""),
+				}
+				cfg.Subsystems[tt.subsys].MaxJobs.SetFile(tt.subsysValue)
+			}
+
+			rc := &RuntimeContext{
+				Config:      cfg,
+				ServiceName: tt.service,
+			}
+
+			got := resolveMaxJobs(cmd, rc)
+			if got != tt.want {
+				t.Errorf("resolveMaxJobs() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSessionConfigFromRC(t *testing.T) {
+	// Create a minimal command tree so resolveMaxJobs can look up the flag.
+	cmd := &cobra.Command{}
+	cmd.PersistentFlags().IntVarP(&rootParams.MaxWorkers, "max-jobs", "j", 10, "")
+
 	t.Run("nil config", func(t *testing.T) {
 		rc := &RuntimeContext{Config: nil}
-		got := sessionConfigFromRC(rc)
+		got := sessionConfigFromRC(cmd, rc)
 		if got != nil {
 			t.Errorf("expected nil, got %+v", got)
 		}
@@ -363,7 +458,7 @@ func TestSessionConfigFromRC(t *testing.T) {
 		cfg.Subsystems["drive"].Account.SetFile("myaccount")
 		rc := &RuntimeContext{Config: cfg}
 
-		got := sessionConfigFromRC(rc)
+		got := sessionConfigFromRC(cmd, rc)
 		if got == nil {
 			t.Fatal("expected non-nil SessionConfig")
 		}
@@ -372,6 +467,9 @@ func TestSessionConfigFromRC(t *testing.T) {
 		}
 		if got.Defaults["drive"] != "myaccount" {
 			t.Errorf("Defaults[drive] = %q, want %q", got.Defaults["drive"], "myaccount")
+		}
+		if got.MaxJobs != common.DefaultMaxWorkers() {
+			t.Errorf("MaxJobs = %d, want %d", got.MaxJobs, common.DefaultMaxWorkers())
 		}
 	})
 }

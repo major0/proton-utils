@@ -114,6 +114,12 @@ var (
 				SessionFile:        rootParams.SessionFile,
 				Verbose:            rootParams.Verbose,
 			}
+
+			// Apply CLI flag overrides to Config Params.
+			if f := cmd.Flags().Lookup("max-jobs"); f != nil && f.Changed {
+				cfg.MaxJobs.SetCLI(rootParams.MaxWorkers)
+			}
+
 			SetContext(cmd, rc)
 
 			return nil
@@ -171,6 +177,28 @@ func resolveVersionRC(rc *RuntimeContext, service string) string {
 	return ""
 }
 
+// resolveMaxJobs returns the effective max_jobs for the current invocation.
+// Precedence: CLI flag → subsystem override → core config → DefaultMaxWorkers().
+func resolveMaxJobs(cmd *cobra.Command, rc *RuntimeContext) int {
+	// CLI flag takes highest precedence.
+	if f := cmd.Root().PersistentFlags().Lookup("max-jobs"); f != nil && f.Changed {
+		return rootParams.MaxWorkers
+	}
+	if rc.Config != nil {
+		// Subsystem override for the active service.
+		if rc.ServiceName != "" && rc.ServiceName != "*" {
+			if sub, ok := rc.Config.Subsystems[rc.ServiceName]; ok && sub.MaxJobs.IsSet() {
+				return sub.MaxJobs.Value()
+			}
+		}
+		// Core config.
+		if rc.Config.MaxJobs.IsSet() {
+			return rc.Config.MaxJobs.Value()
+		}
+	}
+	return common.DefaultMaxWorkers()
+}
+
 // SetupSession returns a fully initialized, ready-to-use session by
 // reading all per-invocation state from RuntimeContext. It calls
 // api/account/ restore primitives, sets BaseURL/AppVersion/UserAgent,
@@ -194,7 +222,7 @@ func SetupSession(ctx context.Context, cmd *cobra.Command) (*common.Session, err
 			return nil, err
 		}
 		session.UserAgent = UserAgent
-		session.Config = sessionConfigFromRC(rc)
+		session.Config = sessionConfigFromRC(cmd, rc)
 		return session, nil
 	}
 
@@ -204,13 +232,14 @@ func SetupSession(ctx context.Context, cmd *cobra.Command) (*common.Session, err
 	}
 	session.AppVersion = AppVersion
 	session.UserAgent = UserAgent
-	session.Config = sessionConfigFromRC(rc)
+	session.Config = sessionConfigFromRC(cmd, rc)
 	return session, nil
 }
 
 // sessionConfigFromRC builds a SessionConfig from the RuntimeContext's
-// loaded application config. Returns nil when no config is available.
-func sessionConfigFromRC(rc *RuntimeContext) *common.SessionConfig {
+// loaded application config. The cmd is used for flag override detection.
+// Returns nil when no config is available.
+func sessionConfigFromRC(cmd *cobra.Command, rc *RuntimeContext) *common.SessionConfig {
 	if rc.Config == nil {
 		return nil
 	}
@@ -220,9 +249,13 @@ func sessionConfigFromRC(rc *RuntimeContext) *common.SessionConfig {
 			defaults[name] = sub.Account.Value()
 		}
 	}
+	wm := rc.Config.MemoryCacheWatermark.Value()
 	return &common.SessionConfig{
-		Shares:   rc.Config.Shares,
-		Defaults: defaults,
+		Shares:                  rc.Config.Shares,
+		Defaults:                defaults,
+		MaxJobs:                 resolveMaxJobs(cmd, rc),
+		MemoryCacheMinWatermark: wm[0],
+		MemoryCacheMaxWatermark: wm[1],
 	}
 }
 
