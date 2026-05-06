@@ -97,10 +97,10 @@ func (c *Client) CreateFile(ctx context.Context, share *Share, parentLink *Link,
 		// Convert sentinel errors into typed errors. The caller is
 		// responsible for Lookup if it needs the blocking Link.
 		if errors.Is(err, proton.ErrFileNameExist) {
-			return nil, fmt.Errorf("CreateFile: %w", proton.ErrFileNameExist)
+			return nil, fmt.Errorf("CreateFile: %w", ErrFileNameExist)
 		}
 		if errors.Is(err, proton.ErrADraftExist) {
-			return nil, fmt.Errorf("CreateFile: %w", proton.ErrADraftExist)
+			return nil, fmt.Errorf("CreateFile: %w", ErrDraftExist)
 		}
 		return nil, fmt.Errorf("CreateFile: %w", err)
 	}

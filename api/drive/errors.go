@@ -18,4 +18,8 @@ var (
 	ErrNoShareURL = errors.New("drive: no share URL exists")
 	// ErrNotStandardShare indicates that the operation requires a standard share.
 	ErrNotStandardShare = errors.New("drive: operation requires a standard share")
+	// ErrFileNameExist indicates that a file with the same name already exists.
+	ErrFileNameExist = errors.New("drive: file name exists")
+	// ErrDraftExist indicates that a draft revision already exists.
+	ErrDraftExist = errors.New("drive: draft exists")
 )

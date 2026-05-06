@@ -331,7 +331,7 @@ func buildCopyJob(ctx context.Context, dc *drive.Client, src, dst *resolvedEndpo
 		fh, err := dc.CreateFile(ctx, dst.share, dst.link, name)
 		if err != nil {
 			switch {
-			case errors.Is(err, proton.ErrFileNameExist):
+			case errors.Is(err, drive.ErrFileNameExist):
 				if !opts.force && !opts.removeDest {
 					return nil, fmt.Errorf("cp: %s: file exists (use -f to overwrite)", name)
 				}
@@ -382,7 +382,7 @@ func buildCopyJob(ctx context.Context, dc *drive.Client, src, dst *resolvedEndpo
 					}
 				}
 
-			case errors.Is(err, proton.ErrADraftExist):
+			case errors.Is(err, drive.ErrDraftExist):
 				if !opts.force && !opts.removeDest {
 					return nil, fmt.Errorf("cp: %s: file exists (use -f to overwrite)", name)
 				}

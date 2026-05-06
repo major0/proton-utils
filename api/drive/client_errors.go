@@ -13,9 +13,9 @@ type FileExistsError struct {
 
 func (e *FileExistsError) Error() string { return "file exists: " + e.Link.LinkID() }
 
-// Is reports whether target matches this error type's errno.
+// Is reports whether target matches this error type's errno or drive sentinel.
 func (e *FileExistsError) Is(target error) bool {
-	return target == syscall.EEXIST
+	return target == syscall.EEXIST || target == ErrFileNameExist
 }
 
 // DirExistsError indicates a directory with the same name blocks the
@@ -40,7 +40,7 @@ type DraftExistsError struct {
 
 func (e *DraftExistsError) Error() string { return "draft exists: " + e.Link.LinkID() }
 
-// Is reports whether target matches this error type's errno.
+// Is reports whether target matches this error type's errno or drive sentinel.
 func (e *DraftExistsError) Is(target error) bool {
-	return target == syscall.EEXIST
+	return target == syscall.EEXIST || target == ErrDraftExist
 }
