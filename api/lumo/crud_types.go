@@ -106,6 +106,7 @@ type CreateMessageReq struct {
 	Status         int    `json:"Status,omitempty"`
 	Encrypted      string `json:"Encrypted,omitempty"`
 	ParentID       string `json:"ParentID,omitempty"`
+	CreateTime     string `json:"CreateTime,omitempty"`
 }
 
 // UpdateSpaceReq is the PUT body for updating a space.

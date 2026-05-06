@@ -1,6 +1,7 @@
 package lumoCmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,8 @@ func init() {
 	chatCmd.AddCommand(chatLogCmd)
 	chatLogCmd.Flags().String("color", "auto", "Color output: always, auto, or never")
 	chatLogCmd.Flags().Bool("no-pager", false, "Disable automatic paging")
+	chatLogCmd.Flags().String("format", "", "Output format: json")
+
 }
 
 func runChatLog(cmd *cobra.Command, args []string) error {
@@ -58,6 +61,12 @@ func runChatLog(cmd *cobra.Command, args []string) error {
 	shallow := conv.Messages
 	if len(shallow) == 0 {
 		return nil
+	}
+
+	// JSON mode: dump all message fields (public + decrypted private).
+	formatFlag, _ := cmd.Flags().GetString("format")
+	if formatFlag == "json" {
+		return runChatLogJSON(cmd, client, conv, dek)
 	}
 
 	// Resolve color.
@@ -225,4 +234,94 @@ func setupOutput(noPager bool) (io.Writer, func()) {
 		_ = cmd.Wait()
 	}
 	return pipe, cleanup
+}
+
+// jsonMessage is the JSON output structure for --json mode.
+// It includes all public fields from the API plus the decrypted payload.
+type jsonMessage struct {
+	ID             string          `json:"id"`
+	ConversationID string          `json:"conversationId"`
+	MessageTag     string          `json:"messageTag"`
+	Role           int             `json:"role"`
+	Status         int             `json:"status"`
+	CreateTime     string          `json:"createTime"`
+	ParentID       string          `json:"parentId,omitempty"`
+	Encrypted      string          `json:"encrypted,omitempty"`
+	Decrypted      json.RawMessage `json:"decrypted,omitempty"`
+	DecryptError   string          `json:"decryptError,omitempty"`
+}
+
+// runChatLogJSON outputs all messages as a JSON array with both public
+// fields and decrypted content for debugging.
+func runChatLogJSON(cmd *cobra.Command, client *lumo.Client, conv *lumo.Conversation, dek []byte) error {
+	ctx := cmd.Context()
+
+	fetched := make([]lumo.Message, 0, len(conv.Messages))
+	var out []jsonMessage
+
+	for _, s := range conv.Messages {
+		msg, ferr := client.GetMessage(ctx, s.ID)
+		if ferr != nil {
+			out = append(out, jsonMessage{
+				ID:             s.ID,
+				ConversationID: s.ConversationID,
+				MessageTag:     s.MessageTag,
+				Role:           s.Role,
+				CreateTime:     s.CreateTime,
+				ParentID:       s.ParentID,
+				DecryptError:   fmt.Sprintf("fetch failed: %v", ferr),
+			})
+			continue
+		}
+
+		fetched = append(fetched, *msg)
+
+		jm := jsonMessage{
+			ID:             msg.ID,
+			ConversationID: msg.ConversationID,
+			MessageTag:     msg.MessageTag,
+			Role:           msg.Role,
+			Status:         msg.Status,
+			CreateTime:     msg.CreateTime,
+			ParentID:       msg.ParentID,
+			Encrypted:      msg.Encrypted,
+		}
+
+		// Attempt decryption.
+		if msg.Encrypted != "" {
+			role := "user"
+			if msg.Role == lumo.WireRoleAssistant {
+				role = "assistant"
+			}
+
+			parentTag := ""
+			if msg.ParentID != "" {
+				for _, m := range fetched {
+					if m.ID == msg.ParentID {
+						parentTag = m.MessageTag
+						break
+					}
+				}
+			}
+
+			ad := lumo.MessageAD(msg.MessageTag, role, parentTag, conv.ConversationTag)
+			plainJSON, err := lumo.DecryptString(msg.Encrypted, dek, ad)
+			if err != nil {
+				// Fallback: try with raw ParentID.
+				ad = lumo.MessageAD(msg.MessageTag, role, msg.ParentID, conv.ConversationTag)
+				plainJSON, err = lumo.DecryptString(msg.Encrypted, dek, ad)
+			}
+			if err != nil {
+				jm.DecryptError = err.Error()
+			} else {
+				jm.Decrypted = json.RawMessage(plainJSON)
+			}
+		}
+
+		out = append(out, jm)
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
