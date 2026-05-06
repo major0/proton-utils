@@ -146,6 +146,13 @@ func (c *Client) applyShareConfig(share *Share) {
 	share.DiskCacheLevel = sc.DiskCache
 }
 
+// MainShare returns the user's main volume share.
+// This is the most common share resolution in cmd/ — a named convenience
+// over ResolveShareByType(ctx, proton.ShareTypeMain).
+func (c *Client) MainShare(ctx context.Context) (*Share, error) {
+	return c.ResolveShareByType(ctx, proton.ShareTypeMain)
+}
+
 // ResolveShareByType finds a share by its type (Main, Photos, etc.)
 // without decrypting share names. Uses metadata to find the type match,
 // then resolves only that share.

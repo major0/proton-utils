@@ -49,6 +49,22 @@ type Share struct {
 	DiskCacheLevel api.DiskCacheLevel
 }
 
+// IsSystemShare returns true for shares that cannot have members (main, photos, device).
+func (s *Share) IsSystemShare() bool {
+	st := s.protonShare.Type
+	return st == proton.ShareTypeMain || st == ShareTypePhotos || st == proton.ShareTypeDevice
+}
+
+// IsShared returns true for user-created standard shares that can have members.
+func (s *Share) IsShared() bool {
+	return s.protonShare.Type == proton.ShareTypeStandard
+}
+
+// TypeName returns a human-readable label for the share's type.
+func (s *Share) TypeName() string {
+	return FormatShareType(s.protonShare.Type)
+}
+
 // GetName returns the decrypted name of the share's root link.
 func (s *Share) GetName(_ context.Context) (string, error) {
 	return s.Link.Name()
