@@ -70,9 +70,9 @@ func TestParse_Errors(t *testing.T) {
 		{"trailing dot", "core.", "empty identifier"},
 		{"leading dot", ".core", "empty identifier"},
 		{"double dot", "core..max_jobs", "empty identifier"},
-		{"unmatched bracket", "shares[name=foo", "unmatched"},
-		{"missing equals", "shares[name]", "missing '='"},
-		{"empty value", "shares[name=]", "empty value"},
+		{"unmatched bracket", "share[name=foo", "unmatched"},
+		{"missing equals", "share[name]", "missing '='"},
+		{"empty value", "share[name=]", "empty value"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,9 +100,9 @@ func TestParse_Valid(t *testing.T) {
 		},
 		{
 			name:  "indexed segment with trailing",
-			input: "shares[name=MyShare].memory_cache",
+			input: "share[name=MyShare].memory_cache",
 			want: Selector{Segments: []Segment{
-				{Name: "shares", IndexKey: "name", IndexVal: "MyShare"},
+				{Name: "share", IndexKey: "name", IndexVal: "MyShare"},
 				{Name: "memory_cache"},
 			}},
 		},
@@ -118,9 +118,9 @@ func TestParse_Valid(t *testing.T) {
 		},
 		{
 			name:  "indexed by id",
-			input: "shares[id=abc123].disk_cache",
+			input: "share[id=abc123].disk_cache",
 			want: Selector{Segments: []Segment{
-				{Name: "shares", IndexKey: "id", IndexVal: "abc123"},
+				{Name: "share", IndexKey: "id", IndexVal: "abc123"},
 				{Name: "disk_cache"},
 			}},
 		},
@@ -163,10 +163,10 @@ func TestSelector_String(t *testing.T) {
 		{
 			name: "indexed segment",
 			sel: Selector{Segments: []Segment{
-				{Name: "shares", IndexKey: "name", IndexVal: "MyShare"},
+				{Name: "share", IndexKey: "name", IndexVal: "MyShare"},
 				{Name: "memory_cache"},
 			}},
-			want: "shares[name=MyShare].memory_cache",
+			want: "share[name=MyShare].memory_cache",
 		},
 		{
 			name: "single segment",

@@ -46,7 +46,7 @@ func runSet(cmd *cobra.Command, args []string) error {
 	}
 
 	// Best-effort stale share cleanup when session is available.
-	if sel.Segments[0].Name == "shares" {
+	if sel.Segments[0].Name == "share" {
 		cleanupStaleShares(cmd, cfg)
 	}
 

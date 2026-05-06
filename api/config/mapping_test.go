@@ -29,8 +29,8 @@ func validSubsystemSelectors() []string {
 // validShareSelectors returns valid share selectors for a given share ID.
 func validShareSelectors(id string) []string {
 	return []string{
-		"shares[id=" + id + "].memory_cache",
-		"shares[id=" + id + "].disk_cache",
+		"share[id=" + id + "].memory_cache",
+		"share[id=" + id + "].disk_cache",
 	}
 }
 
@@ -92,10 +92,10 @@ func genValidSelectorAndValue(t *rapid.T) (string, string) {
 		switch field {
 		case 0:
 			v := rapid.SampledFrom([]string{"disabled", "linkname", "metadata"}).Draw(t, "memCache")
-			return "shares[id=" + id + "].memory_cache", v
+			return "share[id=" + id + "].memory_cache", v
 		default:
 			v := rapid.SampledFrom([]string{"disabled", "objectstore"}).Draw(t, "diskCache")
-			return "shares[id=" + id + "].disk_cache", v
+			return "share[id=" + id + "].disk_cache", v
 		}
 	}
 }
@@ -173,7 +173,7 @@ func TestValidationRejectsInvalid_Property(t *testing.T) {
 			}
 		case 2: // memory_cache: unknown enum
 			id := rapid.StringMatching(`[a-zA-Z0-9]{8}`).Draw(t, "shareID")
-			selStr = "shares[id=" + id + "].memory_cache"
+			selStr = "share[id=" + id + "].memory_cache"
 			value = rapid.StringMatching(`[a-z]{5,10}`).Draw(t, "badEnum")
 			// Ensure it's not a valid value.
 			for value == "disabled" || value == "linkname" || value == "metadata" {
@@ -181,7 +181,7 @@ func TestValidationRejectsInvalid_Property(t *testing.T) {
 			}
 		case 3: // disk_cache: unknown enum
 			id := rapid.StringMatching(`[a-zA-Z0-9]{8}`).Draw(t, "shareID")
-			selStr = "shares[id=" + id + "].disk_cache"
+			selStr = "share[id=" + id + "].disk_cache"
 			value = rapid.StringMatching(`[a-z]{5,10}`).Draw(t, "badEnum")
 			// Ensure it's not a valid value.
 			for value == "disabled" || value == "objectstore" {
@@ -406,7 +406,7 @@ func isRelatedNewEntry(targetSel, newSel string) bool {
 	if len(targetParsed.Segments) < 1 || len(newParsed.Segments) < 1 {
 		return false
 	}
-	if targetParsed.Segments[0].Name == "shares" && newParsed.Segments[0].Name == "shares" {
+	if targetParsed.Segments[0].Name == "share" && newParsed.Segments[0].Name == "share" {
 		return targetParsed.Segments[0].IndexVal == newParsed.Segments[0].IndexVal
 	}
 	return false
@@ -456,7 +456,7 @@ func TestGet_UnknownField(t *testing.T) {
 func TestGet_ShareMissingIndex(t *testing.T) {
 	cfg := DefaultConfig()
 	// Manually construct a selector with shares but no index.
-	sel := Selector{Segments: []Segment{{Name: "shares"}, {Name: "memory_cache"}}}
+	sel := Selector{Segments: []Segment{{Name: "share"}, {Name: "memory_cache"}}}
 	_, err := Get(cfg, sel)
 	if err == nil {
 		t.Fatal("expected error for shares without index")
@@ -524,7 +524,7 @@ func TestUnsetField_RemovesEmptySubsystem(t *testing.T) {
 
 func TestUnsetField_RemovesEmptyShare(t *testing.T) {
 	cfg := DefaultConfig()
-	sel, _ := Parse("shares[id=abc123].memory_cache")
+	sel, _ := Parse("share[id=abc123].memory_cache")
 	_ = Set(cfg, sel, "metadata")
 
 	if err := UnsetField(cfg, sel); err != nil {
@@ -537,8 +537,8 @@ func TestUnsetField_RemovesEmptyShare(t *testing.T) {
 
 func TestUnsetField_KeepsShareWithOtherField(t *testing.T) {
 	cfg := DefaultConfig()
-	sel1, _ := Parse("shares[id=abc123].memory_cache")
-	sel2, _ := Parse("shares[id=abc123].disk_cache")
+	sel1, _ := Parse("share[id=abc123].memory_cache")
+	sel2, _ := Parse("share[id=abc123].disk_cache")
 	_ = Set(cfg, sel1, "metadata")
 	_ = Set(cfg, sel2, "objectstore")
 

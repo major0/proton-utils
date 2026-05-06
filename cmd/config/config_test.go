@@ -151,10 +151,10 @@ func TestUnsetCmd_PartialSelector(t *testing.T) {
 	}
 }
 
-// TestResolveShareSelector_ByID verifies that shares[id=X] passes through unchanged.
+// TestResolveShareSelector_ByID verifies that share[id=X] passes through unchanged.
 func TestResolveShareSelector_ByID(t *testing.T) {
 	saveAndRestore(t)
-	sel, err := config.Parse("shares[id=abc123].memory_cache")
+	sel, err := config.Parse("share[id=abc123].memory_cache")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestResolveShareSelector_ByID(t *testing.T) {
 	}
 }
 
-// TestResolveShareSelector_ByName verifies that shares[name=X] resolves to shares[id=Y].
+// TestResolveShareSelector_ByName verifies that share[name=X] resolves to share[id=Y].
 func TestResolveShareSelector_ByName(t *testing.T) {
 	saveAndRestore(t)
 
@@ -185,7 +185,7 @@ func TestResolveShareSelector_ByName(t *testing.T) {
 		return nil, fmt.Errorf("not found")
 	}
 
-	sel, err := config.Parse("shares[name=MyShare].memory_cache")
+	sel, err := config.Parse("share[name=MyShare].memory_cache")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestResolveShareSelector_NameNotFound(t *testing.T) {
 		return nil, fmt.Errorf("share not found")
 	}
 
-	sel, err := config.Parse("shares[name=NoSuchShare].memory_cache")
+	sel, err := config.Parse("share[name=NoSuchShare].memory_cache")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestResolveShareSelector_NoAuth(t *testing.T) {
 	saveAndRestore(t)
 	injectSessionError(fmt.Errorf("keyring locked"))
 
-	sel, err := config.Parse("shares[name=MyShare].memory_cache")
+	sel, err := config.Parse("share[name=MyShare].memory_cache")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,8 +301,8 @@ func TestTransposeShareSelector(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"shares[id=abc123].memory_cache", "shares[name=MyShare].memory_cache"},
-		{"shares[id=unknown].memory_cache", "shares[id=unknown].memory_cache"},
+		{"share[id=abc123].memory_cache", "share[name=MyShare].memory_cache"},
+		{"share[id=unknown].memory_cache", "share[id=unknown].memory_cache"},
 		{"core.max_jobs", "core.max_jobs"},
 	}
 

@@ -42,7 +42,7 @@ func resolveShareName(cmd *cobra.Command, name string) (string, error) {
 
 	session, err := setupSessionFn(ctx, cmd)
 	if err != nil {
-		return "", fmt.Errorf("config: share name resolution requires an authenticated session (use shares[id=X] to skip auth): %w", err)
+		return "", fmt.Errorf("config: share name resolution requires an authenticated session (use share[id=X] to skip auth): %w", err)
 	}
 
 	dc, err := newDriveClientFn(ctx, session)
@@ -58,12 +58,12 @@ func resolveShareName(cmd *cobra.Command, name string) (string, error) {
 	return share.Metadata().ShareID, nil
 }
 
-// resolveShareSelector rewrites a selector that uses shares[name=X] to shares[id=Y].
+// resolveShareSelector rewrites a selector that uses share[name=X] to share[id=Y].
 // Returns the rewritten selector and any error from resolution.
-// If the selector uses shares[id=X], returns it unchanged.
-// If the first segment is not "shares" or has no index, returns unchanged.
+// If the selector uses share[id=X], returns it unchanged.
+// If the first segment is not "share" or has no index, returns unchanged.
 func resolveShareSelector(cmd *cobra.Command, sel config.Selector) (config.Selector, error) {
-	if len(sel.Segments) == 0 || sel.Segments[0].Name != "shares" {
+	if len(sel.Segments) == 0 || sel.Segments[0].Name != "share" {
 		return sel, nil
 	}
 	if sel.Segments[0].IndexKey == "" {

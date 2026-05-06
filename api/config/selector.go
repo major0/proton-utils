@@ -7,7 +7,7 @@ import (
 
 // Segment is one component of a parsed selector path.
 type Segment struct {
-	Name     string // identifier: "core", "max_jobs", "shares"
+	Name     string // identifier: "core", "max_jobs", "share"
 	IndexKey string // map index key: "name", "id" (empty if no index)
 	IndexVal string // map index value: "MyShare", "abc123" (empty if no index)
 }

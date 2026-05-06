@@ -44,8 +44,8 @@ func runShow(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Transpose shares[id=X] → shares[name=Y] if possible.
-		if idToName != nil && strings.HasPrefix(selector, "shares[id=") {
+		// Transpose share[id=X] → share[name=Y] if possible.
+		if idToName != nil && strings.HasPrefix(selector, "share[id=") {
 			selector = transposeShareSelector(selector, idToName)
 		}
 
@@ -88,11 +88,11 @@ func resolveShareNames(cmd *cobra.Command, cfg *config.Config) map[string]string
 	return idToName
 }
 
-// transposeShareSelector replaces shares[id=X] with shares[name=Y] in a
+// transposeShareSelector replaces share[id=X] with share[name=Y] in a
 // selector string if the ID is found in the map.
 func transposeShareSelector(selector string, idToName map[string]string) string {
-	// Extract the ID from shares[id=X].field
-	const prefix = "shares[id="
+	// Extract the ID from share[id=X].field
+	const prefix = "share[id="
 	if !strings.HasPrefix(selector, prefix) {
 		return selector
 	}
@@ -108,5 +108,5 @@ func transposeShareSelector(selector string, idToName map[string]string) string 
 	if !ok {
 		return selector
 	}
-	return fmt.Sprintf("shares[name=%s]%s", name, suffix)
+	return fmt.Sprintf("share[name=%s]%s", name, suffix)
 }

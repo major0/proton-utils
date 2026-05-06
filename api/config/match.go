@@ -12,7 +12,7 @@ import (
 //	MatchPrefix("core.max_jobs", "core")           → true
 //	MatchPrefix("core.max_jobs", "core.max_jobs")  → true (exact match)
 //	MatchPrefix("core.max_jobs", "core.max")       → false (partial segment)
-//	MatchPrefix("shares[id=abc].memory_cache", "shares[id=abc]") → true
+//	MatchPrefix("share[id=abc].memory_cache", "share[id=abc]") → true
 func MatchPrefix(selector, prefix string) bool {
 	if prefix == "" {
 		return true

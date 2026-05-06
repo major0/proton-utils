@@ -44,7 +44,7 @@ var coreFields = map[string]*ParamDef{
 	},
 }
 
-// shareFields maps option name → ParamDef for the "shares" namespace.
+// shareFields maps option name → ParamDef for the "share" namespace.
 var shareFields = map[string]*ParamDef{
 	"memory_cache": {
 		Parse:  parseMemoryCacheLevel,
@@ -74,7 +74,7 @@ func Get(cfg *Config, sel Selector) (string, error) {
 	switch ns {
 	case "core":
 		return getCoreField(cfg, sel)
-	case "shares":
+	case "share":
 		return getShareField(cfg, sel)
 	default:
 		return getSubsystemField(cfg, sel)
@@ -92,7 +92,7 @@ func Set(cfg *Config, sel Selector, value string) error {
 	switch ns {
 	case "core":
 		return setCoreField(cfg, sel, value)
-	case "shares":
+	case "share":
 		return setShareField(cfg, sel, value)
 	default:
 		return setSubsystemField(cfg, sel, value)
@@ -110,7 +110,7 @@ func UnsetField(cfg *Config, sel Selector) error {
 	switch ns {
 	case "core":
 		return unsetCoreField(cfg, sel)
-	case "shares":
+	case "share":
 		return unsetShareField(cfg, sel)
 	default:
 		return unsetSubsystemField(cfg, sel)
@@ -164,14 +164,14 @@ func List(cfg *Config) []Entry {
 		sc := cfg.Shares[id]
 		if sc.MemoryCache != api.CacheDisabled {
 			entries = append(entries, Entry{
-				Selector: fmt.Sprintf("shares[id=%s].memory_cache", id),
+				Selector: fmt.Sprintf("share[id=%s].memory_cache", id),
 				Value:    sc.MemoryCache.String(),
 				Source:   File,
 			})
 		}
 		if sc.DiskCache != api.DiskCacheDisabled {
 			entries = append(entries, Entry{
-				Selector: fmt.Sprintf("shares[id=%s].disk_cache", id),
+				Selector: fmt.Sprintf("share[id=%s].disk_cache", id),
 				Value:    sc.DiskCache.String(),
 				Source:   File,
 			})
@@ -226,12 +226,12 @@ func Show(cfg *Config) []Entry {
 	for _, id := range sortedKeys(cfg.Shares) {
 		sc := cfg.Shares[id]
 		entries = append(entries, Entry{
-			Selector: fmt.Sprintf("shares[id=%s].memory_cache", id),
+			Selector: fmt.Sprintf("share[id=%s].memory_cache", id),
 			Value:    sc.MemoryCache.String(),
 			Source:   File,
 		})
 		entries = append(entries, Entry{
-			Selector: fmt.Sprintf("shares[id=%s].disk_cache", id),
+			Selector: fmt.Sprintf("share[id=%s].disk_cache", id),
 			Value:    sc.DiskCache.String(),
 			Source:   File,
 		})
@@ -301,17 +301,17 @@ func unsetCoreField(cfg *Config, sel Selector) error {
 
 func getShareField(cfg *Config, sel Selector) (string, error) {
 	if sel.Segments[0].IndexKey == "" {
-		return "", fmt.Errorf("config: shares requires an index (shares[name=X] or shares[id=X])")
+		return "", fmt.Errorf("config: shares requires an index (share[name=X] or share[id=X])")
 	}
 	if len(sel.Segments) < 2 {
-		return "", fmt.Errorf("config: shares selector requires a field (shares[id=X].field)")
+		return "", fmt.Errorf("config: shares selector requires a field (share[id=X].field)")
 	}
 
 	id := sel.Segments[0].IndexVal
 	fieldName := sel.Segments[1].Name
 
 	if _, ok := shareFields[fieldName]; !ok {
-		return "", unknownFieldError("shares", fieldName)
+		return "", unknownFieldError("share", fieldName)
 	}
 
 	sc := cfg.Shares[id] // zero value if absent — defaults to disabled
@@ -322,16 +322,16 @@ func getShareField(cfg *Config, sel Selector) (string, error) {
 	case "disk_cache":
 		return sc.DiskCache.String(), nil
 	default:
-		return "", unknownFieldError("shares", fieldName)
+		return "", unknownFieldError("share", fieldName)
 	}
 }
 
 func setShareField(cfg *Config, sel Selector, value string) error {
 	if sel.Segments[0].IndexKey == "" {
-		return fmt.Errorf("config: shares requires an index (shares[name=X] or shares[id=X])")
+		return fmt.Errorf("config: shares requires an index (share[name=X] or share[id=X])")
 	}
 	if len(sel.Segments) < 2 {
-		return fmt.Errorf("config: shares selector requires a field (shares[id=X].field)")
+		return fmt.Errorf("config: shares selector requires a field (share[id=X].field)")
 	}
 
 	id := sel.Segments[0].IndexVal
@@ -339,7 +339,7 @@ func setShareField(cfg *Config, sel Selector, value string) error {
 
 	pd, ok := shareFields[fieldName]
 	if !ok {
-		return unknownFieldError("shares", fieldName)
+		return unknownFieldError("share", fieldName)
 	}
 
 	v, err := pd.Parse(value)
@@ -360,17 +360,17 @@ func setShareField(cfg *Config, sel Selector, value string) error {
 
 func unsetShareField(cfg *Config, sel Selector) error {
 	if sel.Segments[0].IndexKey == "" {
-		return fmt.Errorf("config: shares requires an index (shares[name=X] or shares[id=X])")
+		return fmt.Errorf("config: shares requires an index (share[name=X] or share[id=X])")
 	}
 	if len(sel.Segments) < 2 {
-		return fmt.Errorf("config: shares selector requires a field (shares[id=X].field)")
+		return fmt.Errorf("config: shares selector requires a field (share[id=X].field)")
 	}
 
 	id := sel.Segments[0].IndexVal
 	fieldName := sel.Segments[1].Name
 
 	if _, ok := shareFields[fieldName]; !ok {
-		return unknownFieldError("shares", fieldName)
+		return unknownFieldError("share", fieldName)
 	}
 
 	sc, exists := cfg.Shares[id]
@@ -554,7 +554,7 @@ func formatWatermark(wm [2]int64) string {
 
 func unknownNamespaceError(ns string) error {
 	var valid []string
-	valid = append(valid, "core", "shares")
+	valid = append(valid, "core", "share")
 	for name := range api.Services {
 		valid = append(valid, name)
 	}
@@ -565,7 +565,7 @@ func unknownNamespaceError(ns string) error {
 func unknownFieldError(ns, field string) error {
 	var valid []string
 	switch ns {
-	case "shares":
+	case "share":
 		for name := range shareFields {
 			valid = append(valid, name)
 		}
