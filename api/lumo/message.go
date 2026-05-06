@@ -64,6 +64,18 @@ func (c *Client) CreateMessage(ctx context.Context, space *Space, conv *Conversa
 	return &resp.Message, nil
 }
 
+// CreateRawMessage creates a message with pre-encrypted content.
+// Unlike CreateMessage, it does not perform any encryption — the caller
+// provides the already-encrypted blob in req.Encrypted.
+func (c *Client) CreateRawMessage(ctx context.Context, req CreateMessageReq) (*Message, error) {
+	var resp GetMessageResponse
+	err := c.Session.DoJSON(ctx, "POST", c.url("/lumo/v1/conversations/"+req.ConversationID+"/messages"), req, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("lumo: create raw message: %w", mapCRUDError(err))
+	}
+	return &resp.Message, nil
+}
+
 // GetMessage fetches a message by ID.
 func (c *Client) GetMessage(ctx context.Context, messageID string) (*Message, error) {
 	var resp GetMessageResponse
