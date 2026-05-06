@@ -3,10 +3,121 @@ package lumo
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"pgregory.net/rapid"
 )
+
+// --- Property 1 (Bugfix): Bug Condition — Root Message AD Includes parentId Key ---
+
+// TestMessageAD_BugCondition_EmptyParentID_Property verifies that for any
+// root message (parentID=""), the MessageAD output does NOT contain the
+// "parentId" key. The web client's json-stable-stringify omits keys with
+// undefined values, so the Go implementation must do the same.
+//
+// Feature: lumo-message-ad-fix, Property 1: Bug Condition
+//
+// **Validates: Requirements 1.1, 2.1**
+func TestMessageAD_BugCondition_EmptyParentID_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		msgTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "msg_tag")
+		role := rapid.SampledFrom([]string{"user", "assistant"}).Draw(t, "role")
+		convTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "conv_tag")
+
+		// parentID is always empty — this is a root message.
+		result := MessageAD(msgTag, role, "", convTag)
+
+		// Assert: output must NOT contain the "parentId" key.
+		if strings.Contains(result, `"parentId"`) {
+			t.Fatalf("root message AD contains parentId key:\n  MessageAD(%q, %q, %q, %q) = %s",
+				msgTag, role, "", convTag, result)
+		}
+
+		// Assert: output must equal the expected sorted JSON without parentId.
+		expected := `{"app":"lumo","conversationId":"` + jsonEscape(convTag) +
+			`","id":"` + jsonEscape(msgTag) +
+			`","role":"` + jsonEscape(role) +
+			`","type":"message"}`
+		if result != expected {
+			t.Fatalf("root message AD mismatch:\n  got:      %s\n  expected: %s",
+				result, expected)
+		}
+	})
+}
+
+// --- Property 2 (Bugfix): Preservation — SpaceAD, ConversationAD, Non-Empty ParentID ---
+
+// TestMessageAD_Preservation_Property verifies that SpaceAD, ConversationAD,
+// and MessageAD with non-empty parentID produce the correct output format.
+// These behaviors are correct in the current (unfixed) code and must remain
+// unchanged after the fix is applied.
+//
+// Feature: lumo-message-ad-fix, Property 2: Preservation
+//
+// **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
+func TestMessageAD_Preservation_Property(t *testing.T) {
+	t.Run("SpaceAD", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			spaceTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "space_tag")
+
+			result := SpaceAD(spaceTag)
+
+			// Assert: output matches the exact expected format.
+			expected := `{"app":"lumo","id":"` + jsonEscape(spaceTag) + `","type":"space"}`
+			if result != expected {
+				t.Fatalf("SpaceAD(%q) mismatch:\n  got:      %s\n  expected: %s",
+					spaceTag, result, expected)
+			}
+
+			// Assert: valid sorted JSON.
+			assertValidSortedJSON(t, result)
+		})
+	})
+
+	t.Run("ConversationAD", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			convTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "conv_tag")
+			spaceTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "space_tag")
+
+			result := ConversationAD(convTag, spaceTag)
+
+			// Assert: output matches the exact expected format.
+			expected := `{"app":"lumo","id":"` + jsonEscape(convTag) +
+				`","spaceId":"` + jsonEscape(spaceTag) +
+				`","type":"conversation"}`
+			if result != expected {
+				t.Fatalf("ConversationAD(%q, %q) mismatch:\n  got:      %s\n  expected: %s",
+					convTag, spaceTag, result, expected)
+			}
+
+			// Assert: valid sorted JSON.
+			assertValidSortedJSON(t, result)
+		})
+	})
+
+	t.Run("MessageAD_NonEmptyParent", func(t *testing.T) {
+		rapid.Check(t, func(t *rapid.T) {
+			msgTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "msg_tag")
+			role := rapid.SampledFrom([]string{"user", "assistant"}).Draw(t, "role")
+			// parentID must be non-empty — this is the preserved behavior path.
+			parentID := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "parent_id")
+			convTag := rapid.StringMatching(`[a-zA-Z0-9-]{1,36}`).Draw(t, "conv_tag")
+
+			result := MessageAD(msgTag, role, parentID, convTag)
+
+			// Assert: output contains the parentId key with the correct value.
+			expectedParentFragment := `"parentId":"` + jsonEscape(parentID) + `"`
+			if !strings.Contains(result, expectedParentFragment) {
+				t.Fatalf("MessageAD(%q, %q, %q, %q) missing parentId:\n  got: %s\n  expected fragment: %s",
+					msgTag, role, parentID, convTag, result, expectedParentFragment)
+			}
+
+			// Assert: valid sorted JSON.
+			assertValidSortedJSON(t, result)
+		})
+	})
+}
 
 // --- Property 2: AES-KW wrap/unwrap round-trip ---
 

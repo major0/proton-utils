@@ -96,12 +96,18 @@ func ConversationAD(convTag, spaceTag string) string {
 }
 
 // MessageAD returns the deterministic associated data string for a message.
+// Keys are alphabetically sorted to match json-stable-stringify output.
+// The parentId key is omitted entirely when parentID is empty, matching
+// the web client's behavior for root messages (undefined → key omitted).
 func MessageAD(msgTag, role, parentID, convTag string) string {
-	return `{"app":"lumo","conversationId":"` + jsonEscape(convTag) +
-		`","id":"` + jsonEscape(msgTag) +
-		`","parentId":"` + jsonEscape(parentID) +
-		`","role":"` + jsonEscape(role) +
+	s := `{"app":"lumo","conversationId":"` + jsonEscape(convTag) +
+		`","id":"` + jsonEscape(msgTag) + `"`
+	if parentID != "" {
+		s += `,"parentId":"` + jsonEscape(parentID) + `"`
+	}
+	s += `,"role":"` + jsonEscape(role) +
 		`","type":"message"}`
+	return s
 }
 
 // jsonEscape escapes special JSON characters in a string value.

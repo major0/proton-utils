@@ -82,7 +82,7 @@ func TestDecryptMessageContent_EmptyEncrypted(t *testing.T) {
 		Role:       1,
 		MessageTag: "tag",
 	}
-	result := decryptMessageContent(msg, nil, "conv-tag")
+	result := decryptMessageContent(msg, nil, "conv-tag", nil)
 	if result != "" {
 		t.Errorf("expected empty, got %q", result)
 	}

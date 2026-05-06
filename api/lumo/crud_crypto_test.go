@@ -32,7 +32,7 @@ func TestMessageAD_KnownOutput(t *testing.T) {
 
 func TestMessageAD_EmptyParentID(t *testing.T) {
 	got := MessageAD("msg-001", "assistant", "", "conv-456")
-	want := `{"app":"lumo","conversationId":"conv-456","id":"msg-001","parentId":"","role":"assistant","type":"message"}`
+	want := `{"app":"lumo","conversationId":"conv-456","id":"msg-001","role":"assistant","type":"message"}`
 	if got != want {
 		t.Fatalf("MessageAD (empty parentID):\ngot:  %s\nwant: %s", got, want)
 	}
