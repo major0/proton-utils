@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
+	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-cli/api"
 )
 
@@ -246,4 +247,95 @@ func (c *Client) ResolvePath(ctx context.Context, path string, all bool) (*Link,
 	}
 
 	return share.Link.ResolvePath(ctx, strings.Join(parts[1:], "/"), all)
+}
+
+// ShareLink creates a new share from an existing link. It encapsulates the
+// full share-creation flow: "already shared" check, keyring derivation from
+// link.Share(), crypto generation, API call, and optional rename.
+// If name is non-empty, the new share is renamed after creation.
+func (c *Client) ShareLink(ctx context.Context, link *Link, name string) (*Share, error) {
+	// Check if the link is already shared.
+	metas, err := c.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return nil, fmt.Errorf("ShareLink: listing shares: %w", err)
+	}
+	for _, meta := range metas {
+		if meta.LinkID == link.LinkID() {
+			return nil, fmt.Errorf("ShareLink: %s: already shared", link.LinkID())
+		}
+	}
+
+	// Get the containing share for keyring derivation.
+	linkShare := link.Share()
+	if linkShare == nil {
+		return nil, fmt.Errorf("ShareLink: %s: link has no share", link.LinkID())
+	}
+
+	// Get the link's node keyring.
+	linkNodeKR, err := link.KeyRing()
+	if err != nil {
+		return nil, fmt.Errorf("ShareLink: %s: link keyring: %w", link.LinkID(), err)
+	}
+
+	// Get the address keyring from the containing share's address.
+	addrID := linkShare.ProtonShare().AddressID
+	addrKR, ok := c.AddressKeyRing(addrID)
+	if !ok {
+		return nil, fmt.Errorf("ShareLink: address keyring not found for %s", addrID)
+	}
+
+	// Derive parent keyring: parent link's keyring, or share keyring for roots.
+	var parentKR *crypto.KeyRing
+	if link.ParentLink() != nil {
+		parentKR, err = link.ParentLink().KeyRing()
+		if err != nil {
+			return nil, fmt.Errorf("ShareLink: parent keyring: %w", err)
+		}
+	} else {
+		parentKR = linkShare.KeyRingValue()
+	}
+
+	// Raw link fields (same package — direct access to unexported fields).
+	linkPassphrase := link.protonLink.NodePassphrase
+	linkEncName := link.protonLink.Name
+
+	// Generate share crypto material.
+	shareKey, sharePassphrase, sharePassphraseSig, ppKP, nameKP, err := GenerateShareCrypto(
+		addrKR, linkNodeKR, parentKR, linkPassphrase, linkEncName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ShareLink: %s: %w", link.LinkID(), err)
+	}
+
+	// Build payload and create the share.
+	payload := CreateDriveSharePayload{
+		AddressID:                addrID,
+		RootLinkID:               link.LinkID(),
+		ShareKey:                 shareKey,
+		SharePassphrase:          sharePassphrase,
+		SharePassphraseSignature: sharePassphraseSig,
+		PassphraseKeyPacket:      ppKP,
+		NameKeyPacket:            nameKP,
+	}
+
+	volumeID := link.VolumeID()
+	shareID, err := c.CreateShareFromLink(ctx, volumeID, payload)
+	if err != nil {
+		return nil, fmt.Errorf("ShareLink: %s: %w", link.LinkID(), err)
+	}
+
+	// Resolve the newly created share.
+	resolved, err := c.GetShare(ctx, shareID)
+	if err != nil {
+		return nil, fmt.Errorf("ShareLink: resolve new share: %w", err)
+	}
+
+	// Rename if a name was provided.
+	if name != "" {
+		if err := c.ShareRename(ctx, resolved, name); err != nil {
+			return nil, fmt.Errorf("ShareLink: rename: %w", err)
+		}
+	}
+
+	return resolved, nil
 }
