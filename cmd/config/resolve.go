@@ -152,5 +152,3 @@ func shareIDToName(cmd *cobra.Command, id string) string {
 	}
 	return ""
 }
-
-

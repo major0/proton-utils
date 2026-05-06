@@ -501,21 +501,21 @@ func parseWatermark(s string) (any, error) {
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("config: memory_cache_watermark must be in format min:max, got %q", s)
 	}
-	min, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	lo, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("config: memory_cache_watermark min must be a non-negative integer, got %q", parts[0])
 	}
-	max, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	hi, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("config: memory_cache_watermark max must be a non-negative integer, got %q", parts[1])
 	}
-	if min < 0 {
-		return nil, fmt.Errorf("config: memory_cache_watermark min must be non-negative, got %d", min)
+	if lo < 0 {
+		return nil, fmt.Errorf("config: memory_cache_watermark min must be non-negative, got %d", lo)
 	}
-	if max < min {
-		return nil, fmt.Errorf("config: memory_cache_watermark max (%d) must be >= min (%d)", max, min)
+	if hi < lo {
+		return nil, fmt.Errorf("config: memory_cache_watermark max (%d) must be >= min (%d)", hi, lo)
 	}
-	return [2]int64{min, max}, nil
+	return [2]int64{lo, hi}, nil
 }
 
 func parseMemoryCacheLevel(s string) (any, error) {

@@ -64,9 +64,9 @@ func genValidSelectorAndValue(t *rapid.T) (string, string) {
 			v := rapid.StringMatching(`[0-9]+\.[0-9]+\.[0-9]+`).Draw(t, "appVersion")
 			return "core.app_version", v
 		default:
-			min := rapid.Int64Range(0, 500).Draw(t, "wmMin")
-			max := rapid.Int64Range(min, min+500).Draw(t, "wmMax")
-			return "core.memory_cache_watermark", formatWatermark([2]int64{min, max})
+			lo := rapid.Int64Range(0, 500).Draw(t, "wmMin")
+			hi := rapid.Int64Range(lo, lo+500).Draw(t, "wmMax")
+			return "core.memory_cache_watermark", formatWatermark([2]int64{lo, hi})
 		}
 	case 1: // subsystem
 		svcNames := make([]string, 0, len(api.Services))
@@ -164,9 +164,9 @@ func TestValidationRejectsInvalid_Property(t *testing.T) {
 				value = formatInt(rapid.IntRange(0, 100).Draw(t, "single"))
 			case 1:
 				// max < min.
-				min := rapid.Int64Range(10, 100).Draw(t, "min")
-				max := rapid.Int64Range(0, min-1).Draw(t, "max")
-				value = formatWatermark([2]int64{min, max})
+				lo := rapid.Int64Range(10, 100).Draw(t, "min")
+				hi := rapid.Int64Range(0, lo-1).Draw(t, "max")
+				value = formatWatermark([2]int64{lo, hi})
 			default:
 				// Non-numeric.
 				value = rapid.StringMatching(`[a-z]{2,5}:[a-z]{2,5}`).Draw(t, "nonNumWm")
@@ -465,7 +465,7 @@ func TestGet_ShareMissingIndex(t *testing.T) {
 
 func TestGet_SubsystemPrecedence(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.CoreConfig.MaxJobs.SetFile(10)
+	cfg.MaxJobs.SetFile(10)
 
 	// Without subsystem override, should return core value.
 	sel, _ := Parse("drive.max_jobs")

@@ -207,9 +207,9 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 			cfg.AppVersion.SetFile(rapid.StringMatching(`[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+`).Draw(t, "appVersion"))
 		}
 		if rapid.Bool().Draw(t, "setWatermark") {
-			min := rapid.Int64Range(0, 1000).Draw(t, "wmMin")
-			max := rapid.Int64Range(min, min+1000).Draw(t, "wmMax")
-			cfg.MemoryCacheWatermark.SetFile([2]int64{min, max})
+			lo := rapid.Int64Range(0, 1000).Draw(t, "wmMin")
+			hi := rapid.Int64Range(lo, lo+1000).Draw(t, "wmMax")
+			cfg.MemoryCacheWatermark.SetFile([2]int64{lo, hi})
 		}
 
 		// Random shares.
@@ -299,10 +299,8 @@ func assertParamEqual[T comparable](t interface{ Fatalf(string, ...any) }, name 
 		if got.Value() != want.Value() {
 			t.Fatalf("%s: value got %v, want %v", name, got.Value(), want.Value())
 		}
-	} else {
-		if got.Source() != Unset {
-			t.Fatalf("%s: source got %v, want Unset", name, got.Source())
-		}
+	} else if got.Source() != Unset {
+		t.Fatalf("%s: source got %v, want Unset", name, got.Source())
 	}
 }
 
@@ -314,10 +312,8 @@ func assertParamEqualArr(t interface{ Fatalf(string, ...any) }, name string, wan
 		if got.Value() != want.Value() {
 			t.Fatalf("%s: value got %v, want %v", name, got.Value(), want.Value())
 		}
-	} else {
-		if got.Source() != Unset {
-			t.Fatalf("%s: source got %v, want Unset", name, got.Source())
-		}
+	} else if got.Source() != Unset {
+		t.Fatalf("%s: source got %v, want Unset", name, got.Source())
 	}
 }
 

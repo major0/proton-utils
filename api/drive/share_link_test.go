@@ -232,7 +232,7 @@ func TestShareLink_HappyPath_WithName(t *testing.T) {
 		Type:           proton.LinkTypeFolder,
 		NodePassphrase: encPassphraseArm,
 		Name:           encNameArm,
-		SignatureEmail:  "addr@test.local",
+		SignatureEmail: "addr@test.local",
 	}
 	// Create a link with the share as parent (root link, no parent link).
 	link := NewLink(pLink, nil, shareObj, c)
@@ -372,7 +372,7 @@ func TestShareLink_EmptyName_NoRename(t *testing.T) {
 		Type:           proton.LinkTypeFolder,
 		NodePassphrase: encPassphraseArm,
 		Name:           encNameArm,
-		SignatureEmail:  "addr@test.local",
+		SignatureEmail: "addr@test.local",
 	}
 	link := NewLink(pLink, nil, shareObj, c)
 	link.testName = "TestFolder"

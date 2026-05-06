@@ -169,15 +169,15 @@ func parseWatermarkString(s string) ([2]int64, error) {
 	if len(parts) != 2 {
 		return [2]int64{}, fmt.Errorf("expected format min:max, got %q", s)
 	}
-	min, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	lo, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
 	if err != nil {
 		return [2]int64{}, fmt.Errorf("invalid min value: %w", err)
 	}
-	max, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	hi, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
 	if err != nil {
 		return [2]int64{}, fmt.Errorf("invalid max value: %w", err)
 	}
-	return [2]int64{min, max}, nil
+	return [2]int64{lo, hi}, nil
 }
 
 // DefaultConfig returns a Config with all defaults (empty maps, caching off).
