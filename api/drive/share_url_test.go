@@ -77,6 +77,17 @@ func TestCreateShareURL_NoExistingURL_CallsPost(t *testing.T) {
 
 	// Set up a test HTTP server that returns empty list on GET, then
 	// handles the subsequent calls (modulus + POST).
+	// We need the armored public key for the /core/v4/keys response.
+	addrKR := genKeyRing(t, "test-addr")
+	key, err := addrKR.GetKey(0)
+	if err != nil {
+		t.Fatalf("get key: %v", err)
+	}
+	pubKey, err := key.GetArmoredPublicKey()
+	if err != nil {
+		t.Fatalf("get armored public key: %v", err)
+	}
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -84,6 +95,15 @@ func TestCreateShareURL_NoExistingURL_CallsPost(t *testing.T) {
 		case r.Method == "GET" && r.URL.Path == "/drive/shares/test-share/urls":
 			// ListShareURLs: return empty list.
 			resp := ShareURLsResponse{Code: 1000, ShareURLs: nil}
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case r.Method == "GET" && r.URL.Path == "/core/v4/keys":
+			// GetPublicKeys: return the test address public key.
+			resp := map[string]any{
+				"Code":          1000,
+				"Keys":          []map[string]any{{"Flags": 3, "PublicKey": pubKey}},
+				"RecipientType": 1,
+			}
 			_ = json.NewEncoder(w).Encode(resp)
 
 		case r.Method == "GET" && r.URL.Path == "/core/v4/auth/modulus":
@@ -114,11 +134,11 @@ func TestCreateShareURL_NoExistingURL_CallsPost(t *testing.T) {
 
 	// Construct a Client with a real Session pointing at the test server.
 	session := &api.Session{
+		Client:  newTestProtonClient(srv.URL),
 		BaseURL: srv.URL,
 		Sem:     api.NewSemaphore(context.Background(), 4, nil),
 	}
 
-	addrKR := genKeyRing(t, "test-addr")
 	c := &Client{
 		Session:         session,
 		addressKeyRings: map[string]*crypto.KeyRing{"addr-1": addrKR},
