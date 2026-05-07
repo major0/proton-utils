@@ -26,18 +26,6 @@ func init() {
 	chatCmd.PersistentFlags().StringVar(&chatSpaceFlag, "space", "", "Space ID (defaults to simple space)")
 }
 
-// resolveSpace returns the space ID from the --space flag or the default space.
-func resolveSpace(ctx context.Context, client *lumo.Client) (string, error) {
-	if chatSpaceFlag != "" {
-		return chatSpaceFlag, nil
-	}
-	space, err := client.GetDefaultSpace(ctx)
-	if err != nil {
-		return "", fmt.Errorf("resolving default space: %w", err)
-	}
-	return space.ID, nil
-}
-
 // --- chat create ---
 
 var chatCreateCmd = &cobra.Command{
