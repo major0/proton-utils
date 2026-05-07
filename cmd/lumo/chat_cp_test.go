@@ -165,7 +165,7 @@ func TestChatCp_NoArg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for no args, got nil")
 	}
-	if !strings.Contains(err.Error(), "requires a conversation identifier") {
+	if !strings.Contains(err.Error(), "usage:") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -182,7 +182,7 @@ func TestChatCp_NoArgEmpty(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty args, got nil")
 	}
-	if !strings.Contains(err.Error(), "requires a conversation identifier") {
+	if !strings.Contains(err.Error(), "usage:") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

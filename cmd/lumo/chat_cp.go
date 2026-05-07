@@ -9,9 +9,9 @@ import (
 )
 
 var chatCpCmd = &cobra.Command{
-	Use:     "cp <id|title>",
+	Use:     "cp <source> [destination]",
 	Aliases: []string{"copy"},
-	Short:   "Duplicate a conversation within the same space",
+	Short:   "Copy a conversation to a new or existing space",
 	RunE:    runChatCp,
 }
 
@@ -22,8 +22,28 @@ func init() {
 func runChatCp(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 
-	if len(args) == 0 {
-		return fmt.Errorf("requires a conversation identifier (ID or title)")
+	if len(args) == 0 || len(args) > 2 {
+		return fmt.Errorf("usage: proton lumo chat cp <source> [destination]")
+	}
+
+	// Normalize and parse source argument.
+	srcNorm := normalizeArg(args[0])
+	srcURI, err := parseLumoURI(srcNorm)
+	if err != nil {
+		return err
+	}
+	if srcURI.Path == "" {
+		return fmt.Errorf("source path must not be empty; provide a conversation ID or title")
+	}
+
+	// Normalize and parse destination argument (default: lumo:///).
+	destArg := "lumo:///"
+	if len(args) >= 2 {
+		destArg = normalizeArg(args[1]) //nolint:gosec // bounds checked: len(args) <= 2 enforced above
+	}
+	destURI, err := parseLumoURI(destArg)
+	if err != nil {
+		return err
 	}
 
 	ctx := cmd.Context()
@@ -33,13 +53,50 @@ func runChatCp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Resolve source conversation.
-	resolved, err := resolveConversationByInput(ctx, client, args[0])
+	// Fetch all spaces once (needed for both source and destination resolution).
+	spaces, err := client.ListSpaces(ctx)
+	if err != nil {
+		return fmt.Errorf("listing spaces: %w", err)
+	}
+
+	// Build conversation pairs from spaces.
+	var pairs []lumo.SpaceConversation
+	for i := range spaces {
+		for _, conv := range spaces[i].Conversations {
+			pairs = append(pairs, lumo.SpaceConversation{
+				Space:        &spaces[i],
+				Conversation: conv,
+			})
+		}
+	}
+
+	// Callbacks for scoped resolution.
+	isSimple := func(s *lumo.Space) bool {
+		return classifySpace(ctx, client, s) == "simple"
+	}
+	deriveDEK := func(s *lumo.Space) ([]byte, error) {
+		return client.DeriveSpaceDEK(ctx, s)
+	}
+
+	// Resolve source conversation scoped by URI space component.
+	var srcSpaceID string
+	if srcURI.Space != "" {
+		decryptName := func(s *lumo.Space) string {
+			return decryptSpaceName(ctx, client, s)
+		}
+		srcSpace, serr := resolveSpace(spaces, srcURI.Space, decryptName)
+		if serr != nil {
+			return fmt.Errorf("resolve source space: %w", serr)
+		}
+		srcSpaceID = srcSpace.ID
+	}
+
+	resolved, err := resolveConversationScoped(pairs, srcURI.Path, srcSpaceID, isSimple, decryptConversationTitle, deriveDEK)
 	if err != nil {
 		return err
 	}
 
-	// Load space and derive DEK for decrypting source messages.
+	// Load source space and derive DEK for decrypting source messages.
 	space, dek, err := resolveSpaceAndDEK(ctx, client, resolved.SpaceID)
 	if err != nil {
 		return err
@@ -51,26 +108,23 @@ func runChatCp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading conversation: %w", err)
 	}
 
-	// Decrypt source title and create new title with " (copy)" suffix.
+	// Decrypt source title.
 	srcTitle := decryptConversationTitle(*srcConv, dek, space.SpaceTag)
-	newTitle := srcTitle + " (copy)"
 
-	// Create a new space for the copy. Simple spaces have a 1:1
-	// relationship with conversations in the web client — placing the
-	// copy in the same space would cause cascade-deletion of both when
-	// either is deleted.
-	newSpace, err := client.CreateSpace(ctx, "", false)
+	// Resolve destination space, DEK, and title.
+	dest, err := resolveDestination(ctx, client, spaces, destURI, srcTitle)
 	if err != nil {
-		return fmt.Errorf("creating space for copy: %w", err)
+		return err
 	}
 
-	// Derive DEK for the new space (needed for encrypting the copy).
-	newDEK, err := client.DeriveSpaceDEK(ctx, newSpace)
-	if err != nil {
-		return fmt.Errorf("deriving DEK for new space: %w", err)
+	// Cascade-deletion warning for existing simple spaces with conversations.
+	if !dest.IsNew && classifySpace(ctx, client, dest.Space) == "simple" && len(dest.Space.Conversations) > 0 {
+		destName := decryptSpaceName(ctx, client, dest.Space)
+		_, _ = fmt.Fprintf(os.Stderr, "warning: space %q already has a conversation; web-UI deletion will cascade to both\n", destName)
 	}
 
-	newConv, err := client.CreateConversation(ctx, newSpace, newTitle)
+	// Create conversation in destination space.
+	newConv, err := client.CreateConversation(ctx, dest.Space, dest.Title)
 	if err != nil {
 		return fmt.Errorf("creating conversation: %w", err)
 	}
@@ -117,8 +171,8 @@ func runChatCp(cmd *cobra.Command, args []string) error {
 		freshTag := lumo.GenerateTag()
 		targetAD := lumo.MessageAD(freshTag, role, "", newConv.ConversationTag)
 
-		// Re-encrypt under target AD using the new space's DEK.
-		encrypted, eerr := lumo.EncryptString(plainJSON, newDEK, targetAD)
+		// Re-encrypt under target AD using the destination space's DEK.
+		encrypted, eerr := lumo.EncryptString(plainJSON, dest.DEK, targetAD)
 		if eerr != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "warning: failed to encrypt message %s: %v\n", msg.ID, eerr)
 			failed++
