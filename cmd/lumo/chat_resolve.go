@@ -35,6 +35,34 @@ func resolveConversationByInput(ctx context.Context, client *lumo.Client, input 
 	return resolveFromPairs(pairs, input, decryptConversationTitle, deriveDEK)
 }
 
+// resolveConversationScoped resolves a conversation within a specific scope.
+// If spaceID is empty, searches only simple spaces (filtered by isSimple).
+// If spaceID is non-empty, searches only within that space.
+func resolveConversationScoped(
+	pairs []lumo.SpaceConversation,
+	query string,
+	spaceID string,
+	isSimple func(*lumo.Space) bool,
+	decryptTitle func(lumo.Conversation, []byte, string) string,
+	deriveDEK func(*lumo.Space) ([]byte, error),
+) (*ResolvedConversation, error) {
+	var filtered []lumo.SpaceConversation
+	if spaceID == "" {
+		for _, p := range pairs {
+			if isSimple(p.Space) {
+				filtered = append(filtered, p)
+			}
+		}
+	} else {
+		for _, p := range pairs {
+			if p.Space.ID == spaceID {
+				filtered = append(filtered, p)
+			}
+		}
+	}
+	return resolveFromPairs(filtered, query, decryptTitle, deriveDEK)
+}
+
 // resolveFromPairs resolves input against pre-fetched conversation pairs.
 // This is the testable core of resolveConversationByInput.
 func resolveFromPairs(

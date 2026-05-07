@@ -262,3 +262,172 @@ type convEntry struct {
 	pair  lumo.SpaceConversation
 	title string
 }
+
+// --- Property 5: Bare strings resolve only within simple spaces ---
+
+// TestScopedResolveBareSimpleOnly_Property verifies that for any set of
+// spaces containing both simple and project spaces, and a conversation
+// that exists only in a project space, resolving with an empty spaceID
+// (bare string) SHALL NOT return that conversation.
+//
+// Feature: lumo-chat-cp-dest, Property 5: Bare strings resolve only within simple spaces
+//
+// **Validates: Requirements 4.1, 4.5, 9.4**
+func TestScopedResolveBareSimpleOnly_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate 1–4 simple spaces (no conversations matching our target).
+		numSimple := rapid.IntRange(1, 4).Draw(t, "num_simple")
+		// Generate 1–3 project spaces, one of which has our target conversation.
+		numProject := rapid.IntRange(1, 3).Draw(t, "num_project")
+
+		simpleIDs := make(map[string]bool)
+		var pairs []lumo.SpaceConversation
+		titleMap := make(map[string]string)
+
+		// Create simple spaces with conversations that do NOT match the target.
+		for i := 0; i < numSimple; i++ {
+			spaceID := rapid.StringMatching(`[0-9]{12}`).Draw(t, "simple_space_id")
+			if simpleIDs[spaceID] {
+				continue
+			}
+			simpleIDs[spaceID] = true
+
+			convID := rapid.StringMatching(`[0-9]{20,24}`).Draw(t, "simple_conv_id")
+			// Title uses a prefix that won't match our target query.
+			title := "simple-" + rapid.StringMatching(`[a-z]{4,8}`).Draw(t, "simple_title")
+
+			pairs = append(pairs, lumo.SpaceConversation{
+				Space: &lumo.Space{
+					ID:       spaceID,
+					SpaceTag: "tag-" + spaceID,
+				},
+				Conversation: lumo.Conversation{
+					ID:      convID,
+					SpaceID: spaceID,
+				},
+			})
+			titleMap[convID] = title
+		}
+
+		// Create project spaces; one has the target conversation.
+		targetTitle := "project-target-" + rapid.StringMatching(`[A-Z]{4,8}`).Draw(t, "target_suffix")
+		for i := 0; i < numProject; i++ {
+			spaceID := rapid.StringMatching(`[A-Z]{12}`).Draw(t, "project_space_id")
+			convID := rapid.StringMatching(`[0-9]{20,24}`).Draw(t, "project_conv_id")
+
+			var title string
+			if i == 0 {
+				// First project space has the target conversation.
+				title = targetTitle
+			} else {
+				title = "project-other-" + rapid.StringMatching(`[a-z]{4,8}`).Draw(t, "other_title")
+			}
+
+			pairs = append(pairs, lumo.SpaceConversation{
+				Space: &lumo.Space{
+					ID:       spaceID,
+					SpaceTag: "tag-" + spaceID,
+				},
+				Conversation: lumo.Conversation{
+					ID:      convID,
+					SpaceID: spaceID,
+				},
+			})
+			titleMap[convID] = title
+		}
+
+		// isSimple returns true only for spaces in our simpleIDs set.
+		isSimple := func(s *lumo.Space) bool {
+			return simpleIDs[s.ID]
+		}
+		decryptTitle := func(conv lumo.Conversation, _ []byte, _ string) string {
+			return titleMap[conv.ID]
+		}
+		deriveDEK := func(_ *lumo.Space) ([]byte, error) {
+			return []byte("fake-dek"), nil
+		}
+
+		// Resolve with empty spaceID (bare string behavior).
+		result, err := resolveConversationScoped(pairs, targetTitle, "", isSimple, decryptTitle, deriveDEK)
+
+		// The target exists only in a project space, so resolution must fail.
+		if err == nil {
+			t.Fatalf("expected error resolving %q with empty spaceID, got result: %+v", targetTitle, result)
+		}
+	})
+}
+
+// --- Property 6: Scoped resolution restricts to specified space ---
+
+// TestScopedResolveRestrictsToSpace_Property verifies that for any set
+// of spaces where multiple spaces contain conversations with the same
+// title, resolving with a non-empty spaceID SHALL return only the
+// conversation from the specified space.
+//
+// Feature: lumo-chat-cp-dest, Property 6: Scoped resolution restricts to specified space
+//
+// **Validates: Requirements 4.2**
+func TestScopedResolveRestrictsToSpace_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate 2–5 spaces, each with a conversation having the same title.
+		numSpaces := rapid.IntRange(2, 5).Draw(t, "num_spaces")
+		sharedTitle := "shared-" + rapid.StringMatching(`[a-z]{4,10}`).Draw(t, "shared_title")
+
+		type spaceConv struct {
+			spaceID string
+			convID  string
+		}
+		var spaceConvs []spaceConv
+		var pairs []lumo.SpaceConversation
+		titleMap := make(map[string]string)
+		spaceIDSet := make(map[string]bool)
+
+		for len(spaceConvs) < numSpaces {
+			spaceID := rapid.StringMatching(`[A-Za-z0-9]{12}`).Draw(t, "space_id")
+			if spaceIDSet[spaceID] {
+				continue
+			}
+			spaceIDSet[spaceID] = true
+
+			convID := rapid.StringMatching(`[0-9]{20,24}`).Draw(t, "conv_id")
+
+			pairs = append(pairs, lumo.SpaceConversation{
+				Space: &lumo.Space{
+					ID:       spaceID,
+					SpaceTag: "tag-" + spaceID,
+				},
+				Conversation: lumo.Conversation{
+					ID:      convID,
+					SpaceID: spaceID,
+				},
+			})
+			titleMap[convID] = sharedTitle
+			spaceConvs = append(spaceConvs, spaceConv{spaceID: spaceID, convID: convID})
+		}
+
+		// Pick one space to scope the resolution to.
+		targetIdx := rapid.IntRange(0, len(spaceConvs)-1).Draw(t, "target_idx")
+		targetSpaceID := spaceConvs[targetIdx].spaceID
+		targetConvID := spaceConvs[targetIdx].convID
+
+		// isSimple is irrelevant when spaceID is non-empty, but provide one.
+		isSimple := func(_ *lumo.Space) bool { return true }
+		decryptTitle := func(conv lumo.Conversation, _ []byte, _ string) string {
+			return titleMap[conv.ID]
+		}
+		deriveDEK := func(_ *lumo.Space) ([]byte, error) {
+			return []byte("fake-dek"), nil
+		}
+
+		result, err := resolveConversationScoped(pairs, sharedTitle, targetSpaceID, isSimple, decryptTitle, deriveDEK)
+		if err != nil {
+			t.Fatalf("resolveConversationScoped(%q, spaceID=%q) error: %v", sharedTitle, targetSpaceID, err)
+		}
+		if result.ConversationID != targetConvID {
+			t.Fatalf("expected ConversationID=%q, got %q", targetConvID, result.ConversationID)
+		}
+		if result.SpaceID != targetSpaceID {
+			t.Fatalf("expected SpaceID=%q, got %q", targetSpaceID, result.SpaceID)
+		}
+	})
+}
