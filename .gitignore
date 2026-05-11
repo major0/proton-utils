@@ -1,6 +1,6 @@
 # Binaries for programs and plugins
 proton-cli
-proton
+/proton
 *.exe
 *.exe~
 *.dll
