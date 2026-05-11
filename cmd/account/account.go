@@ -2,7 +2,7 @@
 package accountCmd
 
 import (
-	cli "github.com/major0/proton-cli/cmd"
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/spf13/cobra"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/major0/proton-cli/api/config"
-	cli "github.com/major0/proton-cli/cmd"
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/spf13/cobra"
 )
 

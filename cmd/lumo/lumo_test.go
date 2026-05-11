@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	common "github.com/major0/proton-cli/api"
-	cli "github.com/major0/proton-cli/cmd"
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/spf13/cobra"
 )
 

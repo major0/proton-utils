@@ -12,7 +12,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/drive"
-	cli "github.com/major0/proton-cli/cmd"
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

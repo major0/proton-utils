@@ -16,7 +16,7 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	common "github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/account"
-	cli "github.com/major0/proton-cli/cmd"
+	cli "github.com/major0/proton-cli/internal/cli"
 )
 
 // testKeyData holds pre-computed PGP key material for cookie login tests.
