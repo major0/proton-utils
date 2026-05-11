@@ -1,0 +1,12 @@
+[Unit]
+Description=Proton FUSE redirector at /proton
+After=local-fs.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/proton-redirector /proton
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
