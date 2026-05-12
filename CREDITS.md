@@ -12,6 +12,8 @@ proton-cli builds on the work of several open-source projects and contributors.
 
 ## Prior Art
 
+- [Keybase Filesystem (KBFS)](https://github.com/keybase/client/tree/master/go/kbfs) by Keybase/Zoom — Per-user encrypted FUSE filesystem with a system-wide symlink redirector. The proton-fuse architecture (per-user FUSE mount + setuid redirector at a well-known path) is directly modeled on KBFS's design. The [redirector](https://github.com/keybase/client/tree/master/go/kbfs/redirector) component demonstrates how to use UID-based symlink routing to provide per-user views from a single global mountpoint. BSD-3-Clause licensed.
+
 - [protonmail-cli](https://github.com/dimkouv/protonmail-cli) by dimkouv — Early unofficial command-line utility for ProtonMail (Python). Demonstrated that a CLI client for Proton services was viable and desirable.
 
 - [hydroxide](https://github.com/emersion/hydroxide) by Simon Ser (emersion) — Third-party ProtonMail CardDAV, IMAP, and SMTP bridge (Go). Pioneered the approach of translating standard protocols into Proton API calls. Its auth flow and session management were early references.

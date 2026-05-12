@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/major0/proton-cli/api/drive"
-	driveCmd "github.com/major0/proton-cli/cmd/drive"
 	cli "github.com/major0/proton-cli/internal/cli"
+	driveCmd "github.com/major0/proton-cli/internal/cli/drive"
 	"github.com/spf13/cobra"
 )
 

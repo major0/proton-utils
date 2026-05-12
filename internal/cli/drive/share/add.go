@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/major0/proton-cli/api/drive"
-	driveCmd "github.com/major0/proton-cli/cmd/drive"
+	driveCmd "github.com/major0/proton-cli/internal/cli/drive"
 	"github.com/spf13/cobra"
 )
 
