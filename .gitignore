@@ -1,6 +1,8 @@
 # Binaries for programs and plugins
-proton-cli
 /proton
+/proton-fuse
+/proton-redirector
+/proton-cli
 *.exe
 *.exe~
 *.dll
