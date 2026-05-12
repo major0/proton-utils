@@ -12,7 +12,8 @@ import (
 // TestNoPflagDirectImports scans all .go files in the project and fails if any
 // directly import "github.com/spf13/pflag". The project uses a go.mod replace
 // directive to redirect spf13/pflag to optargs/pflag for transitive deps (cobra),
-// but no project source should reference spf13/pflag directly.
+// but no project source should reference spf13/pflag directly — except the flag
+// implementation layer (internal/cli/flags.go) which wraps pflag types.
 //
 // Validates: Requirements 1.2
 func TestNoPflagDirectImports(t *testing.T) {
@@ -25,6 +26,13 @@ func TestNoPflagDirectImports(t *testing.T) {
 
 	const banned = "github.com/spf13/pflag"
 	fset := token.NewFileSet()
+
+	// allowedFiles lists files that legitimately import pflag because they
+	// implement the custom flag type wrappers (BoolFunc, BoolFuncP, etc.).
+	allowedFiles := map[string]bool{
+		filepath.Join("internal", "cli", "flags.go"):      true,
+		filepath.Join("internal", "cli", "flags_test.go"): true,
+	}
 
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -42,13 +50,17 @@ func TestNoPflagDirectImports(t *testing.T) {
 			return nil
 		}
 
+		rel, _ := filepath.Rel(root, path)
+		if allowedFiles[rel] {
+			return nil
+		}
+
 		f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		if parseErr != nil {
 			t.Logf("skipping %s: %v", path, parseErr)
 			return nil
 		}
 
-		rel, _ := filepath.Rel(root, path)
 		for _, imp := range f.Imports {
 			importPath := strings.Trim(imp.Path.Value, `"`)
 			if importPath == banned {
