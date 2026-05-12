@@ -3,6 +3,7 @@ package lumoCmd
 import (
 	"strings"
 
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/major0/proton-cli/api/lumo"
 )
 
@@ -56,7 +57,7 @@ func FormatLog(messages []lumo.Message, opts LogFormatOptions, decrypt func(lumo
 
 		// Build the line.
 		if opts.Timestamps {
-			b.WriteString(fmtLocalTime(msg.CreateTime))
+			b.WriteString(cli.FormatISO(msg.CreateTime))
 			b.WriteByte(' ')
 		}
 		b.WriteString(label)

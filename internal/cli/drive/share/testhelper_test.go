@@ -4,19 +4,13 @@ import (
 	"fmt"
 
 	"github.com/ProtonMail/go-proton-api"
-	commonAPI "github.com/major0/proton-cli/api"
+	"github.com/major0/proton-cli/internal/cli/testutil"
 )
 
-// failingStore is a SessionStore that always returns an error on Load.
-type failingStore struct {
-	err error
+// newFailingStore returns a MockSessionStore that always returns the given error on Load.
+func newFailingStore(err error) *testutil.MockSessionStore {
+	return &testutil.MockSessionStore{LoadErr: err}
 }
-
-func (f *failingStore) Load() (*commonAPI.SessionCredentials, error) { return nil, f.err }
-func (f *failingStore) Save(_ *commonAPI.SessionCredentials) error   { return nil }
-func (f *failingStore) Delete() error                                { return nil }
-func (f *failingStore) List() ([]string, error)                      { return nil, f.err }
-func (f *failingStore) Switch(_ string) error                        { return nil }
 
 // testShareMetadata creates a ShareMetadata for testing.
 func testShareMetadata(shareID string, st proton.ShareType) proton.ShareMetadata {

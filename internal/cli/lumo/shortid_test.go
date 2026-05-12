@@ -3,6 +3,8 @@ package lumoCmd
 import (
 	"strings"
 	"testing"
+
+	cli "github.com/major0/proton-cli/internal/cli"
 )
 
 // TestFormatConversationList_ShortIDs verifies that short IDs produce
@@ -52,10 +54,10 @@ func TestFormatConversationList_FullIDs(t *testing.T) {
 // TestFmtLocalTime_ValidISO verifies that a valid ISO timestamp is
 // formatted to local time with space separator.
 func TestFmtLocalTime_ValidISO(t *testing.T) {
-	got := fmtLocalTime("2024-06-15T10:30:00Z")
+	got := cli.FormatISO("2024-06-15T10:30:00Z")
 	// Should be "YYYY-MM-DD HH:MM:SS" format (19 chars).
 	if len(got) != 19 {
-		t.Fatalf("fmtLocalTime length = %d, want 19: %q", len(got), got)
+		t.Fatalf("FormatISO length = %d, want 19: %q", len(got), got)
 	}
 	if got[10] != ' ' {
 		t.Errorf("expected space at position 10, got %q in %q", got[10], got)
@@ -69,7 +71,7 @@ func TestFmtLocalTime_ValidISO(t *testing.T) {
 // TestFmtLocalTime_InvalidFallback verifies that an unparseable string
 // is returned unchanged.
 func TestFmtLocalTime_InvalidFallback(t *testing.T) {
-	got := fmtLocalTime("not-a-date")
+	got := cli.FormatISO("not-a-date")
 	if got != "not-a-date" {
 		t.Fatalf("expected fallback to raw string, got %q", got)
 	}

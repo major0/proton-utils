@@ -12,6 +12,7 @@ import (
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
 	"github.com/major0/proton-cli/api/drive"
+	cli "github.com/major0/proton-cli/internal/cli"
 )
 
 func TestFmtTime(t *testing.T) {
@@ -27,9 +28,9 @@ func TestFmtTime(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := fmtTime(tt.epoch)
+			got := cli.FormatEpoch(tt.epoch)
 			if !tt.check(got) {
-				t.Errorf("fmtTime(%d) = %q, unexpected", tt.epoch, got)
+				t.Errorf("FormatEpoch(%d) = %q, unexpected", tt.epoch, got)
 			}
 		})
 	}

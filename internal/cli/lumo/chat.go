@@ -8,6 +8,7 @@ import (
 
 	"github.com/major0/proton-cli/api/lumo"
 	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-cli/internal/cli/shortid"
 	"github.com/spf13/cobra"
 )
 
@@ -245,7 +246,7 @@ func runChatListSpace(ctx context.Context, client *lumo.Client, spaceID string, 
 		for i, c := range active {
 			ids[i] = c.ID
 		}
-		short = formatShortIDs(ids)
+		short = shortid.FormatShortIDs(ids)
 	}
 
 	rows := make([]ConversationRow, len(active))
@@ -321,7 +322,7 @@ func runChatListAll(ctx context.Context, client *lumo.Client, verbose bool) erro
 		for i := range rows {
 			ids[i] = rows[i].ID
 		}
-		short := formatShortIDs(ids)
+		short := shortid.FormatShortIDs(ids)
 		for i := range rows {
 			if s, ok := short[rows[i].ID]; ok {
 				rows[i].ID = s
@@ -386,7 +387,7 @@ func runChatDelete(cmd *cobra.Command, args []string) error {
 			allConvIDs = append(allConvIDs, c.ID)
 		}
 	}
-	convID, err := resolveShortID(allConvIDs, args[0])
+	convID, err := shortid.Resolve(allConvIDs, args[0])
 	if err != nil {
 		return fmt.Errorf("resolving conversation: %w", err)
 	}
@@ -435,7 +436,7 @@ func resolveConversationID(ctx context.Context, client *lumo.Client, input strin
 		ids[i] = p.Conversation.ID
 	}
 
-	resolved, err := resolveShortID(ids, input)
+	resolved, err := shortid.Resolve(ids, input)
 	if err != nil {
 		return "", fmt.Errorf("resolving conversation: %w", err)
 	}

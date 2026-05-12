@@ -2,11 +2,10 @@ package lumoCmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/major0/proton-cli/api/lumo"
+	cli "github.com/major0/proton-cli/internal/cli"
 )
 
 // ResolvedConversation holds the result of conversation resolution.
@@ -84,81 +83,32 @@ func resolveFromPairs(
 		ids[i] = p.Conversation.ID
 	}
 
-	// Step 1: Try ID prefix resolution.
-	resolved, err := resolveShortID(ids, input)
-	if err == nil {
-		// Found a unique ID match.
-		for _, p := range active {
-			if p.Conversation.ID == resolved {
-				return &ResolvedConversation{
-					ConversationID: p.Conversation.ID,
-					SpaceID:        p.Space.ID,
-				}, nil
-			}
-		}
-	}
-
-	// If ambiguous, return that error directly.
-	var ambErr *shortIDAmbiguousError
-	if errors.As(err, &ambErr) {
-		return nil, err
-	}
-
-	// Step 2: Title fallback — only reached on shortIDNotFoundError.
+	// Name callback with DEK caching for title decryption.
 	dekCache := make(map[string][]byte) // spaceID → DEK
-	type titleMatch struct {
-		convID  string
-		spaceID string
-		title   string
-	}
-	var matches []titleMatch
-
-	lowerInput := strings.ToLower(input)
-
-	for _, p := range active {
+	nameFunc := func(i int) string {
+		p := active[i]
 		dek, ok := dekCache[p.Space.ID]
 		if !ok {
 			d, derr := deriveDEK(p.Space)
 			if derr != nil {
-				// Non-fatal: skip spaces where DEK derivation fails.
 				dekCache[p.Space.ID] = nil
-				continue
+				return ""
 			}
 			dek = d
 			dekCache[p.Space.ID] = dek
 		}
 		if dek == nil {
-			continue
+			return ""
 		}
-
-		title := decryptTitle(p.Conversation, dek, p.Space.SpaceTag)
-		if title == "" {
-			continue
-		}
-
-		if strings.Contains(strings.ToLower(title), lowerInput) {
-			matches = append(matches, titleMatch{
-				convID:  p.Conversation.ID,
-				spaceID: p.Space.ID,
-				title:   title,
-			})
-		}
+		return decryptTitle(p.Conversation, dek, p.Space.SpaceTag)
 	}
 
-	switch len(matches) {
-	case 0:
-		return nil, fmt.Errorf("no conversation matching %q", input)
-	case 1:
-		return &ResolvedConversation{
-			ConversationID: matches[0].convID,
-			SpaceID:        matches[0].spaceID,
-		}, nil
-	default:
-		var b strings.Builder
-		fmt.Fprintf(&b, "multiple conversations match %q:", input)
-		for _, m := range matches {
-			fmt.Fprintf(&b, "\n  %s  %s", m.convID, m.title)
-		}
-		return nil, fmt.Errorf("%s", b.String())
+	idx, err := cli.ResolveEntity(ids, input, nameFunc)
+	if err != nil {
+		return nil, err
 	}
+	return &ResolvedConversation{
+		ConversationID: active[idx].Conversation.ID,
+		SpaceID:        active[idx].Space.ID,
+	}, nil
 }

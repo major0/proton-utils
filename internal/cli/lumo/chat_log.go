@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/major0/proton-cli/api/lumo"
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -169,7 +170,7 @@ func writeMessage(w io.Writer, msg lumo.Message, content string, opts LogFormatO
 	default:
 		plainLabel = "<?>"
 	}
-	ts := fmtLocalTime(msg.CreateTime)
+	ts := cli.FormatISO(msg.CreateTime)
 	headerWidth := len(plainLabel) + 1 + len(ts)
 
 	if _, err := fmt.Fprintf(w, "%s %s\n", label, ts); err != nil {

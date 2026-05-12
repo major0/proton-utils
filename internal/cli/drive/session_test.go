@@ -8,31 +8,21 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/major0/proton-cli/api"
 	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-cli/internal/cli/testutil"
 	"github.com/spf13/cobra"
 )
-
-// mockSessionStore implements api.SessionStore and always returns an error.
-type mockSessionStore struct{}
-
-func (m mockSessionStore) Load() (*api.SessionCredentials, error) {
-	return nil, errors.New("mock: no session available")
-}
-func (m mockSessionStore) Save(_ *api.SessionCredentials) error { return nil }
-func (m mockSessionStore) Delete() error                        { return nil }
-func (m mockSessionStore) List() ([]string, error)              { return nil, nil }
-func (m mockSessionStore) Switch(_ string) error                { return nil }
 
 // withMockSession sets up a mock session store that always fails,
 // allowing us to test the error paths of session-dependent functions.
 func withMockSession(t *testing.T) func() {
 	t.Helper()
+	mockStore := &testutil.MockSessionStore{LoadErr: errors.New("mock: no session available")}
 	rc := &cli.RuntimeContext{
 		Timeout:      5 * time.Second,
-		SessionStore: mockSessionStore{},
-		AccountStore: mockSessionStore{},
-		CookieStore:  mockSessionStore{},
+		SessionStore: mockStore,
+		AccountStore: mockStore,
+		CookieStore:  mockStore,
 		ServiceName:  "drive",
 	}
 	// Set context on all drive commands that tests call.
@@ -141,11 +131,12 @@ func TestRunCpProtonDestSessionError(t *testing.T) {
 
 	// Create a command with RuntimeContext for runCp.
 	cmd := &cobra.Command{}
+	mockStore := &testutil.MockSessionStore{LoadErr: errors.New("mock: no session available")}
 	rc := &cli.RuntimeContext{
 		Timeout:      5 * time.Second,
-		SessionStore: mockSessionStore{},
-		AccountStore: mockSessionStore{},
-		CookieStore:  mockSessionStore{},
+		SessionStore: mockStore,
+		AccountStore: mockStore,
+		CookieStore:  mockStore,
 		ServiceName:  "drive",
 	}
 	cli.SetContext(cmd, rc)
@@ -166,11 +157,12 @@ func TestRunCpProtonSourceSessionError(t *testing.T) {
 
 	// Create a command with RuntimeContext for runCp.
 	cmd := &cobra.Command{}
+	mockStore2 := &testutil.MockSessionStore{LoadErr: errors.New("mock: no session available")}
 	rc := &cli.RuntimeContext{
 		Timeout:      5 * time.Second,
-		SessionStore: mockSessionStore{},
-		AccountStore: mockSessionStore{},
-		CookieStore:  mockSessionStore{},
+		SessionStore: mockStore2,
+		AccountStore: mockStore2,
+		CookieStore:  mockStore2,
 		ServiceName:  "drive",
 	}
 	cli.SetContext(cmd, rc)

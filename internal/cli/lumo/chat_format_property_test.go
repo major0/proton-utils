@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/major0/proton-cli/api/lumo"
 	"pgregory.net/rapid"
 )
@@ -87,7 +88,7 @@ func TestFormatConversationList_Property(t *testing.T) {
 			if !strings.Contains(result, r.ID) {
 				t.Fatalf("output missing ID %q", r.ID)
 			}
-			formatted := fmtLocalTime(r.CreateTime)
+			formatted := cli.FormatISO(r.CreateTime)
 			if !strings.Contains(result, formatted) {
 				t.Fatalf("output missing formatted CreateTime %q (from %q)", formatted, r.CreateTime)
 			}

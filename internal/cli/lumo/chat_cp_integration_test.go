@@ -967,7 +967,7 @@ func TestIntegration_Error_NotFoundSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for not-found source, got nil")
 	}
-	if !strings.Contains(err.Error(), "no conversation matching") {
+	if !strings.Contains(err.Error(), "no match for") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1022,7 +1022,7 @@ func TestIntegration_Error_BareStringNoProjectMatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error: bare string should not match project space conversation")
 	}
-	if !strings.Contains(err.Error(), "no conversation matching") {
+	if !strings.Contains(err.Error(), "no match for") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

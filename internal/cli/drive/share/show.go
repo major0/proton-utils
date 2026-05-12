@@ -8,6 +8,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api/drive"
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/spf13/cobra"
 )
 
@@ -97,7 +98,7 @@ func printShareMetadata(ctx context.Context, s *drive.Share) {
 	fmt.Printf("Share:    %s\n", shareName)
 	fmt.Printf("Type:     %s\n", drive.FormatShareType(meta.Type))
 	fmt.Printf("Creator:  %s\n", meta.Creator)
-	fmt.Printf("Created:  %s\n", fmtTime(meta.CreationTime))
+	fmt.Printf("Created:  %s\n", cli.FormatEpoch(meta.CreationTime))
 }
 
 func printMembers(ctx context.Context, dc *drive.Client, shareID string) {
@@ -139,7 +140,7 @@ func printInvitations(ctx context.Context, dc *drive.Client, shareID string) {
 		fmt.Printf("  %-30s  %-8s  %s  %s\n",
 			inv.InviteeEmail,
 			drive.FormatPermissions(inv.Permissions),
-			fmtTime(inv.CreateTime),
+			cli.FormatEpoch(inv.CreateTime),
 			inv.InvitationID,
 		)
 	}
@@ -162,7 +163,7 @@ func printExternalInvitations(ctx context.Context, dc *drive.Client, shareID str
 		fmt.Printf("  %-30s  %-8s  %s  %s\n",
 			ext.InviteeEmail,
 			drive.FormatPermissions(ext.Permissions),
-			fmtTime(ext.CreateTime),
+			cli.FormatEpoch(ext.CreateTime),
 			ext.ExternalInvitationID,
 		)
 	}

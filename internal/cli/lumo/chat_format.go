@@ -4,21 +4,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
+	cli "github.com/major0/proton-cli/internal/cli"
 	"github.com/major0/proton-cli/api/lumo"
 )
-
-// fmtLocalTime parses an ISO 8601 timestamp and formats it in the
-// user's local timezone as "YYYY-MM-DD HH:MM:SS". Returns the raw
-// string unchanged if parsing fails.
-func fmtLocalTime(iso string) string {
-	t, err := time.Parse(time.RFC3339, iso)
-	if err != nil {
-		return iso
-	}
-	return t.Local().Format("2006-01-02 15:04:05")
-}
 
 // ConversationRow is a display-only struct for the conversation list table.
 // Title is decrypted on demand and discarded after rendering.
@@ -107,7 +96,7 @@ func FormatConversationList(rows []ConversationRow) string {
 		if title == "" {
 			title = "Untitled"
 		}
-		fmt.Fprintf(&b, "%-*s  %-19s  %s\n", idWidth, r.ID, fmtLocalTime(r.CreateTime), title)
+		fmt.Fprintf(&b, "%-*s  %-19s  %s\n", idWidth, r.ID, cli.FormatISO(r.CreateTime), title)
 	}
 	return b.String()
 }

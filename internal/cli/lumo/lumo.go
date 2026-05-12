@@ -13,15 +13,7 @@ var lumoCmd = &cobra.Command{
 	Use:   "lumo",
 	Short: "Proton Lumo AI assistant",
 	Long:  "Proton Lumo AI assistant",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if p := cmd.Root(); p != nil && p.PersistentPreRunE != nil {
-			if err := p.PersistentPreRunE(p, args); err != nil {
-				return err
-			}
-		}
-		cli.SetServiceCmd(cmd, "lumo")
-		return nil
-	},
+	PersistentPreRunE: cli.ServicePreRunE("lumo"),
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},

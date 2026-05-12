@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	cli "github.com/major0/proton-cli/internal/cli"
 	"pgregory.net/rapid"
 )
 
@@ -35,7 +36,7 @@ func TestFormatSpaceList_Property(t *testing.T) {
 			if !strings.Contains(output, r.ID) {
 				rt.Fatalf("output missing ID %q", r.ID)
 			}
-			formatted := fmtLocalTime(r.CreateTime)
+			formatted := cli.FormatISO(r.CreateTime)
 			if !strings.Contains(output, formatted) {
 				rt.Fatalf("output missing formatted CreateTime %q (from %q)", formatted, r.CreateTime)
 			}

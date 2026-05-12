@@ -3,10 +3,10 @@ package shareCmd
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/major0/proton-cli/api/drive"
 	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-cli/internal/cli/shortid"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func runShareList(cmd *cobra.Command, _ []string) error {
 	}
 	short := map[string]string{}
 	if rc.Verbose < 1 {
-		short = formatShortIDs(ids)
+		short = shortid.FormatShortIDs(ids)
 	}
 
 	for i := range shares {
@@ -61,18 +61,10 @@ func runShareList(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("%-8s  %-10s  %s  %s\n",
 			drive.FormatShareType(meta.Type),
 			displayID,
-			fmtTime(meta.CreationTime),
+			cli.FormatEpoch(meta.CreationTime),
 			name,
 		)
 	}
 
 	return nil
-}
-
-// fmtTime formats a Unix epoch as YYYY-MM-DD, or "-" for zero.
-func fmtTime(epoch int64) string {
-	if epoch == 0 {
-		return "-"
-	}
-	return time.Unix(epoch, 0).Format("2006-01-02")
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-cli/internal/cli/shortid"
 	"pgregory.net/rapid"
 )
 
@@ -47,7 +48,7 @@ func TestResolveByIDPrefix_Property(t *testing.T) {
 		// Pick one conversation to resolve.
 		targetIdx := rapid.IntRange(0, len(pairs)-1).Draw(t, "target_idx")
 		target := pairs[targetIdx]
-		targetID := stripPadding(target.Conversation.ID)
+		targetID := shortid.StripPadding(target.Conversation.ID)
 
 		// Find the shortest unique prefix for this ID.
 		prefix := findUniquePrefix(targetID, pairs, targetIdx)
@@ -84,7 +85,7 @@ func findUniquePrefix(targetID string, pairs []lumo.SpaceConversation, targetIdx
 			if i == targetIdx {
 				continue
 			}
-			other := stripPadding(p.Conversation.ID)
+			other := shortid.StripPadding(p.Conversation.ID)
 			if strings.HasPrefix(other, prefix) {
 				count++
 			}
@@ -224,7 +225,7 @@ func TestResolveByTitle_Property(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected ambiguous error for input %q, got nil", commonWord)
 			}
-			if !strings.Contains(err.Error(), "multiple conversations match") {
+			if !strings.Contains(err.Error(), "multiple matches for") {
 				t.Fatalf("expected ambiguous error message, got: %v", err)
 			}
 		})

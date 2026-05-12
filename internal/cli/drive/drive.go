@@ -10,15 +10,7 @@ var driveCmd = &cobra.Command{
 	Use:   "drive",
 	Short: "Manage files and directories in Proton Drive",
 	Long:  "Manage files and directories in Proton Drive",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if p := cmd.Root(); p != nil && p.PersistentPreRunE != nil {
-			if err := p.PersistentPreRunE(p, args); err != nil {
-				return err
-			}
-		}
-		cli.SetServiceCmd(cmd, "drive")
-		return nil
-	},
+	PersistentPreRunE: cli.ServicePreRunE("drive"),
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
 	},

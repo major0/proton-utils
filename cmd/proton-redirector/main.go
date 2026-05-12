@@ -6,9 +6,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
+	"github.com/major0/proton-cli/internal/daemon"
 	"github.com/major0/proton-cli/internal/redirector"
 	"github.com/major0/proton-cli/internal/sdnotify"
 )
@@ -31,15 +30,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "sd_notify: %v\n", err)
 	}
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-
-	go func() {
-		<-sigCh
-		if err := server.Unmount(); err != nil {
-			fmt.Fprintf(os.Stderr, "unmount: %v\n", err)
-		}
-	}()
-
-	server.Wait()
+	daemon.WaitWithSignal(server)
 }

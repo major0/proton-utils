@@ -983,7 +983,7 @@ func TestChatCp_ZeroMatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for zero-match, got nil")
 	}
-	if !strings.Contains(err.Error(), "no conversation matching") {
+	if !strings.Contains(err.Error(), "no match for") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1056,11 +1056,11 @@ func TestChatCp_AmbiguousMatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for ambiguous match, got nil")
 	}
-	if !strings.Contains(err.Error(), "multiple conversations match") {
+	if !strings.Contains(err.Error(), "multiple matches for") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should list both matches.
-	if !strings.Contains(err.Error(), "conv-1") || !strings.Contains(err.Error(), "conv-2") {
-		t.Fatalf("error should list both conv IDs, got: %v", err)
+	// Should list both matching titles.
+	if !strings.Contains(err.Error(), "Go Testing") {
+		t.Fatalf("error should mention the query, got: %v", err)
 	}
 }

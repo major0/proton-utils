@@ -10,6 +10,7 @@ import (
 	"github.com/major0/proton-cli/api/account"
 	"github.com/major0/proton-cli/api/drive"
 	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-cli/internal/cli/shortid"
 	"github.com/spf13/cobra"
 )
 
@@ -126,7 +127,7 @@ func runDf(cmd *cobra.Command, _ []string) error {
 	}
 	shortVolIDs := map[string]string{}
 	if rc.Verbose < 1 {
-		shortVolIDs = formatShortIDs(volIDs)
+		shortVolIDs = shortid.FormatShortIDs(volIDs)
 	}
 
 	// Account-level quota from the user object.

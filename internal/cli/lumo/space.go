@@ -9,6 +9,7 @@ import (
 
 	"github.com/major0/proton-cli/api/lumo"
 	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-cli/internal/cli/shortid"
 	"github.com/spf13/cobra"
 )
 
@@ -96,7 +97,7 @@ func runSpaceList(cmd *cobra.Command, _ []string) error {
 		for i := range rows {
 			ids[i] = rows[i].ID
 		}
-		short := formatShortIDs(ids)
+		short := shortid.FormatShortIDs(ids)
 		for i := range rows {
 			if s, ok := short[rows[i].ID]; ok {
 				rows[i].ID = s
@@ -171,7 +172,7 @@ func runSpaceListEmpty(ctx context.Context, client *lumo.Client, spaces []lumo.S
 	var b strings.Builder
 	fmt.Fprintf(&b, "%-12s  %-19s  %s\n", "TYPE", "CREATED", "ID")
 	for _, v := range verified {
-		fmt.Fprintf(&b, "%-12s  %-19s  %s\n", v.spaceType, fmtLocalTime(v.space.CreateTime), v.space.ID)
+		fmt.Fprintf(&b, "%-12s  %-19s  %s\n", v.spaceType, cli.FormatISO(v.space.CreateTime), v.space.ID)
 	}
 	fmt.Fprintf(&b, "\n%d empty spaces found out of %d total.\n", len(verified), total)
 
@@ -373,7 +374,7 @@ func FormatSpaceList(rows []SpaceRow) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%-*s  %-19s  %5s  %s\n", idWidth, "ID", "CREATED", "CONVS", "NAME")
 	for _, r := range sorted {
-		fmt.Fprintf(&b, "%-*s  %-19s  %5d  %s\n", idWidth, r.ID, fmtLocalTime(r.CreateTime), r.ConvCount, r.Name)
+		fmt.Fprintf(&b, "%-*s  %-19s  %5d  %s\n", idWidth, r.ID, cli.FormatISO(r.CreateTime), r.ConvCount, r.Name)
 	}
 	return b.String()
 }
@@ -413,7 +414,7 @@ func runSpaceDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, arg := range args {
-		spaceID, resolveErr := resolveShortID(spaceIDs, arg)
+		spaceID, resolveErr := shortid.Resolve(spaceIDs, arg)
 		if resolveErr != nil {
 			return fmt.Errorf("resolving space: %w", resolveErr)
 		}
@@ -514,7 +515,7 @@ func runSpaceConfig(cmd *cobra.Command, args []string) error {
 	for i, s := range spaces {
 		spaceIDs[i] = s.ID
 	}
-	spaceID, err = resolveShortID(spaceIDs, spaceID)
+	spaceID, err = shortid.Resolve(spaceIDs, spaceID)
 	if err != nil {
 		return fmt.Errorf("resolving space: %w", err)
 	}

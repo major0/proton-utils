@@ -13,6 +13,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/major0/proton-cli/api/drive"
 	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-cli/internal/cli/shortid"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -608,7 +609,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		for i, e := range entries {
 			ids[i] = e.entry.Link.LinkID()
 		}
-		opts.shortIDs = formatShortIDs(ids)
+		opts.shortIDs = shortid.FormatShortIDs(ids)
 	}
 
 	printEntries(entries, opts)
