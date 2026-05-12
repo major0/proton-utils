@@ -1,5 +1,6 @@
 //go:build linux
 
+// Command proton-fuse mounts the per-user Proton FUSE filesystem.
 package main
 
 import (
@@ -9,8 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/major0/proton-cli/protonfs/internal/fusemount"
-	"github.com/major0/proton-cli/protonfs/internal/sdnotify"
+	"github.com/major0/proton-cli/internal/fusemount"
+	"github.com/major0/proton-cli/internal/sdnotify"
 )
 
 func main() {

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Command proton-redirector mounts the system-wide /proton redirector filesystem.
 package main
 
 import (
@@ -8,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/major0/proton-cli/protonfs/internal/redirector"
-	"github.com/major0/proton-cli/protonfs/internal/sdnotify"
+	"github.com/major0/proton-cli/internal/redirector"
+	"github.com/major0/proton-cli/internal/sdnotify"
 )
 
 func main() {
