@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/major0/proton-cli/protonfs/internal/sdnotify"
+	"github.com/major0/proton-cli/internal/sdnotify"
 )
 
 func TestReady_NoSocket(t *testing.T) {

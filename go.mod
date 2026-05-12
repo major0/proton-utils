@@ -10,7 +10,9 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/google/uuid v1.6.0
+	github.com/hanwen/go-fuse/v2 v2.10.1
 	github.com/jedib0t/go-pretty/v6 v6.6.5
+	github.com/peterbourgon/diskv/v3 v3.0.1
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
 	github.com/zalando/go-keyring v0.2.8
@@ -45,7 +47,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/major0/optargs v0.4.2 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
-	github.com/peterbourgon/diskv/v3 v3.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
