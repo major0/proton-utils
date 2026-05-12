@@ -183,7 +183,7 @@ func SessionList(store api.SessionStore) ([]string, error) {
 func SessionFromLogin(ctx context.Context, options []proton.Option, username string, password string, hvDetails *proton.APIHVDetails, managerHook func(*proton.Manager)) (*api.Session, error) {
 	session, manager := sessionFromLogin(ctx, options, managerHook)
 
-	slog.Debug("session.login", "username", username, "password", "<hidden>")
+	slog.Debug("session.login", "username", "<redacted>", "password", "<hidden>")
 
 	// Fetch AuthInfo separately so we can cache it for HV retries.
 	// The SRP session in AuthInfo is bound to the CAPTCHA token — reusing
@@ -211,7 +211,7 @@ func SessionFromLogin(ctx context.Context, options []proton.Option, username str
 // the SRP session — it's bound to the HumanVerificationToken.
 func SessionRetryWithHV(ctx context.Context, session *api.Session, username, password string, hv *proton.APIHVDetails) error {
 	logCookies("session.login.hv.before", session)
-	slog.Debug("session.login.hv", "username", username, "password", "<hidden>")
+	slog.Debug("session.login.hv", "username", "<redacted>", "password", "<hidden>")
 
 	var err error
 	session.Client, session.Auth, err = session.Manager().NewClientWithLoginWithHVToken(ctx, username, []byte(password), hv)

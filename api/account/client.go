@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -63,13 +64,15 @@ func (c *Client) getUser() *proton.User {
 	return &u
 }
 
-// putUser caches a User. Silently discards errors.
+// putUser caches a User. Logs errors at debug level.
 func (c *Client) putUser(u proton.User) {
 	data, err := json.Marshal(u)
 	if err != nil {
 		return
 	}
-	_ = c.cache.Write("user", data)
+	if err := c.cache.Write("user", data); err != nil {
+		slog.Debug("account.cache.Write", "key", "user", "error", err)
+	}
 }
 
 // getAddresses loads cached addresses. Returns nil on cache miss.
@@ -85,13 +88,15 @@ func (c *Client) getAddresses() []proton.Address {
 	return addrs
 }
 
-// putAddresses caches the address list. Silently discards errors.
+// putAddresses caches the address list. Logs errors at debug level.
 func (c *Client) putAddresses(addrs []proton.Address) {
 	data, err := json.Marshal(addrs)
 	if err != nil {
 		return
 	}
-	_ = c.cache.Write("addresses", data)
+	if err := c.cache.Write("addresses", data); err != nil {
+		slog.Debug("account.cache.Write", "key", "addresses", "error", err)
+	}
 }
 
 // GetUser returns the authenticated user's profile and quota information.
@@ -130,9 +135,13 @@ func PopulateAccountCache(uid string, user proton.User, addrs []proton.Address) 
 		return
 	}
 	if data, err := json.Marshal(user); err == nil {
-		_ = cache.Write("user", data)
+		if err := cache.Write("user", data); err != nil {
+			slog.Debug("account.cache.Write", "key", "user", "error", err)
+		}
 	}
 	if data, err := json.Marshal(addrs); err == nil {
-		_ = cache.Write("addresses", data)
+		if err := cache.Write("addresses", data); err != nil {
+			slog.Debug("account.cache.Write", "key", "addresses", "error", err)
+		}
 	}
 }

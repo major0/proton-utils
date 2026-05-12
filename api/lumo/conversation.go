@@ -15,7 +15,10 @@ func (c *Client) CreateConversation(ctx context.Context, space *Space, title str
 		return nil, fmt.Errorf("lumo: create conversation: %w", err)
 	}
 
-	convTag := GenerateTag()
+	convTag, err := GenerateTag()
+	if err != nil {
+		return nil, fmt.Errorf("lumo: create conversation: %w", err)
+	}
 	ad := ConversationAD(convTag, space.SpaceTag)
 
 	var encrypted string

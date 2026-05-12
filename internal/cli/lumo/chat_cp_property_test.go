@@ -314,7 +314,10 @@ func TestPropertyFreshUniqueMessageTags(t *testing.T) {
 		// Call GenerateTag() N times (simulating the copy loop).
 		generatedTags := make(map[string]struct{}, n)
 		for i := 0; i < n; i++ {
-			tag := lumo.GenerateTag()
+			tag, err := lumo.GenerateTag()
+			if err != nil {
+				t.Fatalf("GenerateTag() error at index %d: %v", i, err)
+			}
 
 			// Assert: no duplicate among generated tags.
 			if _, exists := generatedTags[tag]; exists {
@@ -470,24 +473,27 @@ func TestPropertySourceImmutability(t *testing.T) {
 
 			// POST create new conversation (in new space).
 			case strings.HasSuffix(path, "/conversations") && r.Method == "POST":
+				convTag, _ := lumo.GenerateTag()
 				writeTestJSON(w, lumo.GetConversationResponse{
 					Code: 1000,
 					Conversation: lumo.Conversation{
 						ID:              "new-conv-id",
 						SpaceID:         "new-space-id",
-						ConversationTag: lumo.GenerateTag(),
+						ConversationTag: convTag,
 						CreateTime:      "2024-01-01T00:00:00Z",
 					},
 				})
 
 			// POST create new message.
 			case strings.HasSuffix(path, "/messages") && r.Method == "POST":
+				msgID, _ := lumo.GenerateTag()
+				msgTag, _ := lumo.GenerateTag()
 				writeTestJSON(w, lumo.GetMessageResponse{
 					Code: 1000,
 					Message: lumo.Message{
-						ID:             "new-msg-" + lumo.GenerateTag()[:8],
+						ID:             "new-msg-" + msgID[:8],
 						ConversationID: "new-conv-id",
-						MessageTag:     lumo.GenerateTag(),
+						MessageTag:     msgTag,
 						Role:           1,
 						CreateTime:     "2024-01-01T00:00:00Z",
 					},
@@ -526,7 +532,7 @@ func TestPropertySourceImmutability(t *testing.T) {
 		}
 
 		// Step 3: Create new conversation (POST).
-		newConvTag := lumo.GenerateTag()
+		newConvTag, _ := lumo.GenerateTag()
 		req := lumo.CreateConversationReq{
 			SpaceID:         "new-space-id",
 			ConversationTag: newConvTag,
@@ -543,9 +549,10 @@ func TestPropertySourceImmutability(t *testing.T) {
 
 		// Step 4: Create messages via POST (CreateRawMessage).
 		for i, m := range srcMessages {
+			msgTag, _ := lumo.GenerateTag()
 			msgReq := lumo.CreateMessageReq{
 				ConversationID: "new-conv-id",
-				MessageTag:     lumo.GenerateTag(),
+				MessageTag:     msgTag,
 				Role:           m.Role,
 				Status:         2,
 				Encrypted:      "re-encrypted-" + fmt.Sprintf("%d", i),

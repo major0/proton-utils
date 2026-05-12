@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-cli/api"
@@ -93,7 +94,9 @@ func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int,
 	if s.bufCache != nil {
 		s.bufCache.Put(linkID, index, data)
 	}
-	_ = s.cache.Write(key, data)
+	if err := s.cache.Write(key, data); err != nil {
+		slog.Debug("blockstore.cache.Write", "key", key, "error", err)
+	}
 
 	return data, nil
 }
@@ -118,7 +121,9 @@ func (s *httpBlockStore) UploadBlock(ctx context.Context, linkID string, index i
 	if s.bufCache != nil {
 		s.bufCache.Put(linkID, index, data)
 	}
-	_ = s.cache.Write(blockCacheKey(linkID, index), data)
+	if err := s.cache.Write(blockCacheKey(linkID, index), data); err != nil {
+		slog.Debug("blockstore.cache.Write", "key", blockCacheKey(linkID, index), "error", err)
+	}
 
 	return nil
 }
@@ -131,7 +136,9 @@ func (s *httpBlockStore) Invalidate(linkID string) {
 	}
 	if s.cache != nil {
 		prefix := linkID + ".block."
-		for key := range s.cache.Keys(nil) {
+		cancel := make(chan struct{})
+		defer close(cancel)
+		for key := range s.cache.Keys(cancel) {
 			if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
 				_ = s.cache.Erase(key)
 			}

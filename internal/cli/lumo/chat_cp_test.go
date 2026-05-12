@@ -239,7 +239,7 @@ func TestChatCp_EndToEnd_HappyPath(t *testing.T) {
 	// New space (created by CreateSpace).
 	newSpace, newSpaceKey := tc.makeSpace(t, "new-space-id", "new-space-tag")
 	newDEK := deriveDEK(t, newSpaceKey)
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 	newConvID := "new-conv-id-abc"
 
 	// Track created messages for verification.
@@ -497,7 +497,7 @@ func TestChatCp_EndToEnd_HappyPath(t *testing.T) {
 			continue
 		}
 
-		freshTag := lumo.GenerateTag()
+		freshTag, _ := lumo.GenerateTag()
 		targetAD := lumo.MessageAD(freshTag, role, "", newConv.ConversationTag)
 
 		encrypted, eerr := lumo.EncryptString(plainJSON, newSpaceDEK, targetAD)
@@ -649,7 +649,7 @@ func TestChatCp_EndToEnd_PerMessageFailure(t *testing.T) {
 
 	// New space.
 	newSpace, _ := tc.makeSpace(t, "new-space-id", "new-space-tag")
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 	newConvID := "new-conv-fail"
 
 	var createdMsgCount int
@@ -862,7 +862,7 @@ func TestChatCp_EndToEnd_PerMessageFailure(t *testing.T) {
 			continue
 		}
 
-		freshTag := lumo.GenerateTag()
+		freshTag, _ := lumo.GenerateTag()
 		targetAD := lumo.MessageAD(freshTag, role, "", newConv.ConversationTag)
 
 		encrypted, eerr := lumo.EncryptString(plainJSON, newSpaceDEK, targetAD)

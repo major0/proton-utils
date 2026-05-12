@@ -100,7 +100,10 @@ func (c *Client) CreateSpace(ctx context.Context, name string, isProject bool) (
 		return nil, fmt.Errorf("lumo: create space: %w", err)
 	}
 
-	spaceTag := GenerateTag()
+	spaceTag, err := GenerateTag()
+	if err != nil {
+		return nil, fmt.Errorf("lumo: create space: %w", err)
+	}
 
 	// Build and encrypt SpacePriv metadata.
 	// Simple chat spaces use "{}" (matching the browser). Project spaces

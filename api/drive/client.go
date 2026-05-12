@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -72,20 +73,29 @@ func (c *Client) ListLinkChildren(ctx context.Context, shareID, linkID string, a
 // *Link pointer is returned (pointer identity guarantee). On a table
 // miss, a new *Link is constructed with the correct parentLink, inserted
 // into the table, and returned.
+//
+// Uses a load-or-store pattern under a single write lock to prevent
+// races where two goroutines both miss the table and both insert,
+// which would break the pointer-identity invariant.
 func (c *Client) NewChildLink(_ context.Context, parent *Link, pLink *proton.Link) *Link {
-	// Fast path: table hit — return existing pointer.
-	if existing := c.getLink(pLink.LinkID); existing != nil {
+	c.tableMu.Lock()
+	if existing := c.linkTable[pLink.LinkID]; existing != nil {
+		c.tableMu.Unlock()
 		return existing
 	}
-
-	// Table miss: construct, insert into table, populate objectCache.
 	link := NewLink(pLink, parent, parent.Share(), c)
-	c.putLink(pLink.LinkID, link)
+	if c.linkTable == nil {
+		c.linkTable = make(map[string]*Link)
+	}
+	c.linkTable[pLink.LinkID] = link
+	c.tableMu.Unlock()
 
 	// Best-effort write to objectCache (no-op when nil).
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-		_ = c.objectCache.Write(sanitizeKey(pLink.LinkID), buf.Bytes())
+		if err := c.objectCache.Write(sanitizeKey(pLink.LinkID), buf.Bytes()); err != nil {
+			slog.Debug("objectCache.Write", "key", pLink.LinkID, "error", err)
+		}
 	}
 
 	return link
@@ -160,7 +170,9 @@ func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (pro
 	// Populate objectCache (no-op when nil).
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-		_ = c.objectCache.Write(sanitizeKey(linkID), buf.Bytes())
+		if err := c.objectCache.Write(sanitizeKey(linkID), buf.Bytes()); err != nil {
+			slog.Debug("objectCache.Write", "key", linkID, "error", err)
+		}
 	}
 
 	return pLink, nil

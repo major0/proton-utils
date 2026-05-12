@@ -572,7 +572,7 @@ func runCopyFlow(
 			continue
 		}
 
-		freshTag := lumo.GenerateTag()
+		freshTag, _ := lumo.GenerateTag()
 		targetAD := lumo.MessageAD(freshTag, role, "", newConv.ConversationTag)
 
 		encrypted, encErr := lumo.EncryptString(plainJSON, dest.DEK, targetAD)
@@ -633,7 +633,7 @@ func TestIntegration_SingleBareArg(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-bare"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 	newSpace, _ := env.tc.makeSpace(t, "new-bare-space-id", "new-bare-space-tag")
 
 	var createdMsgs []lumo.CreateMessageReq
@@ -681,7 +681,7 @@ func TestIntegration_TwoArg_SpaceAndTitle(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-two-arg"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 
 	var createdMsgs []lumo.CreateMessageReq
 	srv := env.integrationServer(t, newConvID, newConvTag, nil, &createdMsgs)
@@ -720,7 +720,7 @@ func TestIntegration_TwoArg_EmptyPath(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-empty-path"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 
 	var createdMsgs []lumo.CreateMessageReq
 	srv := env.integrationServer(t, newConvID, newConvTag, nil, &createdMsgs)
@@ -754,7 +754,7 @@ func TestIntegration_TwoArg_NewSpaceExplicitTitle(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-explicit-title"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 	newSpace, _ := env.tc.makeSpace(t, "new-explicit-space-id", "new-explicit-space-tag")
 
 	var createdMsgs []lumo.CreateMessageReq
@@ -792,7 +792,7 @@ func TestIntegration_CrossSpace_DestDEK(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-cross"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 
 	var createdMsgs []lumo.CreateMessageReq
 	srv := env.integrationServer(t, newConvID, newConvTag, nil, &createdMsgs)
@@ -851,7 +851,7 @@ func TestIntegration_SameSpace(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-same"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 
 	var createdMsgs []lumo.CreateMessageReq
 	srv := env.integrationServer(t, newConvID, newConvTag, nil, &createdMsgs)
@@ -885,7 +885,7 @@ func TestIntegration_CascadeDeletionWarning(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-cascade"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 
 	var createdMsgs []lumo.CreateMessageReq
 	srv := env.integrationServer(t, newConvID, newConvTag, nil, &createdMsgs)
@@ -923,7 +923,7 @@ func TestIntegration_NoCascadeWarning_ProjectSpace(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-proj-dest"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 
 	var createdMsgs []lumo.CreateMessageReq
 	srv := env.integrationServer(t, newConvID, newConvTag, nil, &createdMsgs)
@@ -1035,7 +1035,7 @@ func TestIntegration_QualifiedURI_ProjectSpace(t *testing.T) {
 	env := newIntegrationEnv(t)
 
 	newConvID := "new-conv-proj-src"
-	newConvTag := lumo.GenerateTag()
+	newConvTag, _ := lumo.GenerateTag()
 	newSpace, _ := env.tc.makeSpace(t, "new-proj-dest-id", "new-proj-dest-tag")
 
 	var createdMsgs []lumo.CreateMessageReq

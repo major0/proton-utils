@@ -33,7 +33,10 @@ func (c *Client) CreateMessage(ctx context.Context, space *Space, conv *Conversa
 		return nil, fmt.Errorf("lumo: create message: %w", err)
 	}
 
-	msgTag := GenerateTag()
+	msgTag, err := GenerateTag()
+	if err != nil {
+		return nil, fmt.Errorf("lumo: create message: %w", err)
+	}
 	ad := MessageAD(msgTag, wireRoleString(role), "", conv.ConversationTag)
 
 	var encrypted string

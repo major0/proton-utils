@@ -59,6 +59,10 @@ func (s *Semaphore) Limit() int { return cap(s.sem) }
 // slots are busy), runs the task in a new goroutine, and releases the
 // slot on completion. The caller's WaitGroup (if non-nil) tracks batch
 // completion.
+//
+// Task errors are intentionally not collected by the Semaphore. Error
+// handling is the caller's responsibility — use closures that capture
+// an error channel, sync.Once, or similar pattern to observe failures.
 func (s *Semaphore) Go(wg *sync.WaitGroup, task func(context.Context) error) {
 	if wg != nil {
 		wg.Add(1)

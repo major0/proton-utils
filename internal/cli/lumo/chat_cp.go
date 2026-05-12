@@ -168,7 +168,12 @@ func runChatCp(cmd *cobra.Command, args []string) error {
 		}
 
 		// Generate fresh tag and construct target AD (flattened — no parent).
-		freshTag := lumo.GenerateTag()
+		freshTag, terr := lumo.GenerateTag()
+		if terr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "warning: failed to generate tag for message %s: %v\n", msg.ID, terr)
+			failed++
+			continue
+		}
 		targetAD := lumo.MessageAD(freshTag, role, "", newConv.ConversationTag)
 
 		// Re-encrypt under target AD using the destination space's DEK.

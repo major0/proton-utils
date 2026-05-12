@@ -95,7 +95,7 @@ func ForkSession(ctx context.Context, parent *api.Session, targetService api.Ser
 		slog.Debug("fork.push.cookies_after", "host", parent.BaseURL, "cookies", names)
 	}
 
-	slog.Debug("fork.push", "selector", pushResp.Selector, "service", targetService.Name, "child_client_id", targetService.ClientID, "push_host", parent.BaseURL)
+	slog.Debug("fork.push", "selector", pushResp.Selector[:min(8, len(pushResp.Selector))]+"…", "service", targetService.Name, "child_client_id", targetService.ClientID, "push_host", parent.BaseURL)
 
 	// Pull: GET /auth/v4/sessions/forks/<selector> on the target service host.
 	pullResp, err := forkPull(ctx, parent, targetService.Host, pushResp.Selector, targetService.AppVersion(""))
@@ -153,7 +153,7 @@ func ForkSessionWithKeyPass(ctx context.Context, parent *api.Session, targetServ
 		return nil, nil, fmt.Errorf("%w: push: %w", ErrForkFailed, err)
 	}
 
-	slog.Debug("fork.push", "selector", pushResp.Selector, "service", targetService.Name, "child_client_id", targetService.ClientID, "push_host", parent.BaseURL)
+	slog.Debug("fork.push", "selector", pushResp.Selector[:min(8, len(pushResp.Selector))]+"…", "service", targetService.Name, "child_client_id", targetService.ClientID, "push_host", parent.BaseURL)
 
 	// Pull from the target service host.
 	pullResp, err := forkPull(ctx, parent, targetService.Host, pushResp.Selector, targetService.AppVersion(""))
@@ -410,7 +410,7 @@ func CookieFork(ctx context.Context, acctSession *api.Session, acctConfig *api.S
 		return nil, nil, fmt.Errorf("%w: unmarshal push response: %w", ErrForkFailed, err)
 	}
 
-	slog.Debug("cookieFork.push.done", "selector", pushResp.Selector, "service", targetService.Name)
+	slog.Debug("cookieFork.push.done", "selector", pushResp.Selector[:min(8, len(pushResp.Selector))]+"…", "service", targetService.Name)
 
 	// Fork pull from the target service host (unauthenticated).
 	pullResp, err := forkPull(ctx, acctSession, targetService.Host, pushResp.Selector, targetService.AppVersion(""))

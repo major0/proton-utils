@@ -57,6 +57,11 @@ type FileDescriptor struct {
 	closed   bool
 	mode     fdMode
 
+	// ctx is the context from OpenFD/CreateFD, used for block I/O
+	// cancellation. Since io.Reader/io.Writer don't accept contexts,
+	// this is the best available mechanism for cancellation.
+	ctx context.Context
+
 	// Write-side fields (only populated for fdWrite mode)
 	curBlock []byte                // current block accumulator (up to BlockSize)
 	curIdx   int                   // current block index being filled
@@ -109,6 +114,7 @@ func (c *Client) OpenFD(ctx context.Context, link *Link) (*FileDescriptor, error
 		blocks:     fh.Blocks,
 		fileSize:   fh.FileSize,
 		mode:       fdRead,
+		ctx:        ctx,
 		store:      store,
 		link:       link,
 	}, nil
@@ -253,7 +259,7 @@ func (fd *FileDescriptor) readBlock(blockIdx int) ([]byte, error) {
 	pb := fd.blocks[blockIdx]
 
 	// blockStore uses 1-based indices for the API.
-	encrypted, err := fd.store.GetBlock(context.Background(), fd.linkID, blockIdx+1, pb.BareURL, pb.Token)
+	encrypted, err := fd.store.GetBlock(fd.ctx, fd.linkID, blockIdx+1, pb.BareURL, pb.Token)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +343,7 @@ func (fd *FileDescriptor) hasTokens() bool {
 }
 
 // newWriteFD constructs a write-mode FileDescriptor from a FileHandle.
-func newWriteFD(fh *FileHandle, store blockStore, session *api.Session) *FileDescriptor {
+func newWriteFD(ctx context.Context, fh *FileHandle, store blockStore, session *api.Session) *FileDescriptor {
 	return &FileDescriptor{
 		linkID:     fh.LinkID,
 		revisionID: fh.RevisionID,
@@ -346,6 +352,7 @@ func newWriteFD(fh *FileHandle, store blockStore, session *api.Session) *FileDes
 		nodeKR:     fh.NodeKR,
 		addrKR:     fh.AddrKR,
 		mode:       fdWrite,
+		ctx:        ctx,
 		store:      store,
 		curBlock:   make([]byte, 0, BlockSize),
 		tokens:     make(map[int]uploadedBlock),
@@ -366,7 +373,7 @@ func (c *Client) CreateFD(ctx context.Context, share *Share, parent *Link, name 
 	}
 
 	store := c.blockStore
-	return newWriteFD(fh, store, c.Session), nil
+	return newWriteFD(ctx, fh, store, c.Session), nil
 }
 
 // OverwriteFD creates a new revision on an existing file and returns a
@@ -378,7 +385,7 @@ func (c *Client) OverwriteFD(ctx context.Context, share *Share, link *Link) (*Fi
 	}
 
 	store := c.blockStore
-	return newWriteFD(fh, store, c.Session), nil
+	return newWriteFD(ctx, fh, store, c.Session), nil
 }
 
 // Write implements io.Writer. It buffers data into the current block
@@ -553,7 +560,7 @@ func (fd *FileDescriptor) flushBlock(index int, data []byte) {
 			ThumbnailList: []interface{}{},
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(fd.ctx, 60*time.Second)
 		defer cancel()
 
 		links, err := fd.store.RequestUpload(ctx, req)
@@ -635,7 +642,7 @@ func (fd *FileDescriptor) Sync() error {
 	}
 
 	// Create a new revision for subsequent writes.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(fd.ctx, 30*time.Second)
 	defer cancel()
 
 	res, err := fd.session.Client.CreateRevision(ctx, fd.shareID, fd.linkID)
@@ -747,7 +754,7 @@ func (fd *FileDescriptor) commitRevision() error {
 		return fmt.Errorf("fd.commitRevision: encrypt xattr: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(fd.ctx, 30*time.Second)
 	defer cancel()
 
 	if err := fd.session.Client.UpdateRevision(ctx, fd.shareID, fd.linkID, fd.revisionID, req); err != nil {
