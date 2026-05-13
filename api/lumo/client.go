@@ -23,6 +23,13 @@ func NewClient(session *api.Session) *Client {
 	return &Client{Session: session, BaseURL: DefaultLumoBaseURL}
 }
 
+// Close zeros the cached master key material. Call when the client is
+// no longer needed to reduce the window for memory disclosure attacks.
+func (c *Client) Close() {
+	ZeroKey(c.masterKey)
+	c.masterKey = nil
+}
+
 // url constructs a full URL from a relative path.
 func (c *Client) url(path string) string {
 	base := c.BaseURL
