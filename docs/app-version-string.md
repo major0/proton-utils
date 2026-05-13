@@ -60,7 +60,7 @@ dedicated API hosts do not participate in the fork/scope system.
 <clientID>@<semver>
 ```
 
-No suffix (e.g., `+proton-cli`) — the API rejects unrecognized suffixes
+No suffix (e.g., `+proton-utils`) — the API rejects unrecognized suffixes
 with CAPTCHA or auth errors.
 
 | Product  | API Host                    | App Version Pattern        | Token Scope |
@@ -95,7 +95,7 @@ during authentication:
   injection automatically via `WithAppVersion()`.
 - The version string must match a registered product. Arbitrary strings like
   `myapp@1.0.0` will be rejected with 5002.
-- Pre-release and build metadata in the semver (e.g. `+proton-cli`) are accepted
+- Pre-release and build metadata in the semver (e.g. `+proton-utils`) are accepted
   by some products but may trigger CAPTCHA.
 
 ## References

@@ -2,7 +2,7 @@
 /proton
 /proton-fuse
 /proton-redirector
-/proton-cli
+/proton
 *.exe
 *.exe~
 *.dll

@@ -4,7 +4,7 @@ Collected issues, forum threads, and resources that illuminate Proton API behavi
 
 ## Human Verification / CAPTCHA
 
-- [rclone #7967 — proton-drive remote fails due to captcha](https://github.com/rclone/rclone/issues/7967) — CAPTCHA (9001) errors blocking rclone protondrive login. Demonstrates the problem proton-cli also hits.
+- [rclone #7967 — proton-drive remote fails due to captcha](https://github.com/rclone/rclone/issues/7967) — CAPTCHA (9001) errors blocking rclone protondrive login. Demonstrates the problem proton-utils also hits.
 
 - [rclone forum — Captcha error when using Proton Drive](https://forum.rclone.org/t/captcha-error-when-using-proton-drive/47879) — Community discussion of CAPTCHA triggers during rclone config. Notes that encryption keys must be pre-generated via browser login.
 

@@ -38,8 +38,8 @@ A command-line interface for [Proton][] services.
 Requires Go 1.22+ and Chrome/Chromium (for CAPTCHA during login).
 
 ```sh
-git clone https://github.com/major0/proton-cli.git
-cd proton-cli
+git clone https://github.com/major0/proton-utils.git
+cd proton-utils
 make build
 ```
 

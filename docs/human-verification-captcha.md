@@ -65,7 +65,7 @@ client that opens the URL in a browser has no way to receive this `postMessage`.
 
 ## Key Observations
 
-- Third-party clients (rclone, proton-cli) frequently hit CAPTCHA during initial
+- Third-party clients (rclone, proton-utils) frequently hit CAPTCHA during initial
   login because Proton's anti-abuse system flags non-browser user agents.
 - Encryption keys must already exist on the account (i.e. the user must have logged
   in via the web client at least once) before a headless client can authenticate.

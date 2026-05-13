@@ -39,4 +39,4 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: .github/scripts/release-create.sh "$RELEASE_TAG" "proton-cli" "${{ steps.prev.outputs.tag }}"
+        run: .github/scripts/release-create.sh "$RELEASE_TAG" "proton-utils" "${{ steps.prev.outputs.tag }}"

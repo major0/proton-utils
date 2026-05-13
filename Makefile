@@ -57,4 +57,4 @@ proton-redirector:
 	GOOS=linux go build -v -o proton-redirector ./cmd/proton-redirector/
 
 clean:
-	rm -f proton proton-fuse proton-redirector proton-cli coverage.out coverage.html
+	rm -f proton proton-fuse proton-redirector coverage.out coverage.html

@@ -1,14 +1,14 @@
 # Credits
 
-proton-cli builds on the work of several open-source projects and contributors.
+proton-utils builds on the work of several open-source projects and contributors.
 
 ## Core Dependencies
 
-- [go-proton-api](https://github.com/ProtonMail/go-proton-api) — Official Proton API client library for Go. Provides SRP authentication, session management, Human Verification plumbing, and the Drive/Mail/Calendar API surface. proton-cli's `proton/` package wraps this library.
+- [go-proton-api](https://github.com/ProtonMail/go-proton-api) — Official Proton API client library for Go. Provides SRP authentication, session management, Human Verification plumbing, and the Drive/Mail/Calendar API surface. proton-utils's `proton/` package wraps this library.
 
 - [Proton-API-Bridge](https://github.com/henrybear327/Proton-API-Bridge) by Chun-Hung Tseng (henrybear327) — Third-party Proton API bridge focusing on Drive. henrybear327 also authored the [rclone protondrive backend](https://rclone.org/protondrive/), which was the first working third-party Drive client and the primary reference for how to interact with the Proton Drive API from Go. Much of the practical knowledge about session handling, key management, and API quirks comes from studying this work.
 
-- [rclone](https://github.com/rclone/rclone) — The protondrive backend in rclone (authored by henrybear327) is the most battle-tested third-party Proton Drive integration. Its approach to authentication, token refresh, and error handling informed proton-cli's design.
+- [rclone](https://github.com/rclone/rclone) — The protondrive backend in rclone (authored by henrybear327) is the most battle-tested third-party Proton Drive integration. Its approach to authentication, token refresh, and error handling informed proton-utils's design.
 
 ## Prior Art
 

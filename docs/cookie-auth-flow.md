@@ -156,7 +156,7 @@ Not `application/json`. The vendor type may trigger different server behavior.
 
 Examples: `web-account@5.0.368.0`, `web-lumo@1.3.3.4`
 
-The `+proton-cli` build metadata suffix (semver standard) has not been
+The `+proton-utils` build metadata suffix (semver standard) has not been
 observed to cause issues, but the browser does not use it.
 
 ### Bearer Token Invalidation
@@ -199,7 +199,7 @@ protocol, bypassing `go-proton-api`'s Resty-based login entirely.
 
 ## Architecture Decision: go-proton-api
 
-The cookie login flow can be implemented entirely in `proton-cli`'s `api/`
+The cookie login flow can be implemented entirely in `proton-utils`'s `api/`
 package without forking `go-proton-api`. The approach:
 
 - **Cookie login path** (`--cookie-session`): SRP login via `go-srp` +
@@ -216,5 +216,5 @@ upstream changes required.
 
 If Proton's cookie-based session model is intentionally designed to limit
 non-browser access, upstream PRs to `go-proton-api` for cookie support
-would likely not be accepted. Keeping the cookie path in `proton-cli`
+would likely not be accepted. Keeping the cookie path in `proton-utils`
 isolates this concern.
