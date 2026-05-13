@@ -1,4 +1,4 @@
-// Package main is the entry point for the proton-cli application.
+// Package main is the entry point for the proton-utils application.
 package main
 
 import (

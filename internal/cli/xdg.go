@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 )
 
-const appName = "proton-cli"
+const appName = "proton-utils"
 
-// xdgConfigPath returns a path under $XDG_CONFIG_HOME/proton-cli/.
-// Defaults to ~/.config/proton-cli/ if XDG_CONFIG_HOME is unset.
+// xdgConfigPath returns a path under $XDG_CONFIG_HOME/proton-utils/.
+// Defaults to ~/.config/proton-utils/ if XDG_CONFIG_HOME is unset.
 func xdgConfigPath(name string) string {
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {

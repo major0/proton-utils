@@ -1,7 +1,7 @@
-// Package cli implements the command-line interface for proton-cli.
+// Package cli implements the command-line interface for proton-utils.
 package cli
 
-// Application constants unique to proton-cli.
+// Application constants unique to proton-utils.
 const (
 	Version    = "0.0.1"
 	AppVersion = "web-drive@5.2.0"

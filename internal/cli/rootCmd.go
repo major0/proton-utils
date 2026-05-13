@@ -325,6 +325,6 @@ func init() {
 	// Hide the help flags as it ends up sorted into everything, which is a bit confusing.
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 	rootCmd.SilenceUsage = true
-	rootCmd.PersistentFlags().BoolP("help", "h", false, "Help for proton-cli")
+	rootCmd.PersistentFlags().BoolP("help", "h", false, "Help for proton-utils")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
 }

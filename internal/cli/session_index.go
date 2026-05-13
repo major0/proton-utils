@@ -34,7 +34,7 @@ type SessionIndex struct {
 }
 
 // keyringService is the service name used for all keyring operations.
-const keyringService = "proton-cli"
+const keyringService = "proton-utils"
 
 // NewSessionStore returns a SessionIndex for the given account and service.
 // The path is the filesystem location of the JSON index file. The keyring
