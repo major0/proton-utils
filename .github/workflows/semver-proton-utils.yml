@@ -1,4 +1,4 @@
-name: Semver Proton CLI
+name: Semver Proton Utils
 
 on:
   create:
