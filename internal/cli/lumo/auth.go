@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // authMiddleware validates the Authorization: Bearer <token> header using

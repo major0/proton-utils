@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // ChatSession holds the state for a single interactive chat session.

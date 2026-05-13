@@ -9,7 +9,7 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // ListSharesMetadata returns metadata for all shares visible to this session.

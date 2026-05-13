@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // RunPipeline transfers files using the provided worker pool. Each

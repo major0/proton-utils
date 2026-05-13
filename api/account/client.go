@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // Client wraps an api.Session with Account-specific operations.

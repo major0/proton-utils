@@ -1,7 +1,7 @@
 // Package testutil provides shared test mock types for CLI packages.
 package testutil
 
-import "github.com/major0/proton-cli/api"
+import "github.com/major0/proton-utils/api"
 
 // MockSessionStore implements api.SessionStore for testing.
 // All methods return nil by default. Set LoadErr to simulate load failures.

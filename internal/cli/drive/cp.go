@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 
 	"github.com/ProtonMail/go-proton-api"
-	api "github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/drive"
-	cli "github.com/major0/proton-cli/internal/cli"
+	api "github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/drive"
+	cli "github.com/major0/proton-utils/internal/cli"
 	"github.com/spf13/cobra"
 )
 

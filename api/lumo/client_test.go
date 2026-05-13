@@ -19,7 +19,7 @@ import (
 	proton "github.com/ProtonMail/go-proton-api"
 	pgpcrypto "github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/ProtonMail/gopenpgp/v2/helper"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // testKeyPair generates a fresh PGP keypair for testing. Returns the

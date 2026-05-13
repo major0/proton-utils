@@ -16,7 +16,7 @@ import (
 	"time"
 
 	proton "github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // AuthCookiesReq is the request body for POST /core/v4/auth/cookies.

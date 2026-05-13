@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // chatHandler returns an http.HandlerFunc that proxies OpenAI-format chat

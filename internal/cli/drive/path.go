@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/major0/proton-cli/api/drive"
-	"github.com/major0/proton-cli/internal/cli/shortid"
+	"github.com/major0/proton-utils/api/drive"
+	"github.com/major0/proton-utils/internal/cli/shortid"
 )
 
 // parseProtonURI parses a proton:// URI into its share and path components.

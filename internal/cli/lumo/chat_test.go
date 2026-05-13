@@ -3,7 +3,7 @@ package lumoCmd
 import (
 	"testing"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // TestChatCommandRegistration verifies that the chat command group and

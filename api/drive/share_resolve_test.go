@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 )
 
 // TestGetShareMetadata_Found verifies that GetShareMetadata returns the

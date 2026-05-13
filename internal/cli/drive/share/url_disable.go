@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 	"github.com/spf13/cobra"
 )
 

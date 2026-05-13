@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // ListSpaces fetches all spaces from the API, paginating with

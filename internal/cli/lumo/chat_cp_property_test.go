@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	proton "github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/lumo"
 	"pgregory.net/rapid"
 )
 

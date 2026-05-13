@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

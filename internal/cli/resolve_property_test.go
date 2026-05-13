@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/major0/proton-cli/internal/cli/shortid"
+	"github.com/major0/proton-utils/internal/cli/shortid"
 	"pgregory.net/rapid"
 )
 

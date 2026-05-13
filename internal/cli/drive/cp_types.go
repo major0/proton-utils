@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 )
 
 // cpOptions holds the resolved copy options, constructed once in runCp

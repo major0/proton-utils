@@ -3,7 +3,7 @@ package account
 import (
 	"testing"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // TestNewClient verifies that NewClient returns a non-nil Client

@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/major0/proton-cli/internal/daemon"
-	"github.com/major0/proton-cli/internal/redirector"
-	"github.com/major0/proton-cli/internal/sdnotify"
+	"github.com/major0/proton-utils/internal/daemon"
+	"github.com/major0/proton-utils/internal/redirector"
+	"github.com/major0/proton-utils/internal/sdnotify"
 )
 
 func main() {

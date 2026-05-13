@@ -1,4 +1,4 @@
-module github.com/major0/proton-cli
+module github.com/major0/proton-utils
 
 go 1.26.1
 

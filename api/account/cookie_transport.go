@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // CookieTransport is an http.RoundTripper that converts Bearer auth to

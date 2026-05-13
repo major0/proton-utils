@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 	"pgregory.net/rapid"
 )
 

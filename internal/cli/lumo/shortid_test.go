@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	cli "github.com/major0/proton-cli/internal/cli"
+	cli "github.com/major0/proton-utils/internal/cli"
 )
 
 // TestFormatConversationList_ShortIDs verifies that short IDs produce

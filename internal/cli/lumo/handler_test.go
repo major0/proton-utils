@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // TestMapLumoError_Table verifies the error mapping table from Lumo sentinel

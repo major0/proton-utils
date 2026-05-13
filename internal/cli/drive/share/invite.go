@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/drive"
 	"github.com/spf13/cobra"
 )
 

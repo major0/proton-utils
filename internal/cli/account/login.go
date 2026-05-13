@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/account"
-	cli "github.com/major0/proton-cli/internal/cli"
+	common "github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/account"
+	cli "github.com/major0/proton-utils/internal/cli"
 	"github.com/spf13/cobra"
 )
 

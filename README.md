@@ -61,4 +61,9 @@ make build
 
 See [LICENSE](LICENSE).
 
+## Disclaimer
+
+This project is not sponsored, endorsed, or affiliated with [Proton AG](https://proton.me).
+Proton, Proton Drive, and Proton Mail are trademarks of Proton AG.
+
 [Proton]: https://proton.me

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 	"gopkg.in/yaml.v3"
 )
 

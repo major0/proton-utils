@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/major0/proton-cli/internal/daemon"
-	"github.com/major0/proton-cli/internal/fusemount"
-	"github.com/major0/proton-cli/internal/sdnotify"
+	"github.com/major0/proton-utils/internal/daemon"
+	"github.com/major0/proton-utils/internal/fusemount"
+	"github.com/major0/proton-utils/internal/sdnotify"
 )
 
 func main() {

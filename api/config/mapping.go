@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // ParamDef describes a single addressable config field for the selector mapping.

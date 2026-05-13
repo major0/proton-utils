@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 )
 
 // transferOpts builds TransferOpts from the resolved copy options.

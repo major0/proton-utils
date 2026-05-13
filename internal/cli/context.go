@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/config"
+	common "github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/config"
 	"github.com/spf13/cobra"
 )
 

@@ -2,7 +2,7 @@ package configCmd
 
 import (
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 )
 
 // testShareWithID creates a minimal *drive.Share with the given share ID

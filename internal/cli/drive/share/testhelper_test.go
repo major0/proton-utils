@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/internal/cli/testutil"
+	"github.com/major0/proton-utils/internal/cli/testutil"
 )
 
 // newFailingStore returns a MockSessionStore that always returns the given error on Load.

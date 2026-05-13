@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // ResolvedDestination holds the resolved destination for a copy operation.

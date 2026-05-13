@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 )
 
 // handleConflict checks whether the destination already exists and

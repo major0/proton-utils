@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	cli "github.com/major0/proton-cli/internal/cli"
-	"github.com/major0/proton-cli/api/lumo"
+	cli "github.com/major0/proton-utils/internal/cli"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // ConversationRow is a display-only struct for the conversation list table.

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // TestMockSessionStoreInterface verifies that MockSessionStore satisfies

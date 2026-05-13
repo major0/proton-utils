@@ -8,7 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // blockStore fetches and stores encrypted blocks. Session-aware and

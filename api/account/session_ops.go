@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // SessionFromCredentials initializes a new session from the provided config.

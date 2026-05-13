@@ -9,7 +9,7 @@ package smoke
 import (
 	"time"
 
-	cli "github.com/major0/proton-cli/internal/cli"
+	cli "github.com/major0/proton-utils/internal/cli"
 	"github.com/spf13/cobra"
 )
 

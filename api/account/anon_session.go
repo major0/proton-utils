@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // AnonSessionResp is the response from POST /auth/v4/sessions.

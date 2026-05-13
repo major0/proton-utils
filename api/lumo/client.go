@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // DefaultLumoBaseURL is the base URL for the Lumo API.

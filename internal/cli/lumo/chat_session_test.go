@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // TestChatSession_EOF verifies that EOF on the reader causes Run to

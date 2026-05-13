@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	cli "github.com/major0/proton-cli/internal/cli"
-	"github.com/major0/proton-cli/internal/cli/testutil"
+	cli "github.com/major0/proton-utils/internal/cli"
+	"github.com/major0/proton-utils/internal/cli/testutil"
 	"github.com/spf13/cobra"
 )
 

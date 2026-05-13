@@ -7,10 +7,10 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/docker/go-units"
-	"github.com/major0/proton-cli/api/account"
-	"github.com/major0/proton-cli/api/drive"
-	cli "github.com/major0/proton-cli/internal/cli"
-	"github.com/major0/proton-cli/internal/cli/shortid"
+	"github.com/major0/proton-utils/api/account"
+	"github.com/major0/proton-utils/api/drive"
+	cli "github.com/major0/proton-utils/internal/cli"
+	"github.com/major0/proton-utils/internal/cli/shortid"
 	"github.com/spf13/cobra"
 )
 

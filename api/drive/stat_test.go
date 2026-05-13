@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // TestStatLinks_Empty verifies that StatLinks returns nil for empty input

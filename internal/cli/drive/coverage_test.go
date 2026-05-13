@@ -11,8 +11,8 @@ import (
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
-	apiPkg "github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/drive"
+	apiPkg "github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/drive"
 )
 
 // TestResolvedEndpointBasenameProton exercises the Proton branch of basename.

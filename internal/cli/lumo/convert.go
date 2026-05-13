@@ -4,7 +4,7 @@ package lumoCmd
 import (
 	"time"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 )
 
 // MessagesToTurns converts OpenAI messages to Lumo turns.

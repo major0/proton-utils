@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	common "github.com/major0/proton-cli/api"
-	cli "github.com/major0/proton-cli/internal/cli"
+	common "github.com/major0/proton-utils/api"
+	cli "github.com/major0/proton-utils/internal/cli"
 	"github.com/spf13/cobra"
 )
 

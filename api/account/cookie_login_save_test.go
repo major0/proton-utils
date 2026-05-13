@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 
 	"github.com/ProtonMail/go-proton-api"
 )

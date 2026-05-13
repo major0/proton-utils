@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/major0/proton-cli/api/drive"
+	"github.com/major0/proton-utils/api/drive"
 	"pgregory.net/rapid"
 )
 

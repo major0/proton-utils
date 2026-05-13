@@ -4,8 +4,8 @@ import (
 	"os"
 
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/major0/proton-cli/api/account"
-	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-utils/api/account"
+	cli "github.com/major0/proton-utils/internal/cli"
 	"github.com/spf13/cobra"
 )
 

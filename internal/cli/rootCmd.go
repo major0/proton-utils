@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	common "github.com/major0/proton-cli/api"
-	"github.com/major0/proton-cli/api/account"
-	"github.com/major0/proton-cli/api/config"
-	"github.com/major0/proton-cli/api/drive"
+	common "github.com/major0/proton-utils/api"
+	"github.com/major0/proton-utils/api/account"
+	"github.com/major0/proton-utils/api/config"
+	"github.com/major0/proton-utils/api/drive"
 	"github.com/spf13/cobra"
 )
 

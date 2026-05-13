@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/major0/proton-cli/api/lumo"
+	"github.com/major0/proton-utils/api/lumo"
 	"github.com/spf13/cobra"
 )
 

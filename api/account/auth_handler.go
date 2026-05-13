@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // NewAuthHandler returns a proton.AuthHandler that persists updated tokens

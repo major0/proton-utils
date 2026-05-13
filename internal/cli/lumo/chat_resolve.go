@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/major0/proton-cli/api/lumo"
-	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-utils/api/lumo"
+	cli "github.com/major0/proton-utils/internal/cli"
 )
 
 // ResolvedConversation holds the result of conversation resolution.

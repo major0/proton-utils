@@ -3,8 +3,8 @@ package lumoCmd
 import (
 	"fmt"
 
-	"github.com/major0/proton-cli/api/lumo"
-	cli "github.com/major0/proton-cli/internal/cli"
+	"github.com/major0/proton-utils/api/lumo"
+	cli "github.com/major0/proton-utils/internal/cli"
 )
 
 // resolveSpace resolves a space component string to a single Space.

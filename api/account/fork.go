@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	proton "github.com/ProtonMail/go-proton-api"
-	"github.com/major0/proton-cli/api"
+	"github.com/major0/proton-utils/api"
 )
 
 // ForkPushReq is the request body for POST /auth/v4/sessions/forks.
