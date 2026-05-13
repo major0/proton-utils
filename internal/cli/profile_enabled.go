@@ -27,7 +27,7 @@ func StartProfile() func() {
 		return func() {}
 	}
 
-	if err := os.MkdirAll(profileDir, 0755); err != nil {
+	if err := os.MkdirAll(profileDir, 0700); err != nil {
 		slog.Error("profile: create dir", "error", err)
 		return func() {}
 	}
