@@ -41,7 +41,7 @@ func TestEnsureMountDir_ExistingCorrectDir(t *testing.T) {
 	}
 }
 
-func TestEnsureMountDir_WrongMode(t *testing.T) {
+func TestEnsureMountDir_FixesWrongMode(t *testing.T) {
 	tmpDir := t.TempDir()
 	parentDir := filepath.Join(tmpDir, "proton")
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
@@ -50,11 +50,17 @@ func TestEnsureMountDir_WrongMode(t *testing.T) {
 
 	mountpoint := filepath.Join(parentDir, "fs")
 	err := EnsureMountDir(mountpoint)
-	if err == nil {
-		t.Fatal("EnsureMountDir() expected error for wrong mode, got nil")
+	if err != nil {
+		t.Fatalf("EnsureMountDir() unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "0755") {
-		t.Errorf("error should mention wrong mode 0755, got: %v", err)
+
+	// Verify the parent directory was tightened to 0700.
+	info, err := os.Stat(parentDir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if mode := info.Mode().Perm(); mode != 0700 {
+		t.Errorf("parent mode = %04o, want 0700", mode)
 	}
 }
 

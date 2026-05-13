@@ -41,7 +41,7 @@ func TestPropertyReaddirConsistency(t *testing.T) {
 			reg.Register(p, &mockHandler{attr: Attr{Mode: syscall.S_IFDIR | 0755}})
 		}
 
-		root := NewRoot(reg)
+		root := NewRoot(reg, testMountInfo{})
 		stream, errno := root.Readdir(context.Background())
 		if errno != 0 {
 			t.Fatalf("Readdir returned errno %d", errno)
@@ -53,16 +53,25 @@ func TestPropertyReaddirConsistency(t *testing.T) {
 			entries = append(entries, e)
 		}
 
-		// Verify count matches.
-		if len(entries) != len(unique) {
-			t.Fatalf("Readdir returned %d entries, want %d", len(entries), len(unique))
+		// Verify count matches: . and .. plus namespace entries.
+		wantCount := 2 + len(unique)
+		if len(entries) != wantCount {
+			t.Fatalf("Readdir returned %d entries, want %d", len(entries), wantCount)
 		}
 
-		// Verify entries match sorted unique prefixes.
+		// First two entries are . and ..
+		if entries[0].Name != "." {
+			t.Errorf("entries[0].Name = %q, want %q", entries[0].Name, ".")
+		}
+		if entries[1].Name != ".." {
+			t.Errorf("entries[1].Name = %q, want %q", entries[1].Name, "..")
+		}
+
+		// Verify remaining entries match sorted unique prefixes.
 		sort.Strings(unique)
-		for i, e := range entries {
+		for i, e := range entries[2:] {
 			if e.Name != unique[i] {
-				t.Errorf("entry[%d].Name = %q, want %q", i, e.Name, unique[i])
+				t.Errorf("entry[%d].Name = %q, want %q", i+2, e.Name, unique[i])
 			}
 			if e.Mode != fuse.S_IFDIR {
 				t.Errorf("entry[%d].Mode = %o, want S_IFDIR", i, e.Mode)
@@ -98,7 +107,7 @@ func TestPropertyDispatchCorrectness(t *testing.T) {
 			reg.Register(p, &mockHandler{attr: Attr{Mode: syscall.S_IFDIR | 0755}})
 		}
 
-		root := NewRoot(reg)
+		root := NewRoot(reg, testMountInfo{})
 
 		// Verify registry-level dispatch: registered name found.
 		registered := rapid.SampledFrom(unique).Draw(t, "registered")

@@ -8,7 +8,9 @@ package redirector
 import (
 	"context"
 	"fmt"
+	"os"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -25,31 +27,60 @@ var _ = (fs.NodeGetattrer)((*SymlinkNode)(nil))
 // Every Lookup returns a symlink to /run/user/<uid>/proton/fs/<name>.
 type RedirectorRoot struct {
 	fs.Inode
+	mtime time.Time // mountpoint mtime, used for atime/mtime/ctime
 }
 
 // Getattr returns directory attributes for the redirector root.
 func (r *RedirectorRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFDIR | 0555
 	out.Nlink = 2
+	out.Ino = 1
+	sec := uint64(r.mtime.Unix())
+	nsec := uint32(r.mtime.Nanosecond())
+	out.Atime = sec
+	out.Atimensec = nsec
+	out.Mtime = sec
+	out.Mtimensec = nsec
+	out.Ctime = sec
+	out.Ctimensec = nsec
 	return 0
 }
 
-// Readdir returns an empty directory listing. The kernel follows symlinks
-// from Lookup to discover contents.
+// Readdir returns directory entries for the calling user. It reads the
+// user's per-user mount directory to discover registered namespaces and
+// returns them as symlink entries. Falls back to just . and .. if the
+// per-user mount is not available.
 func (r *RedirectorRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	return fs.NewListDirStream(nil), 0
+	dirEntries := []fuse.DirEntry{
+		{Name: ".", Mode: syscall.S_IFDIR, Ino: 1},
+		{Name: "..", Mode: syscall.S_IFDIR},
+	}
+
+	caller, _ := fuse.FromContext(ctx)
+	if caller != nil && caller.Uid != 0 {
+		userDir := fmt.Sprintf("/run/user/%d/proton/fs", caller.Uid)
+		if entries, err := os.ReadDir(userDir); err == nil {
+			for _, e := range entries {
+				dirEntries = append(dirEntries, fuse.DirEntry{
+					Name: e.Name(),
+					Mode: syscall.S_IFLNK,
+				})
+			}
+		}
+	}
+
+	return fs.NewListDirStream(dirEntries), 0
 }
 
 // Lookup returns a symlink node pointing to the calling user's per-user mount.
-// Returns ENOENT for UID 0 to prevent symlink loops.
+// Returns ENOENT for UID 0 or when called outside a FUSE context.
 func (r *RedirectorRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	caller, _ := fuse.FromContext(ctx)
-	uid := caller.Uid
-	if uid == 0 {
+	if caller == nil || caller.Uid == 0 {
 		return nil, syscall.ENOENT
 	}
 
-	target := symlinkTarget(uid, name)
+	target := symlinkTarget(caller.Uid, name)
 	node := &SymlinkNode{target: target}
 	child := r.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFLNK})
 	return child, 0

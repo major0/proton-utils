@@ -42,7 +42,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	server, err := redirector.Mount("/proton")
+	// Stat the mountpoint before mounting to capture its timestamps.
+	// These are used by Getattr so the FUSE root reports meaningful times
+	// instead of epoch zero.
+	mountInfo, err := os.Stat("/proton")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "stat /proton: %v\n", err)
+		os.Exit(1)
+	}
+
+	server, err := redirector.Mount("/proton", mountInfo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mount failed: %v\n", err)
 		os.Exit(1)

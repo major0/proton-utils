@@ -4,7 +4,9 @@ package fusemount
 
 import (
 	"context"
+	"os"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -20,24 +22,52 @@ var _ = (fs.NodeReaddirer)((*RootNode)(nil))
 type RootNode struct {
 	fs.Inode
 	registry *NamespaceRegistry
+	mtime    time.Time
+	uid      uint32
+	gid      uint32
 }
 
 // NewRoot creates a RootNode backed by the given registry.
-func NewRoot(registry *NamespaceRegistry) *RootNode {
-	return &RootNode{registry: registry}
+// The info parameter provides timestamps from the mountpoint directory.
+// Owner uid/gid are captured from the current process at construction time.
+func NewRoot(registry *NamespaceRegistry, info os.FileInfo) *RootNode {
+	return &RootNode{
+		registry: registry,
+		mtime:    info.ModTime(),
+		uid:      uint32(os.Getuid()), //nolint:gosec // UID fits uint32 on Linux
+		gid:      uint32(os.Getgid()), //nolint:gosec // GID fits uint32 on Linux
+	}
 }
 
-// Getattr returns directory attributes for the root (mode 0555).
+// Getattr returns directory attributes for the root (mode 0500, owned by
+// the user that started the process). Write permission is not granted at
+// the namespace root — only within individual namespaces.
 func (r *RootNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = syscall.S_IFDIR | 0555
+	out.Mode = syscall.S_IFDIR | 0500
 	out.Nlink = 2
+	out.Ino = 1
+	out.Uid = r.uid
+	out.Gid = r.gid
+	sec := uint64(r.mtime.Unix())
+	nsec := uint32(r.mtime.Nanosecond())
+	out.Atime = sec
+	out.Atimensec = nsec
+	out.Mtime = sec
+	out.Mtimensec = nsec
+	out.Ctime = sec
+	out.Ctimensec = nsec
 	return 0
 }
 
 // Readdir returns entries from the registry as S_IFDIR directory entries.
+// Always includes . and .. for POSIX compliance.
 func (r *RootNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	prefixes := r.registry.List()
-	entries := make([]fuse.DirEntry, 0, len(prefixes))
+	entries := make([]fuse.DirEntry, 0, 2+len(prefixes))
+	entries = append(entries,
+		fuse.DirEntry{Name: ".", Mode: syscall.S_IFDIR, Ino: 1},
+		fuse.DirEntry{Name: "..", Mode: syscall.S_IFDIR},
+	)
 	for _, p := range prefixes {
 		entries = append(entries, fuse.DirEntry{Name: p, Mode: fuse.S_IFDIR})
 	}

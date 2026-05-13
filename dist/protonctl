@@ -41,6 +41,7 @@ usage() {
     '  disable     Stop and disable protonfs' \
     '  start       Start protonfs services' \
     '  stop        Stop protonfs services' \
+    '  reload      Reload unit files and restart services' \
     '  status      Show service status' \
     '  help        Show this help message' \
     '' \
@@ -115,6 +116,21 @@ cmd_stop() {
 ##
 # no arguments
 # returns 0
+cmd_reload() {
+  : 'cmd_reload()'
+  require_systemctl
+  printf 'Reloading unit files...\n'
+  systemctl --user daemon-reload
+  printf 'Restarting %s...\n' "${REDIRECTOR_UNIT}"
+  systemctl --user restart "${REDIRECTOR_UNIT}"
+  printf 'Restarting %s...\n' "${FUSE_UNIT}"
+  systemctl --user restart "${FUSE_UNIT}"
+  printf 'protonfs reloaded.\n'
+}
+
+##
+# no arguments
+# returns 0
 cmd_status() {
   : 'cmd_status()'
   require_systemctl
@@ -153,6 +169,7 @@ control() {
   (disable) cmd_disable ;;
   (start)   cmd_start ;;
   (stop)    cmd_stop ;;
+  (reload)  cmd_reload ;;
   (status)  cmd_status ;;
   (*)       usage "unknown command '${1}'" ;;
   esac

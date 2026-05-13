@@ -124,6 +124,12 @@ func Mount(cfg MountConfig, registry *NamespaceRegistry) (*fuse.Server, error) {
 		}
 	}
 
+	// Stat the mountpoint before mounting to capture timestamps.
+	mountInfo, err := os.Stat(cfg.Mountpoint)
+	if err != nil {
+		return nil, fmt.Errorf("stat mountpoint: %w", err)
+	}
+
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
 			FsName: "proton-fuse",
@@ -132,7 +138,7 @@ func Mount(cfg MountConfig, registry *NamespaceRegistry) (*fuse.Server, error) {
 		RootStableAttr: &fs.StableAttr{Ino: 1},
 	}
 
-	server, err := fs.Mount(cfg.Mountpoint, NewRoot(registry), opts)
+	server, err := fs.Mount(cfg.Mountpoint, NewRoot(registry, mountInfo), opts)
 	if err != nil {
 		return nil, fmt.Errorf("mounting FUSE filesystem: %w", err)
 	}

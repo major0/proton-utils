@@ -55,8 +55,20 @@ func TestRedirectorRoot_Readdir(t *testing.T) {
 	if errno != 0 {
 		t.Fatalf("Readdir returned errno %d", errno)
 	}
-	if stream.HasNext() {
-		t.Error("Readdir returned non-empty stream, want empty")
+	// Should always have at least . and .. entries.
+	var entries []fuse.DirEntry
+	for stream.HasNext() {
+		e, _ := stream.Next()
+		entries = append(entries, e)
+	}
+	if len(entries) < 2 {
+		t.Fatalf("Readdir returned %d entries, want at least 2 (. and ..)", len(entries))
+	}
+	if entries[0].Name != "." {
+		t.Errorf("entries[0].Name = %q, want %q", entries[0].Name, ".")
+	}
+	if entries[1].Name != ".." {
+		t.Errorf("entries[1].Name = %q, want %q", entries[1].Name, "..")
 	}
 }
 
