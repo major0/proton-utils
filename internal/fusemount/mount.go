@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +41,11 @@ func EnsureMountDir(path string) error {
 		return fmt.Errorf("unable to get ownership info for %s", parentDir)
 	}
 
-	currentUID := uint32(os.Getuid())
+	uid := os.Getuid()
+	if uid < 0 || uid > math.MaxUint32 {
+		return fmt.Errorf("invalid UID: %d", uid)
+	}
+	currentUID := uint32(uid) //nolint:gosec // bounds checked above
 	if stat.Uid != currentUID {
 		return fmt.Errorf("mount parent directory %s is owned by uid %d, expected %d", parentDir, stat.Uid, currentUID)
 	}
