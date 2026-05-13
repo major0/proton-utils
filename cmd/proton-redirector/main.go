@@ -13,10 +13,32 @@ import (
 )
 
 func main() {
+	// Save NOTIFY_SOCKET before clearing the environment — systemd needs
+	// it for the Type=notify readiness signal.
+	notifySocket := os.Getenv("NOTIFY_SOCKET")
 	redirector.ClearEnvironment()
+	if notifySocket != "" {
+		os.Setenv("NOTIFY_SOCKET", notifySocket)
+	}
 
 	if len(os.Args) < 2 || os.Args[1] != "/proton" {
 		fmt.Fprintf(os.Stderr, "usage: proton-redirector /proton\n")
+		os.Exit(1)
+	}
+
+	// Create the mountpoint if it doesn't exist. The binary is setuid
+	// root so it has permission to create directories at /.
+	// Ensure root:root 0755 regardless of whether we created it.
+	if err := os.MkdirAll("/proton", 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "mkdir /proton: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.Chown("/proton", 0, 0); err != nil {
+		fmt.Fprintf(os.Stderr, "chown /proton: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.Chmod("/proton", 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "chmod /proton: %v\n", err)
 		os.Exit(1)
 	}
 

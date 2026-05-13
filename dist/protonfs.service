@@ -1,10 +1,11 @@
 [Unit]
 Description=Proton per-user FUSE filesystem
-After=default.target
+Documentation=https://github.com/major0/proton-utils
+After=protonfs-redirector.service
 
 [Service]
 Type=notify
-ExecStart=/usr/local/bin/proton-fuse
+ExecStart=/usr/local/sbin/proton-fuse
 Restart=on-failure
 RestartSec=5
 

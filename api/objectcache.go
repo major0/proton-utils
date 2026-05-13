@@ -1,6 +1,7 @@
 package api
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/peterbourgon/diskv/v3"
@@ -20,10 +21,17 @@ type ObjectCache struct {
 
 // NewObjectCache constructs an ObjectCache rooted at basePath.
 // Returns nil when basePath is empty (disabling caching).
+// Ensures all parent directories up to basePath are created with mode 0700.
 func NewObjectCache(basePath string) *ObjectCache {
 	if basePath == "" {
 		return nil
 	}
+	// Create the directory tree with restrictive permissions before diskv
+	// touches it. diskv uses os.MkdirAll internally with the process umask,
+	// which may create intermediate directories (e.g., $XDG_RUNTIME_DIR/proton/)
+	// with overly permissive modes.
+	_ = os.MkdirAll(basePath, 0700)
+
 	dv := diskv.New(diskv.Options{
 		BasePath:     basePath,
 		Transform:    func(_ string) []string { return []string{} },

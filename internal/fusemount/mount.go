@@ -22,13 +22,13 @@ type MountConfig struct {
 	Mountpoint string
 }
 
-// EnsureMountDir creates the parent directory of the mountpoint with mode 0700
-// and verifies the current user owns it with the correct permissions.
+// EnsureMountDir creates the mountpoint and its parent directory with mode 0700
+// and verifies the current user owns the parent with the correct permissions.
 func EnsureMountDir(path string) error {
 	parentDir := filepath.Dir(path)
 
-	if err := os.MkdirAll(parentDir, 0700); err != nil {
-		return fmt.Errorf("creating mount parent directory: %w", err)
+	if err := os.MkdirAll(path, 0700); err != nil {
+		return fmt.Errorf("creating mount directory: %w", err)
 	}
 
 	info, err := os.Stat(parentDir)
@@ -51,8 +51,11 @@ func EnsureMountDir(path string) error {
 	}
 
 	mode := info.Mode().Perm()
-	if mode != 0700 {
-		return fmt.Errorf("mount parent directory %s has mode %04o, expected 0700", parentDir, mode)
+	if mode&0077 != 0 {
+		// Directory is group/world accessible — tighten to 0700.
+		if err := os.Chmod(parentDir, 0700); err != nil {
+			return fmt.Errorf("mount parent directory %s has mode %04o, chmod to 0700 failed: %w", parentDir, mode, err)
+		}
 	}
 
 	return nil

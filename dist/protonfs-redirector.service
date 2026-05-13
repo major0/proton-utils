@@ -1,0 +1,14 @@
+[Unit]
+Description=Proton FUSE redirector at /proton
+Documentation=https://github.com/major0/proton-utils
+Before=protonfs.service
+
+[Service]
+Type=notify
+ExecStart=/usr/local/sbin/proton-redirector /proton
+ExecStopPost=-/bin/fusermount -uz /proton
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

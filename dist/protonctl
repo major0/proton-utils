@@ -1,0 +1,173 @@
+#!/bin/sh
+set -eu
+POSIXLY_CORRECT='no bashing shell'
+
+REDIRECTOR_UNIT='protonfs-redirector.service'
+FUSE_UNIT='protonfs.service'
+
+##
+# $* = message to print to stderr
+# returns 0
+error() {
+  : "error(msg='${*}')"
+  printf 'error: %s\n' "${*}" >&2
+}
+
+##
+# $* = fatal message
+# returns: does not return (exits 1)
+die() {
+  : "die(msg='${*}')"
+  error "${*}"
+  exit 1
+}
+
+##
+# $* = usage error (optional)
+# returns 0 when no args, exits 1 when called with an error message
+usage() {
+  : "usage(msg='${*}')"
+  if test "$#" -gt 0; then
+    error "${*}"
+    printf "try 'protonctl help'\n" >&2
+    exit 1
+  fi
+  # shellcheck disable=SC2016  # $XDG_RUNTIME_DIR is literal in help text
+  printf '%s\n' \
+    'Usage: protonctl <command>' \
+    '' \
+    'Commands:' \
+    '  enable      Enable and start protonfs' \
+    '  disable     Stop and disable protonfs' \
+    '  start       Start protonfs services' \
+    '  stop        Stop protonfs services' \
+    '  status      Show service status' \
+    '  help        Show this help message' \
+    '' \
+    'protonfs-redirector mounts /proton and redirects lookups to per-user' \
+    'FUSE mounts. protonfs mounts the per-user filesystem at' \
+    '$XDG_RUNTIME_DIR/proton/fs.' \
+    '' \
+    'All units are user services managed via systemctl --user.'
+  exit 0
+}
+
+##
+# no arguments
+# returns 0, dies if systemctl not found
+require_systemctl() {
+  : 'require_systemctl()'
+  command -v systemctl >/dev/null 2>&1 || die 'systemctl not found'
+}
+
+##
+# no arguments
+# returns 0
+cmd_enable() {
+  : 'cmd_enable()'
+  require_systemctl
+  printf 'Enabling %s...\n' "${REDIRECTOR_UNIT}"
+  systemctl --user enable --now "${REDIRECTOR_UNIT}"
+  printf 'Enabling %s...\n' "${FUSE_UNIT}"
+  systemctl --user enable --now "${FUSE_UNIT}"
+  printf 'protonfs enabled and started.\n'
+}
+
+##
+# no arguments
+# returns 0
+cmd_disable() {
+  : 'cmd_disable()'
+  require_systemctl
+  printf 'Disabling %s...\n' "${FUSE_UNIT}"
+  systemctl --user disable --now "${FUSE_UNIT}"
+  printf 'Disabling %s...\n' "${REDIRECTOR_UNIT}"
+  systemctl --user disable --now "${REDIRECTOR_UNIT}"
+  printf 'protonfs disabled and stopped.\n'
+}
+
+##
+# no arguments
+# returns 0
+cmd_start() {
+  : 'cmd_start()'
+  require_systemctl
+  printf 'Starting %s...\n' "${REDIRECTOR_UNIT}"
+  systemctl --user start "${REDIRECTOR_UNIT}"
+  printf 'Starting %s...\n' "${FUSE_UNIT}"
+  systemctl --user start "${FUSE_UNIT}"
+  printf 'protonfs started.\n'
+}
+
+##
+# no arguments
+# returns 0
+cmd_stop() {
+  : 'cmd_stop()'
+  require_systemctl
+  printf 'Stopping %s...\n' "${FUSE_UNIT}"
+  systemctl --user stop "${FUSE_UNIT}"
+  printf 'Stopping %s...\n' "${REDIRECTOR_UNIT}"
+  systemctl --user stop "${REDIRECTOR_UNIT}"
+  printf 'protonfs stopped.\n'
+}
+
+##
+# no arguments
+# returns 0
+cmd_status() {
+  : 'cmd_status()'
+  require_systemctl
+  printf '=== %s ===\n' "${REDIRECTOR_UNIT}"
+  systemctl --user status "${REDIRECTOR_UNIT}" --no-pager 2>/dev/null || true
+  printf '\n=== %s ===\n' "${FUSE_UNIT}"
+  systemctl --user status "${FUSE_UNIT}" --no-pager 2>/dev/null || true
+}
+
+if test $# -eq 0; then
+  error 'no command specified'
+  printf "try 'protonctl help'\n" >&2
+  exit 1
+fi
+
+# scan for help requests before dispatching
+for arg; do
+  case "${arg}" in
+  (--)
+    break
+    ;;
+  (help|-h|-help|--help)
+    usage
+    ;;
+  esac
+done
+unset arg
+
+##
+# $1 = command name
+# returns 0, dies on unknown command
+control() {
+  : "control(cmd='${1}')"
+  case "${1}" in
+  (enable)  cmd_enable ;;
+  (disable) cmd_disable ;;
+  (start)   cmd_start ;;
+  (stop)    cmd_stop ;;
+  (status)  cmd_status ;;
+  (*)       usage "unknown command '${1}'" ;;
+  esac
+}
+
+while test "$#" -gt 0; do
+  case "${1}" in
+  (--)  shift; break ;;
+  (-*)  usage "unknown option '${1}'" ;;
+  (*)   control "${1}"; shift ;;
+  esac
+done
+
+# handle remaining args after --
+while test "$#" -gt 0; do
+  control "${1}"
+  shift
+done

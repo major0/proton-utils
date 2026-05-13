@@ -1,11 +1,12 @@
 # proton - Development Makefile
 
-PREFIX  ?= /usr/local
-BINDIR  ?= $(PREFIX)/bin
-SBINDIR ?= $(PREFIX)/sbin
+PREFIX          ?= /usr/local
+BINDIR          ?= $(PREFIX)/bin
+SBINDIR         ?= $(PREFIX)/sbin
+UNITDIR_USER    ?= $(PREFIX)/lib/systemd/user
 
 .PHONY: test coverage coverage-html coverage-func lint fmt vet mod-tidy mod-verify \
-        build proton-fuse proton-redirector clean help \
+        build clean help \
         install install-proton-cli install-protonfs
 
 help:
@@ -32,6 +33,7 @@ help:
 	@echo "  install           - Install all binaries"
 	@echo "  install-proton-cli - Install proton CLI to BINDIR ($(BINDIR))"
 	@echo "  install-protonfs  - Install proton-fuse and proton-redirector to SBINDIR ($(SBINDIR))"
+	@echo "                      and systemd user units to UNITDIR_USER ($(UNITDIR_USER))"
 
 test:
 	go test -v -race ./...
@@ -60,13 +62,15 @@ mod-tidy:
 mod-verify:
 	go mod verify
 
-build:
+build: proton proton-fuse proton-redirector
+
+proton: $(wildcard cmd/proton/*.go api/*.go api/**/*.go internal/**/*.go)
 	go build -v -o proton ./cmd/proton/
 
-proton-fuse:
+proton-fuse: $(wildcard cmd/proton-fuse/*.go internal/**/*.go)
 	GOOS=linux go build -v -o proton-fuse ./cmd/proton-fuse/
 
-proton-redirector:
+proton-redirector: $(wildcard cmd/proton-redirector/*.go internal/**/*.go)
 	GOOS=linux go build -v -o proton-redirector ./cmd/proton-redirector/
 
 clean:
@@ -74,11 +78,23 @@ clean:
 
 install: install-proton-cli install-protonfs
 
-install-proton-cli: build
+install-proton-cli:
+	@test -f proton || { echo "error: run 'make build' first"; exit 1; }
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 0755 proton $(DESTDIR)$(BINDIR)/proton
 
-install-protonfs: proton-fuse proton-redirector
+install-protonfs:
+	@test -f proton-fuse || { echo "error: run 'make build' first"; exit 1; }
+	@test -f proton-redirector || { echo "error: run 'make build' first"; exit 1; }
 	install -d $(DESTDIR)$(SBINDIR)
 	install -m 0755 proton-fuse $(DESTDIR)$(SBINDIR)/proton-fuse
-	install -m 0755 proton-redirector $(DESTDIR)$(SBINDIR)/proton-redirector
+	install -m 4755 proton-redirector $(DESTDIR)$(SBINDIR)/proton-redirector
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 0755 dist/protonctl $(DESTDIR)$(BINDIR)/protonctl
+	install -d $(DESTDIR)$(UNITDIR_USER)
+	sed 's|ExecStart=.*proton-redirector|ExecStart=$(SBINDIR)/proton-redirector|' \
+		dist/protonfs-redirector.service > $(DESTDIR)$(UNITDIR_USER)/protonfs-redirector.service
+	chmod 0644 $(DESTDIR)$(UNITDIR_USER)/protonfs-redirector.service
+	sed 's|ExecStart=.*proton-fuse|ExecStart=$(SBINDIR)/proton-fuse|' \
+		dist/protonfs.service > $(DESTDIR)$(UNITDIR_USER)/protonfs.service
+	chmod 0644 $(DESTDIR)$(UNITDIR_USER)/protonfs.service

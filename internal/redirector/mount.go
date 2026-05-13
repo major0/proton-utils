@@ -15,14 +15,17 @@ func NewRoot() *RedirectorRoot {
 }
 
 // Mount creates and starts the redirector FUSE server at the given mountpoint.
+// Uses DirectMount to call mount(2) directly rather than fusermount, since the
+// binary is setuid root and has the necessary privilege.
 func Mount(mountpoint string) (*fuse.Server, error) {
 	root := NewRoot()
 	server, err := fs.Mount(mountpoint, root, &fs.Options{
 		MountOptions: fuse.MountOptions{
-			AllowOther: true,
-			FsName:     "proton-redirector",
-			Name:       "proton",
-			Options:    []string{"ro"},
+			AllowOther:  true,
+			DirectMount: true,
+			FsName:      "proton-redirector",
+			Name:        "proton",
+			Options:     []string{"ro"},
 		},
 	})
 	return server, err
