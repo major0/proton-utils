@@ -1,6 +1,12 @@
 # proton - Development Makefile
 
-.PHONY: test coverage coverage-html coverage-func lint fmt vet mod-tidy mod-verify build proton-fuse proton-redirector clean help
+PREFIX  ?= /usr/local
+BINDIR  ?= $(PREFIX)/bin
+SBINDIR ?= $(PREFIX)/sbin
+
+.PHONY: test coverage coverage-html coverage-func lint fmt vet mod-tidy mod-verify \
+        build proton-fuse proton-redirector clean help \
+        install install-proton-cli install-protonfs
 
 help:
 	@echo "proton Development Targets"
@@ -19,6 +25,13 @@ help:
 	@echo "  proton-fuse       - Build proton-fuse binary (linux only)"
 	@echo "  proton-redirector - Build proton-redirector binary (linux only)"
 	@echo "  clean             - Remove generated files"
+	@echo ""
+	@echo "Install Targets (PREFIX=$(PREFIX))"
+	@echo "=================================="
+	@echo ""
+	@echo "  install           - Install all binaries"
+	@echo "  install-proton-cli - Install proton CLI to BINDIR ($(BINDIR))"
+	@echo "  install-protonfs  - Install proton-fuse and proton-redirector to SBINDIR ($(SBINDIR))"
 
 test:
 	go test -v -race ./...
@@ -58,3 +71,14 @@ proton-redirector:
 
 clean:
 	rm -f proton proton-fuse proton-redirector coverage.out coverage.html
+
+install: install-proton-cli install-protonfs
+
+install-proton-cli: build
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 0755 proton $(DESTDIR)$(BINDIR)/proton
+
+install-protonfs: proton-fuse proton-redirector
+	install -d $(DESTDIR)$(SBINDIR)
+	install -m 0755 proton-fuse $(DESTDIR)$(SBINDIR)/proton-fuse
+	install -m 0755 proton-redirector $(DESTDIR)$(SBINDIR)/proton-redirector
