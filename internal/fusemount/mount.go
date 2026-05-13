@@ -83,10 +83,21 @@ func detectStaleMountFrom(r io.Reader, path string) bool {
 
 // CleanStaleMount attempts to unmount a stale FUSE mount at path using
 // fusermount. If the normal unmount fails, it falls back to lazy unmount.
+// The path must be an absolute path (validated by EnsureMountDir).
 func CleanStaleMount(path string) error {
-	if err := exec.Command("fusermount", "-u", path).Run(); err != nil {
+	// Reject paths with null bytes which could cause unexpected behavior.
+	for i := 0; i < len(path); i++ {
+		if path[i] == 0 {
+			return fmt.Errorf("mount path contains null byte")
+		}
+	}
+	clean := filepath.Clean(path)
+	if !filepath.IsAbs(clean) {
+		return fmt.Errorf("mount path must be absolute: %s", path)
+	}
+	if err := exec.Command("fusermount", "-u", clean).Run(); err != nil { //nolint:gosec // clean is validated absolute path
 		// Try lazy unmount as fallback.
-		return exec.Command("fusermount", "-uz", path).Run()
+		return exec.Command("fusermount", "-uz", clean).Run() //nolint:gosec // clean is validated absolute path
 	}
 	return nil
 }
