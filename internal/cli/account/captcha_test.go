@@ -275,17 +275,3 @@ func TestSolveManual(t *testing.T) {
 		})
 	}
 }
-
-func TestOpenBrowserCmd(t *testing.T) {
-	got := openBrowserCmd()
-	switch runtime.GOOS {
-	case "darwin":
-		if got != "open" {
-			t.Errorf("openBrowserCmd() = %q, want %q", got, "open")
-		}
-	default:
-		if got != "xdg-open" {
-			t.Errorf("openBrowserCmd() = %q, want %q", got, "xdg-open")
-		}
-	}
-}

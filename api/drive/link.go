@@ -329,12 +329,6 @@ func NewLink(pLink *proton.Link, parent *Link, share *Share, resolver LinkResolv
 	}
 }
 
-// newChildLink creates a child Link from a raw proton.Link, delegating
-// to the resolver for construction.
-func (l *Link) newChildLink(ctx context.Context, pLink *proton.Link) *Link {
-	return l.resolver.NewChildLink(ctx, l, pLink)
-}
-
 // ResolvePath resolves a slash-separated path relative to this link.
 // Only decrypts names along the path — siblings are not decrypted.
 func (l *Link) ResolvePath(ctx context.Context, path string, _ bool) (*Link, error) {

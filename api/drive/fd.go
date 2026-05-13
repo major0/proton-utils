@@ -129,20 +129,6 @@ func (fd *FileDescriptor) decryptBlock(encrypted []byte) ([]byte, error) {
 	return msg.GetBinary(), nil
 }
 
-// blockSize returns the plaintext size of block at index, computed from
-// the file size and the standard block size.
-func (fd *FileDescriptor) blockSize(index int) int64 {
-	offset := int64(index) * BlockSize
-	remaining := fd.fileSize - offset
-	if remaining <= 0 {
-		return 0
-	}
-	if remaining > BlockSize {
-		return BlockSize
-	}
-	return remaining
-}
-
 // Read implements io.Reader. It reads decrypted file data starting at
 // the current offset, advancing the offset by the number of bytes read.
 // Handles reads spanning multiple blocks.

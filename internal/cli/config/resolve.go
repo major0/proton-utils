@@ -124,31 +124,3 @@ func cleanupStaleShares(cmd *cobra.Command, cfg *config.Config) {
 	}
 }
 
-// shareIDToName resolves a share ID back to its name. Returns empty string
-// on failure (best-effort for display purposes).
-func shareIDToName(cmd *cobra.Command, id string) string {
-	cli.SetServiceCmd(cmd, "drive")
-	ctx := context.Background()
-	session, err := setupSessionFn(ctx, cmd)
-	if err != nil {
-		return ""
-	}
-	dc, err := newDriveClientFn(ctx, session)
-	if err != nil {
-		return ""
-	}
-	shares, err := listSharesFn(ctx, dc)
-	if err != nil {
-		return ""
-	}
-	for _, s := range shares {
-		if s.Metadata().ShareID == id {
-			name, err := s.GetName(ctx)
-			if err != nil {
-				return ""
-			}
-			return name
-		}
-	}
-	return ""
-}

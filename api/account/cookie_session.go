@@ -152,19 +152,6 @@ func NewCookieSessionForRefresh(uid, baseURL, appVersion string, jar http.Cookie
 	}
 }
 
-// logCookieSession logs the state of a CookieSession for debugging. Logs
-// cookie names only — values are sensitive and must not appear in logs.
-// Consistent with logCookies for Bearer sessions.
-func logCookieSession(cs *CookieSession, msg string) {
-	u := cookieQueryURL(cs.BaseURL)
-	cookies := cs.cookieJar.Cookies(u)
-	names := make([]string, len(cookies))
-	for i, c := range cookies {
-		names[i] = c.Name
-	}
-	slog.Debug(msg, "uid", cs.UID, "baseURL", cs.BaseURL, "appversion", cs.AppVersion, "cookies", names)
-}
-
 // resolveAppVersion returns the x-pm-appversion value for the given request
 // URL. If the URL targets a known service host, returns that service's app
 // version. Otherwise falls back to cs.AppVersion.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -26,21 +25,6 @@ func hasDisplay() bool {
 	default:
 		return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
 	}
-}
-
-// openBrowserCmd returns the command name used to open URLs on the current platform.
-func openBrowserCmd() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "open"
-	default:
-		return "xdg-open"
-	}
-}
-
-// openBrowser opens the given URL in the user's default browser.
-func openBrowser(rawURL string) error {
-	return exec.Command(openBrowserCmd(), rawURL).Start() //nolint:gosec
 }
 
 // captchaSolver is the function used to solve CAPTCHAs via Chrome.

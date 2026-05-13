@@ -30,7 +30,6 @@ type SessionIndex struct {
 	account string // current account name (from --account flag)
 	service string // current service context (e.g. "drive", "mail", "*")
 	kr      Keyring
-	data    *SessionIndexData
 }
 
 // keyringService is the service name used for all keyring operations.

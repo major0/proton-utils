@@ -11,12 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// logoutAccountStoreFn loads the account config to check CookieAuth.
-// It is a variable so tests can replace it.
-var logoutAccountStoreFn = func(store common.SessionStore) (*common.SessionCredentials, error) {
-	return store.Load()
-}
-
 // logoutCookieDeleteFn deletes the cookie store entry.
 // It is a variable so tests can replace it.
 var logoutCookieDeleteFn = func(store common.SessionStore) error {
