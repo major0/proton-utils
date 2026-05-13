@@ -3,8 +3,8 @@ package lumoCmd
 import (
 	"strings"
 
-	cli "github.com/major0/proton-utils/internal/cli"
 	"github.com/major0/proton-utils/api/lumo"
+	cli "github.com/major0/proton-utils/internal/cli"
 )
 
 // LogFormatOptions controls FormatLog output.

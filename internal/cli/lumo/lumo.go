@@ -10,9 +10,9 @@ import (
 )
 
 var lumoCmd = &cobra.Command{
-	Use:   "lumo",
-	Short: "Proton Lumo AI assistant",
-	Long:  "Proton Lumo AI assistant",
+	Use:               "lumo",
+	Short:             "Proton Lumo AI assistant",
+	Long:              "Proton Lumo AI assistant",
 	PersistentPreRunE: cli.ServicePreRunE("lumo"),
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()

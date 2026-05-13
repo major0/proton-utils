@@ -123,4 +123,3 @@ func cleanupStaleShares(cmd *cobra.Command, cfg *config.Config) {
 		}
 	}
 }
-

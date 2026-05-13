@@ -152,5 +152,3 @@ func TestPropertyFormatEpochFormat(t *testing.T) {
 		}
 	})
 }
-
-

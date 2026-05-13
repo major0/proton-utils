@@ -153,8 +153,8 @@ func TestPropertyResolveEntityPriorityChain(t *testing.T) {
 			query := rapid.StringMatching(`[a-z]{3,6}`).Draw(t, "query")
 
 			nameMap := map[int]string{
-				0: query,     // exact match
-				1: query,     // exact match (duplicate)
+				0: query, // exact match
+				1: query, // exact match (duplicate)
 				2: "no match",
 			}
 			names := func(i int) string { return nameMap[i] }
@@ -187,5 +187,3 @@ func TestPropertyResolveEntityPriorityChain(t *testing.T) {
 		})
 	})
 }
-
-

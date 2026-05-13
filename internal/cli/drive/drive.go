@@ -7,9 +7,9 @@ import (
 )
 
 var driveCmd = &cobra.Command{
-	Use:   "drive",
-	Short: "Manage files and directories in Proton Drive",
-	Long:  "Manage files and directories in Proton Drive",
+	Use:               "drive",
+	Short:             "Manage files and directories in Proton Drive",
+	Long:              "Manage files and directories in Proton Drive",
 	PersistentPreRunE: cli.ServicePreRunE("drive"),
 	Run: func(cmd *cobra.Command, _ []string) {
 		_ = cmd.Help()
