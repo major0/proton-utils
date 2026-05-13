@@ -291,7 +291,7 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 		slog.Debug("cookieSession.doJSONOnce.set-cookie", "url", reqURL, "cookies", names)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, api.MaxJSONResponseSize))
 	if err != nil {
 		return fmt.Errorf("cookieSession.DoJSON: read response: %w", err)
 	}
@@ -389,7 +389,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, api.MaxJSONResponseSize))
 	if err != nil {
 		return fmt.Errorf("RefreshCookies: read response: %w", err)
 	}
@@ -477,7 +477,7 @@ func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.R
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, api.MaxJSONResponseSize))
 		if readErr != nil {
 			return nil, &api.Error{Status: resp.StatusCode}
 		}

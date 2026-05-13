@@ -56,7 +56,7 @@ func CreateAnonSession(ctx context.Context) (*AnonSessionResp, http.CookieJar, e
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, api.MaxJSONResponseSize))
 	if err != nil {
 		return nil, nil, fmt.Errorf("anon session: read response: %w", err)
 	}

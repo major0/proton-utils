@@ -68,7 +68,7 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, MaxJSONResponseSize))
 		if readErr != nil {
 			return nil, &Error{Status: resp.StatusCode}
 		}

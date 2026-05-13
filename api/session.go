@@ -63,6 +63,11 @@ const TokenWarnAge = 20 * time.Hour
 // TokenExpireAge is the age at which session tokens are considered expired.
 const TokenExpireAge = 24 * time.Hour
 
+// MaxJSONResponseSize is the maximum size in bytes for JSON API responses.
+// Prevents OOM from a malicious or compromised server sending unbounded data.
+// Block downloads use a separate path and are bounded by BlockSize (~4 MB).
+const MaxJSONResponseSize = 50 * 1024 * 1024 // 50 MB
+
 // CookieURL returns the parsed Proton API base URL used for cookie scoping.
 func CookieURL() *url.URL {
 	u, _ := url.Parse(proton.DefaultHostURL)
@@ -394,7 +399,7 @@ func (s *Session) doRequest(ctx context.Context, method, path string, body, resu
 		slog.Debug(label+".set-cookie", "url", reqURL, "cookies", names)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, MaxJSONResponseSize))
 	if err != nil {
 		return fmt.Errorf("%s: read response: %w", label, err)
 	}
