@@ -64,7 +64,7 @@ func DetectStaleMount(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return detectStaleMountFrom(f, path)
 }
 

@@ -26,7 +26,7 @@ func Ready() error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	_, err = conn.Write([]byte("READY=1"))
 	return err
