@@ -13,8 +13,17 @@ repos:
       - id: go-imports
       - id: no-go-testing
       - id: golangci-lint
+  # Local hook replaces the upstream go-unit-tests which hard-codes a
+  # 30s timeout (too short for property-based tests on cold cache) and
+  # uses -v (produces enormous race-detector noise from go-fuse).
+  - repo: local
+    hooks:
       - id: go-unit-tests
-        args: ['-short']
+        name: go unit tests
+        entry: go test -short -timeout 120s -count=1 ./...
+        language: system
+        pass_filenames: false
+        types: [go]
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
     rev: v9.20.0
     hooks:

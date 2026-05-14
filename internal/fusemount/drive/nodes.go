@@ -88,7 +88,7 @@ func (n *ShareDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall
 
 // Lookup finds a child by name. Uses the retained children map from the
 // last Readdir to avoid a redundant ListLinkChildren API call.
-func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
+func (n *ShareDirNode) Lookup(_ context.Context, name string) (fusemount.Node, syscall.Errno) {
 	// Fast path: child retained from last Readdir.
 	if n.children != nil {
 		if child, ok := n.children[name]; ok {
@@ -175,7 +175,7 @@ func (n *LinkDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.
 
 // Lookup finds a child by name. Uses the retained children map from the
 // last Readdir to avoid a redundant ListLinkChildren API call.
-func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
+func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, syscall.Errno) {
 	// Fast path: child retained from last Readdir.
 	if n.children != nil {
 		if child, ok := n.children[name]; ok {

@@ -1431,6 +1431,8 @@ func (r *testResolver) NewChildLink(_ context.Context, parent *drive.Link, pLink
 	return drive.NewTestLink(pLink, parent, parent.Share(), r, pLink.LinkID)
 }
 
+func (r *testResolver) GetLink(_ string) *drive.Link { return nil }
+
 func (r *testResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }
@@ -2105,6 +2107,8 @@ func (r *errorResolver) ListLinkChildren(_ context.Context, _, _ string, _ bool)
 func (r *errorResolver) NewChildLink(_ context.Context, parent *drive.Link, pLink *proton.Link) *drive.Link {
 	return drive.NewTestLink(pLink, parent, parent.Share(), r, pLink.LinkID)
 }
+
+func (r *errorResolver) GetLink(_ string) *drive.Link { return nil }
 
 func (r *errorResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
