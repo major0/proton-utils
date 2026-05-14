@@ -82,10 +82,10 @@ func TestPropertyVerboseCountToLogLevel(t *testing.T) {
 			level = slog.LevelWarn
 		}
 
-		switch {
-		case count == 0:
+		switch count {
+		case 0:
 			return level == slog.LevelWarn
-		case count == 1:
+		case 1:
 			return level == slog.LevelInfo
 		default:
 			return level == slog.LevelDebug
