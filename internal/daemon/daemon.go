@@ -21,13 +21,19 @@ type Unmounter interface {
 func WaitWithSignal(server Unmounter) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(sigCh)
 
+	done := make(chan struct{})
 	go func() {
-		<-sigCh
-		if err := server.Unmount(); err != nil {
-			fmt.Fprintf(os.Stderr, "unmount: %v\n", err)
+		select {
+		case <-sigCh:
+			if err := server.Unmount(); err != nil {
+				fmt.Fprintf(os.Stderr, "unmount: %v\n", err)
+			}
+		case <-done:
 		}
 	}()
 
 	server.Wait()
+	close(done)
 }
