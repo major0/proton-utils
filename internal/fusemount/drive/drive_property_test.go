@@ -359,6 +359,7 @@ func TestPropertyDirNodeChildOps(t *testing.T) {
 			pChildren[i] = proton.Link{
 				LinkID: c.linkID,
 				Type:   lt,
+				State:  proton.LinkStateActive,
 			}
 			nameMap[c.linkID] = c.name
 		}
@@ -410,9 +411,9 @@ func TestPropertyDirNodeChildOps(t *testing.T) {
 			if !ok {
 				rt.Fatalf("Readdir missing entry for child %q", c.name)
 			}
-			expectedMode := uint32(syscall.S_IFREG | 0400)
+			expectedMode := uint32(syscall.S_IFREG | 0555)
 			if c.isDir {
-				expectedMode = syscall.S_IFDIR | 0500
+				expectedMode = syscall.S_IFDIR | 0555
 			}
 			if mode != expectedMode {
 				rt.Fatalf("entry %q has mode %o, want %o", c.name, mode, expectedMode)
@@ -499,7 +500,7 @@ func TestPropertyFileNodeAttributes(t *testing.T) {
 		}
 
 		// Verify mode.
-		expectedMode := uint32(syscall.S_IFREG | 0400)
+		expectedMode := uint32(syscall.S_IFREG | 0555)
 		if attr.Mode != expectedMode {
 			rt.Fatalf("Mode = %o, want %o", attr.Mode, expectedMode)
 		}
@@ -893,6 +894,7 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 			pChildren = append(pChildren, proton.Link{
 				LinkID: linkID,
 				Type:   proton.LinkTypeFile,
+				State:  proton.LinkStateActive,
 			})
 			nameMap[linkID] = childName
 			goodChildNames = append(goodChildNames, childName)
@@ -904,6 +906,7 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 			pChildren = append(pChildren, proton.Link{
 				LinkID: linkID,
 				Type:   proton.LinkTypeFile,
+				State:  proton.LinkStateActive,
 			})
 			nameMap[linkID] = "" // Empty → Name() falls through to decryption → fails
 		}
@@ -967,6 +970,7 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 			goodOnlyChildren = append(goodOnlyChildren, proton.Link{
 				LinkID: linkID,
 				Type:   proton.LinkTypeFile,
+				State:  proton.LinkStateActive,
 			})
 			goodOnlyNameMap[linkID] = childName
 		}

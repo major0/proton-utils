@@ -38,15 +38,22 @@ var _ fusemount.DirNode = (*ShareDirNode)(nil)
 
 // Getattr returns directory attributes for the share root.
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
+	//nolint:gosec // ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0500,
+		Mode:  syscall.S_IFDIR | 0555,
 		Nlink: 2,
+		Mtime: uint64(n.share.Link.ModifyTime()),
+		Ctime: uint64(n.share.Link.CreateTime()),
 	}, 0
 }
 
 // Readdir lists children of the share's root link. Retains the name→Link
 // mapping so subsequent Lookup calls resolve locally without an API call.
-func (n *ShareDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
+func (n *ShareDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.Errno) {
+	// Use a detached context for the API call. The kernel FUSE timeout is
+	// too short for paginated ListChildren on large directories (the main
+	// volume may have hundreds of entries across multiple API pages).
+	ctx := context.Background()
 	var entries []fusemount.DirEntry
 	children := make(map[string]*drive.Link)
 	for de := range n.share.Link.Readdir(ctx) {
@@ -63,6 +70,10 @@ func (n *ShareDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, sysca
 		}
 		// Skip . and .. — FUSE handles these automatically.
 		if name == "." || name == ".." {
+			continue
+		}
+		// Hide trashed and draft links.
+		if de.Link.IsTrashed() || de.Link.IsDraft() {
 			continue
 		}
 		children[name] = de.Link
@@ -90,7 +101,7 @@ func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node,
 	// Slow path: no retained children (first Lookup before Readdir).
 	slog.Debug("ShareDirNode.Lookup: cache miss, calling API",
 		"shareID", n.share.Metadata().ShareID, "name", name)
-	child, err := n.share.Link.Lookup(ctx, name)
+	child, err := n.share.Link.Lookup(context.Background(), name)
 	if err != nil {
 		slog.Debug("ShareDirNode.Lookup: failed",
 			"shareID", n.share.Metadata().ShareID, "name", name, "error", err)
@@ -117,15 +128,19 @@ var _ fusemount.DirNode = (*LinkDirNode)(nil)
 
 // Getattr returns directory attributes for the folder.
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
+	//nolint:gosec // ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0500,
+		Mode:  syscall.S_IFDIR | 0555,
 		Nlink: 2,
+		Mtime: uint64(n.link.ModifyTime()),
+		Ctime: uint64(n.link.CreateTime()),
 	}, 0
 }
 
 // Readdir lists children of the folder link. Retains the name→Link
 // mapping so subsequent Lookup calls resolve locally without an API call.
-func (n *LinkDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
+func (n *LinkDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.Errno) {
+	ctx := context.Background()
 	var entries []fusemount.DirEntry
 	children := make(map[string]*drive.Link)
 	for de := range n.link.Readdir(ctx) {
@@ -142,6 +157,10 @@ func (n *LinkDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscal
 		}
 		// Skip . and .. — FUSE handles these automatically.
 		if name == "." || name == ".." {
+			continue
+		}
+		// Hide trashed and draft links.
+		if de.Link.IsTrashed() || de.Link.IsDraft() {
 			continue
 		}
 		children[name] = de.Link
@@ -169,7 +188,7 @@ func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, 
 	// Slow path: no retained children (first Lookup before Readdir).
 	slog.Debug("LinkDirNode.Lookup: cache miss, calling API",
 		"linkID", n.link.LinkID(), "name", name)
-	child, err := n.link.Lookup(ctx, name)
+	child, err := n.link.Lookup(context.Background(), name)
 	if err != nil {
 		slog.Debug("LinkDirNode.Lookup: failed",
 			"linkID", n.link.LinkID(), "name", name, "error", err)
@@ -182,12 +201,13 @@ func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, 
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
-// Includes permission bits: 0500 for directories, 0400 for files.
+// Proton Drive has no Unix permission model — use 0555 (read+execute
+// for owner/group/other) matching the CLI's display of "rwxr-xr-x".
 func linkMode(l *drive.Link) uint32 {
 	if l.Type() == proton.LinkTypeFolder {
-		return syscall.S_IFDIR | 0500
+		return syscall.S_IFDIR | 0555
 	}
-	return syscall.S_IFREG | 0400
+	return syscall.S_IFREG | 0555
 }
 
 // linkNode returns the appropriate fusemount.Node for a link based on its type.
@@ -211,7 +231,7 @@ var _ fusemount.Node = (*FileNode)(nil)
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFREG | 0400,
+		Mode:  syscall.S_IFREG | 0555,
 		Size:  uint64(n.link.Size()),
 		Nlink: 1,
 		Mtime: uint64(n.link.ModifyTime()),
@@ -233,7 +253,7 @@ var _ fusemount.DirNode = (*LinkIDDir)(nil)
 // Getattr returns directory attributes for the .linkid virtual directory.
 func (n *LinkIDDir) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0500,
+		Mode:  syscall.S_IFDIR | 0555,
 		Nlink: 2,
 	}, 0
 }

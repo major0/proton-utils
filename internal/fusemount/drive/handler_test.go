@@ -41,8 +41,8 @@ func TestDriveHandler_Getattr(t *testing.T) {
 	if errno != 0 {
 		t.Fatalf("Getattr returned errno %d", errno)
 	}
-	if attr.Mode != syscall.S_IFDIR|0500 {
-		t.Errorf("Mode = %o, want %o", attr.Mode, syscall.S_IFDIR|0500)
+	if attr.Mode != syscall.S_IFDIR|0555 {
+		t.Errorf("Mode = %o, want %o", attr.Mode, syscall.S_IFDIR|0555)
 	}
 	if attr.Nlink != 2 {
 		t.Errorf("Nlink = %d, want 2", attr.Nlink)

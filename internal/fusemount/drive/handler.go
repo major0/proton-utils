@@ -37,7 +37,7 @@ func NewDriveHandler(client *drive.Client) *DriveHandler {
 // Getattr returns attributes for the drive namespace root directory.
 func (h *DriveHandler) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0500,
+		Mode:  syscall.S_IFDIR | 0555,
 		Nlink: 2,
 	}, 0
 }
