@@ -869,16 +869,16 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 
 		// --- Scenario B: DirNode level (child name decryption) ---
 		//
-		// When a child's Name() fails during ListChildren, the error
-		// propagates and the DirNode returns EIO (per Requirement 13.3).
-		// This verifies that decryption failures in children are handled
-		// as API errors at the DirNode level.
+		// When a child's Name() fails during Readdir, the entry is
+		// skipped (per Requirement 13.2). Only children with valid
+		// names appear in the result. No error is returned.
 
 		numGoodChildren := rapid.IntRange(0, 5).Draw(rt, "numGoodChildren")
 		numBadChildren := rapid.IntRange(1, 3).Draw(rt, "numBadChildren")
 
 		pChildren := make([]proton.Link, 0, numGoodChildren+numBadChildren)
 		nameMap := make(map[string]string, numGoodChildren+numBadChildren)
+		var goodChildNames []string
 
 		// Good children: testName set, Name() succeeds.
 		for i := 0; i < numGoodChildren; i++ {
@@ -889,6 +889,7 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 				Type:   proton.LinkTypeFile,
 			})
 			nameMap[linkID] = childName
+			goodChildNames = append(goodChildNames, childName)
 		}
 
 		// Bad children: testName empty (""), Name() fails.
@@ -916,23 +917,39 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 		root = drive.NewTestLink(rootPLink, nil, share, resolver, "root")
 		share.Link = root
 
-		// ShareDirNode.Readdir calls share.ListChildren which calls
-		// Link.ListChildren. When a child with empty testName is
-		// encountered, EntryName() → Name() fails, and ListChildren
-		// propagates the error. The DirNode maps this to EIO.
+		// ShareDirNode.Readdir skips children with decryption errors
+		// and returns only the good children.
 		shareNode := &ShareDirNode{share: share}
-		_, errno = shareNode.Readdir(ctx)
-		if errno != syscall.EIO {
-			rt.Fatalf("ShareDirNode.Readdir with bad children: got errno %d, want EIO (%d)",
-				errno, syscall.EIO)
+		dirEntries, errno := shareNode.Readdir(ctx)
+		if errno != 0 {
+			rt.Fatalf("ShareDirNode.Readdir with bad children: got errno %d, want 0 (bad entries skipped)",
+				errno)
+		}
+		if len(dirEntries) != numGoodChildren {
+			rt.Fatalf("ShareDirNode.Readdir: got %d entries, want %d (bad children skipped)",
+				len(dirEntries), numGoodChildren)
 		}
 
-		// Lookup also fails with EIO when ListChildren fails.
+		// Verify good child names appear.
+		entryNames = make(map[string]bool, len(dirEntries))
+		for _, e := range dirEntries {
+			entryNames[e.Name] = true
+		}
+		for _, name := range goodChildNames {
+			if !entryNames[name] {
+				rt.Fatalf("ShareDirNode.Readdir: missing good child %q", name)
+			}
+		}
+
+		// Lookup for a non-existent name returns ENOENT (not EIO).
 		lookupName := rapid.StringMatching(`[a-z]{3,8}`).Draw(rt, "dirLookupName")
+		for entryNames[lookupName] {
+			lookupName += "_x"
+		}
 		_, errno = shareNode.Lookup(ctx, lookupName)
-		if errno != syscall.EIO {
-			rt.Fatalf("ShareDirNode.Lookup(%q) with bad children: got errno %d, want EIO (%d)",
-				lookupName, errno, syscall.EIO)
+		if errno != syscall.ENOENT {
+			rt.Fatalf("ShareDirNode.Lookup(%q) with bad children: got errno %d, want ENOENT (%d)",
+				lookupName, errno, syscall.ENOENT)
 		}
 
 		// --- Verify DirNode works when all children have valid names ---

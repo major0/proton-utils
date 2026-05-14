@@ -42,52 +42,58 @@ func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno
 	}, 0
 }
 
-// Readdir lists children of the share's root link. Each child's name is
-// decrypted at point of use. Children with decryption errors are skipped.
+// Readdir lists children of the share's root link. Uses the streaming
+// Readdir channel to avoid double-decryption — EntryName() decrypts once
+// and the result is used directly. Children with decryption errors are skipped.
 func (n *ShareDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
-	children, err := n.share.ListChildren(ctx, true)
-	if err != nil {
-		slog.Debug("ShareDirNode.Readdir: ListChildren failed",
-			"shareID", n.share.Metadata().ShareID, "error", err)
-		return nil, apiErrno(err)
-	}
-
-	entries := make([]fusemount.DirEntry, 0, len(children))
-	for _, child := range children {
-		name, err := child.Name()
+	var entries []fusemount.DirEntry
+	for de := range n.share.Link.Readdir(ctx) {
+		if de.Err != nil {
+			slog.Debug("ShareDirNode.Readdir: error from Readdir stream",
+				"shareID", n.share.Metadata().ShareID, "error", de.Err)
+			return nil, apiErrno(de.Err)
+		}
+		name, err := de.EntryName()
 		if err != nil {
 			slog.Debug("ShareDirNode.Readdir: skipping child with decryption error",
-				"linkID", child.LinkID(), "error", err)
+				"error", err)
+			continue
+		}
+		// Skip . and .. — FUSE handles these automatically.
+		if name == "." || name == ".." {
 			continue
 		}
 		entries = append(entries, fusemount.DirEntry{
 			Name: name,
-			Mode: linkMode(child),
+			Mode: linkMode(de.Link),
 		})
 	}
 	return entries, 0
 }
 
-// Lookup finds a child by name within the share root. Iterates children,
-// decrypting names until a match is found (early termination on match).
-// Returns ENOENT if no child matches.
+// Lookup finds a child by name within the share root. Uses the streaming
+// Readdir channel with early termination — cancels remaining work as soon
+// as the match is found. Skips children with decryption errors.
 func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
-	children, err := n.share.ListChildren(ctx, true)
-	if err != nil {
-		slog.Debug("ShareDirNode.Lookup: ListChildren failed",
-			"shareID", n.share.Metadata().ShareID, "error", err)
-		return nil, apiErrno(err)
-	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	for _, child := range children {
-		childName, err := child.Name()
+	for de := range n.share.Link.Readdir(ctx) {
+		if de.Err != nil {
+			slog.Debug("ShareDirNode.Lookup: error from Readdir stream",
+				"shareID", n.share.Metadata().ShareID, "error", de.Err)
+			return nil, apiErrno(de.Err)
+		}
+		entryName, err := de.EntryName()
 		if err != nil {
-			slog.Debug("ShareDirNode.Lookup: skipping child with decryption error",
-				"linkID", child.LinkID(), "error", err)
+			// Skip entries with decryption errors.
 			continue
 		}
-		if childName == name {
-			return linkNode(child, n.client), 0
+		if entryName == "." || entryName == ".." {
+			continue
+		}
+		if entryName == name {
+			return linkNode(de.Link, n.client), 0
 		}
 	}
 	return nil, syscall.ENOENT
@@ -112,52 +118,58 @@ func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno)
 	}, 0
 }
 
-// Readdir lists children of the folder link. Each child's name is
-// decrypted at point of use. Children with decryption errors are skipped.
+// Readdir lists children of the folder link. Uses the streaming Readdir
+// channel to avoid double-decryption — EntryName() decrypts once and the
+// result is used directly. Children with decryption errors are skipped.
 func (n *LinkDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
-	children, err := n.link.ListChildren(ctx, true)
-	if err != nil {
-		slog.Debug("LinkDirNode.Readdir: ListChildren failed",
-			"linkID", n.link.LinkID(), "error", err)
-		return nil, apiErrno(err)
-	}
-
-	entries := make([]fusemount.DirEntry, 0, len(children))
-	for _, child := range children {
-		name, err := child.Name()
+	var entries []fusemount.DirEntry
+	for de := range n.link.Readdir(ctx) {
+		if de.Err != nil {
+			slog.Debug("LinkDirNode.Readdir: error from Readdir stream",
+				"linkID", n.link.LinkID(), "error", de.Err)
+			return nil, apiErrno(de.Err)
+		}
+		name, err := de.EntryName()
 		if err != nil {
 			slog.Debug("LinkDirNode.Readdir: skipping child with decryption error",
-				"linkID", child.LinkID(), "error", err)
+				"error", err)
+			continue
+		}
+		// Skip . and .. — FUSE handles these automatically.
+		if name == "." || name == ".." {
 			continue
 		}
 		entries = append(entries, fusemount.DirEntry{
 			Name: name,
-			Mode: linkMode(child),
+			Mode: linkMode(de.Link),
 		})
 	}
 	return entries, 0
 }
 
-// Lookup finds a child by name within the folder. Iterates children,
-// decrypting names until a match is found (early termination on match).
-// Returns ENOENT if no child matches.
+// Lookup finds a child by name within the folder. Uses the streaming
+// Readdir channel with early termination — cancels remaining work as soon
+// as the match is found. Skips children with decryption errors.
 func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
-	children, err := n.link.ListChildren(ctx, true)
-	if err != nil {
-		slog.Debug("LinkDirNode.Lookup: ListChildren failed",
-			"linkID", n.link.LinkID(), "error", err)
-		return nil, apiErrno(err)
-	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	for _, child := range children {
-		childName, err := child.Name()
+	for de := range n.link.Readdir(ctx) {
+		if de.Err != nil {
+			slog.Debug("LinkDirNode.Lookup: error from Readdir stream",
+				"linkID", n.link.LinkID(), "error", de.Err)
+			return nil, apiErrno(de.Err)
+		}
+		entryName, err := de.EntryName()
 		if err != nil {
-			slog.Debug("LinkDirNode.Lookup: skipping child with decryption error",
-				"linkID", child.LinkID(), "error", err)
+			// Skip entries with decryption errors.
 			continue
 		}
-		if childName == name {
-			return linkNode(child, n.client), 0
+		if entryName == "." || entryName == ".." {
+			continue
+		}
+		if entryName == name {
+			return linkNode(de.Link, n.client), 0
 		}
 	}
 	return nil, syscall.ENOENT
