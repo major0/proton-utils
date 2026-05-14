@@ -34,11 +34,23 @@ func NewObjectCache(basePath string) *ObjectCache {
 
 	dv := diskv.New(diskv.Options{
 		BasePath:     basePath,
-		Transform:    func(_ string) []string { return []string{} },
+		Transform:    prefixTransform,
 		CacheSizeMax: 0, // no in-memory LRU — subsystems manage their own
 		TempDir:      filepath.Join(basePath, ".tmp"),
 	})
 	return &ObjectCache{dv: dv}
+}
+
+// prefixTransform splits keys into a 2-character prefix subdirectory.
+// This prevents filesystem performance degradation when thousands of
+// objects accumulate in the cache (many filesystems degrade with large
+// flat directories). E.g., key "abcdef123" → ["ab"] → stored at
+// basePath/ab/abcdef123.
+func prefixTransform(key string) []string {
+	if len(key) < 2 {
+		return []string{}
+	}
+	return []string{key[:2]}
 }
 
 // Read returns the value for key, or (nil, nil) on cache miss or nil receiver.

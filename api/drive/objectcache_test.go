@@ -185,7 +185,7 @@ func TestPropertyObjectCacheAtomicWrite(t *testing.T) {
 		dir := t.TempDir()
 		cache := api.NewObjectCache(dir)
 
-		key := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "key")
+		key := rapid.StringMatching(`[a-zA-Z0-9_\-]{2,64}`).Draw(rt, "key")
 		data := rapid.SliceOfN(rapid.Byte(), 1, 4096).Draw(rt, "data")
 
 		if err := cache.Write(key, data); err != nil {
@@ -193,7 +193,8 @@ func TestPropertyObjectCacheAtomicWrite(t *testing.T) {
 		}
 
 		// Read the file directly from disk, bypassing diskv's in-memory cache.
-		diskPath := filepath.Join(dir, key)
+		// The prefix transform stores files at <dir>/<2-char-prefix>/<key>.
+		diskPath := filepath.Join(dir, key[:2], key)
 		got, err := os.ReadFile(diskPath) //nolint:gosec // test reads from t.TempDir()
 		if err != nil {
 			rt.Fatalf("os.ReadFile(%q): %v", diskPath, err)
@@ -209,10 +210,10 @@ func TestPropertyObjectCacheAtomicWrite(t *testing.T) {
 	})
 }
 
-// TestPropertyObjectCacheDiskLayout verifies that the flat transform places
-// each cached object at <BasePath>/<key> as a single file with no
-// subdirectories. Erase removes the corresponding file. EraseAll removes all
-// cached files (the .tmp directory may remain).
+// TestPropertyObjectCacheDiskLayout verifies that the prefix transform places
+// each cached object at <BasePath>/<2-char-prefix>/<key> as a single file.
+// Erase removes the corresponding file. EraseAll removes all cached files
+// (the .tmp directory and prefix directories may remain).
 //
 // **Validates: Requirements 1.3**
 func TestPropertyObjectCacheDiskLayout(t *testing.T) {
@@ -220,11 +221,11 @@ func TestPropertyObjectCacheDiskLayout(t *testing.T) {
 		dir := t.TempDir()
 		cache := api.NewObjectCache(dir)
 
-		// Generate 1–10 unique keys with associated data.
+		// Generate 1–10 unique keys (min 2 chars for prefix) with associated data.
 		numKeys := rapid.IntRange(1, 10).Draw(rt, "numKeys")
 		keys := make(map[string][]byte, numKeys)
 		for len(keys) < numKeys {
-			k := rapid.StringMatching(`[a-zA-Z0-9_\-]{1,64}`).Draw(rt, "key")
+			k := rapid.StringMatching(`[a-zA-Z0-9_\-]{2,64}`).Draw(rt, "key")
 			if _, exists := keys[k]; exists {
 				continue
 			}
@@ -238,12 +239,12 @@ func TestPropertyObjectCacheDiskLayout(t *testing.T) {
 			}
 		}
 
-		// Assert each key exists as a flat file at <dir>/<key>.
+		// Assert each key exists at <dir>/<prefix>/<key>.
 		for k, v := range keys {
-			path := filepath.Join(dir, k)
+			path := filepath.Join(dir, k[:2], k)
 			info, err := os.Stat(path)
 			if err != nil {
-				rt.Fatalf("os.Stat(%q): %v — expected flat file at BasePath/<key>", path, err)
+				rt.Fatalf("os.Stat(%q): %v — expected file at BasePath/<prefix>/<key>", path, err)
 			}
 			if info.IsDir() {
 				rt.Fatalf("%q is a directory, expected a regular file", path)
@@ -267,7 +268,7 @@ func TestPropertyObjectCacheDiskLayout(t *testing.T) {
 			rt.Fatalf("Erase(%q): %v", eraseKey, err)
 		}
 
-		erasedPath := filepath.Join(dir, eraseKey)
+		erasedPath := filepath.Join(dir, eraseKey[:2], eraseKey)
 		if _, err := os.Stat(erasedPath); !os.IsNotExist(err) {
 			rt.Fatalf("after Erase(%q): file still exists (err=%v)", eraseKey, err)
 		}
@@ -277,7 +278,7 @@ func TestPropertyObjectCacheDiskLayout(t *testing.T) {
 			if k == eraseKey {
 				continue
 			}
-			path := filepath.Join(dir, k)
+			path := filepath.Join(dir, k[:2], k)
 			if _, err := os.Stat(path); err != nil {
 				rt.Fatalf("after Erase(%q): sibling file %q missing: %v", eraseKey, path, err)
 			}
