@@ -126,6 +126,8 @@ func buildFSOptions(cfg MountConfig) *fs.Options {
 		RootStableAttr: &fs.StableAttr{Ino: 1},
 		EntryTimeout:   &cfg.EntryTimeout,
 		AttrTimeout:    &cfg.AttrTimeout,
+		UID:            uint32(os.Getuid()), //nolint:gosec // UID fits uint32 on Linux
+		GID:            uint32(os.Getgid()), //nolint:gosec // GID fits uint32 on Linux
 	}
 }
 

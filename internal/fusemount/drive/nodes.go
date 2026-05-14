@@ -176,11 +176,12 @@ func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, 
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
+// Includes permission bits: 0500 for directories, 0400 for files.
 func linkMode(l *drive.Link) uint32 {
 	if l.Type() == proton.LinkTypeFolder {
-		return syscall.S_IFDIR
+		return syscall.S_IFDIR | 0500
 	}
-	return syscall.S_IFREG
+	return syscall.S_IFREG | 0400
 }
 
 // linkNode returns the appropriate fusemount.Node for a link based on its type.

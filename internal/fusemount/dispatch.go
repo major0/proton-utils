@@ -27,8 +27,8 @@ type DispatchNode struct {
 	handler NamespaceHandler // always set (for capability checks)
 	node    Node             // nil when isRoot=true
 	isRoot  bool
-	uid     uint32 // owner UID for namespace root nodes
-	gid     uint32 // owner GID for namespace root nodes
+	uid     uint32 // owner UID — propagated to all child nodes
+	gid     uint32 // owner GID — propagated to all child nodes
 }
 
 // Getattr returns file attributes, delegating to the handler or node.
@@ -55,10 +55,8 @@ func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.A
 	out.Mtime = attr.Mtime
 	out.Ctime = attr.Ctime
 	out.Atime = attr.Atime
-	if d.isRoot {
-		out.Uid = d.uid
-		out.Gid = d.gid
-	}
+	out.Uid = d.uid
+	out.Gid = d.gid
 	return 0
 }
 
@@ -104,7 +102,7 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 }
 
 // Lookup finds a child node by name, delegating to the handler or DirNode.
-func (d *DispatchNode) Lookup(ctx context.Context, name string, _ *fuse.EntryOut) (child *fs.Inode, errno syscall.Errno) {
+func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (child *fs.Inode, errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Lookup(%q): %v\n%s", name, r, debug.Stack())
@@ -127,14 +125,23 @@ func (d *DispatchNode) Lookup(ctx context.Context, name string, _ *fuse.EntryOut
 		return nil, errno
 	}
 
-	// Determine mode for the child inode.
+	// Get child attributes and populate EntryOut so the kernel caches
+	// correct mode, uid, gid from the first Lookup response.
 	attr, attrErr := n.Getattr(ctx)
 	mode := uint32(syscall.S_IFREG)
 	if attrErr == 0 {
 		mode = attr.Mode & syscall.S_IFMT
+		out.Mode = attr.Mode
+		out.Size = attr.Size
+		out.Nlink = attr.Nlink
+		out.Mtime = attr.Mtime
+		out.Ctime = attr.Ctime
+		out.Atime = attr.Atime
+		out.Uid = d.uid
+		out.Gid = d.gid
 	}
 
-	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false}
+	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
 	inode := d.NewInode(ctx, childNode, fs.StableAttr{Mode: mode})
 	return inode, 0
 }
@@ -167,7 +174,7 @@ func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mo
 		return nil, nil, 0, errno
 	}
 
-	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false}
+	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
 	child := d.NewInode(ctx, childNode, fs.StableAttr{Mode: syscall.S_IFREG})
 	return child, &dispatchFileHandle{handle: handle}, 0, 0
 }
@@ -199,7 +206,7 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *f
 		return nil, errno
 	}
 
-	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false}
+	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
 	child := d.NewInode(ctx, childNode, fs.StableAttr{Mode: syscall.S_IFDIR})
 	return child, 0
 }

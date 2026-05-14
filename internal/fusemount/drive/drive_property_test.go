@@ -408,9 +408,9 @@ func TestPropertyDirNodeChildOps(t *testing.T) {
 			if !ok {
 				rt.Fatalf("Readdir missing entry for child %q", c.name)
 			}
-			expectedMode := uint32(syscall.S_IFREG)
+			expectedMode := uint32(syscall.S_IFREG | 0400)
 			if c.isDir {
-				expectedMode = syscall.S_IFDIR
+				expectedMode = syscall.S_IFDIR | 0500
 			}
 			if mode != expectedMode {
 				rt.Fatalf("entry %q has mode %o, want %o", c.name, mode, expectedMode)
