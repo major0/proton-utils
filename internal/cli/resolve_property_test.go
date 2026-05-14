@@ -47,7 +47,7 @@ func TestPropertyResolveEntityPriorityChain(t *testing.T) {
 				t.Skip("generated IDs not uniquely resolvable by prefix")
 			}
 
-			names := func(i int) string { return "name" }
+			names := func(_ int) string { return "name" }
 			result, err := ResolveEntity(ids, query, names)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -79,7 +79,7 @@ func TestPropertyResolveEntityPriorityChain(t *testing.T) {
 				t.Skip("not ambiguous by ID")
 			}
 
-			names := func(i int) string { return query } // exact name match exists
+			names := func(_ int) string { return query } // exact name match exists
 			_, err = ResolveEntity(ids, query, names)
 			if err == nil {
 				t.Fatal("expected error for ambiguous ID, got nil")
@@ -124,8 +124,8 @@ func TestPropertyResolveEntityPriorityChain(t *testing.T) {
 
 			nameMap := map[int]string{
 				0: "prefix_" + query + "_suffix", // substring match
-				1: "no match here",
-				2: "also no match",
+				1: "NOPE_ONE",                    // guaranteed no substring match (uppercase)
+				2: "NOPE_TWO",                    // guaranteed no substring match (uppercase)
 			}
 			names := func(i int) string { return nameMap[i] }
 
@@ -175,7 +175,8 @@ func TestPropertyResolveEntityPriorityChain(t *testing.T) {
 			ids := []string{"XXXXXXXX==", "YYYYYYYY=="}
 			query := rapid.StringMatching(`[a-z]{3,6}`).Draw(t, "query")
 
-			names := func(i int) string { return "completely_unrelated_name" }
+			// Use uppercase names that cannot contain a lowercase query as substring.
+			names := func(_ int) string { return "QWRTYP" }
 
 			_, err := ResolveEntity(ids, query, names)
 			if err == nil {
