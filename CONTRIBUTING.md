@@ -1,6 +1,6 @@
 # Contributing
 
-Welcome to the ProtonDrive CLI Project. Here you will find some basic
+Welcome to the Proton Utils project. Here you will find some basic
 information on how to contribute to the project.
 
 ## Reporting Bugs
@@ -24,8 +24,7 @@ See the [installation instructions](https://pre-commit.com/#install) for
 
 ## Roadmap
 
-Please review the [roadmap](Roadmap.md) to see where we are in the project
-and how you might be able to help.
+The project roadmap is tracked via GitHub issues and milestones.
 
 [//]: # (References)
 

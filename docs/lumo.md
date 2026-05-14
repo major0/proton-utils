@@ -68,6 +68,27 @@ proton lumo chat delete <conversation-id>
 
 Deletes the conversation and its parent space if the space is empty.
 
+### View conversation history
+
+```sh
+proton lumo chat log <conversation-id>
+```
+
+Prints the full chat log of a conversation with formatted output.
+
+Options:
+- `--color` — color output: always, auto, or never
+- `--no-pager` — disable automatic paging
+- `--format` — output format (e.g., `json`)
+
+### Copy a conversation
+
+```sh
+proton lumo chat cp <source> [destination]
+```
+
+Copies a conversation to a new or existing space.
+
 ### Interactive mode
 
 Once in a chat session, the following slash commands are available:

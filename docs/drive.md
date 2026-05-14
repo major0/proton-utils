@@ -34,12 +34,20 @@ Options:
 - `-F` — append type indicators (/ for dirs)
 - `-R` — recursive listing
 - `-1` — one entry per line
-- `-x` — sort by extension
+- `-x` — list entries by lines instead of columns
 - `-C` — columnar output
-- `--color` — colorize output
+- `-S` — sort by file size, largest first
+- `-t` — sort by modification time, newest first
+- `-U` — do not sort; list in directory order
+- `-r` — reverse sort order
+- `-i` — show link IDs
+- `--color` — colorize output (auto, always, never)
 - `--trash` — show only trashed entries
-- `--inode` — show link IDs
-- `-v` / `--verbose` — verbose output
+- `--human-readable` — print sizes in human-readable format
+- `--full-time` — like `-l --time-style=full-iso`
+- `--time-style` — time format: full-iso, long-iso, iso
+- `--sort` — sort by: name, size, time, none
+- `--format` — output format: long, single-column, across, columns
 
 ## Finding Files
 
@@ -54,6 +62,13 @@ Options:
 - `-name <pattern>` — match name (glob)
 - `-iname <pattern>` — case-insensitive name match
 - `-maxdepth <n>` — limit traversal depth
+- `-minsize <n>` — minimum file size in bytes
+- `-maxsize <n>` — maximum file size in bytes
+- `-mtime <n>` — modified time in days (negative=within N days, positive=older)
+- `-newer <date>` — match files newer than ISO date (YYYY-MM-DD)
+- `-print0` — separate output with NUL instead of newline
+- `-depth` — process directory contents before the directory itself
+- `-trashed` — include trashed items in results
 
 Examples:
 
@@ -153,5 +168,11 @@ Shows disk usage per volume in df-style output.
 proton drive share list          # list all shares
 proton drive share add <path>    # create share from existing link
 proton drive share del <name>    # delete a share
-proton drive share cache <name>  # view/modify cache settings
+proton drive share show <name>   # show detailed share information
+proton drive share rename <name> <new-name>  # rename a share
+proton drive share invite <name> <email>     # invite a user to a share
+proton drive share revoke <name> <email>     # revoke access to a share
+proton drive share url enable <name>         # enable public URL
+proton drive share url disable <name>        # disable public URL
+proton drive share url password <name>       # manage URL password
 ```

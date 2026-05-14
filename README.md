@@ -1,4 +1,4 @@
-# Proton CLI
+# Proton Utils
 
 A command-line interface for [Proton][] services.
 
@@ -17,6 +17,8 @@ A command-line interface for [Proton][] services.
   cp, mv, mkdir, rm, share management, volume usage
 - **[Proton Lumo](docs/lumo.md)** — AI assistant: interactive chat,
   project spaces, and a local OpenAI-compatible API server
+- **[ProtonFS](docs/protonfs.md)** — per-user FUSE filesystem exposing
+  Proton Drive as a local directory tree (Linux)
 - **Parallelism** — bounded worker pools with shared rate-limit
   throttling; concurrent directory traversal and block I/O
 - **Persistent Bearer sessions** — SRP authentication with automatic
@@ -35,7 +37,7 @@ A command-line interface for [Proton][] services.
 
 ## Installation
 
-Requires Go 1.22+ and Chrome/Chromium (for CAPTCHA during login).
+Requires Go 1.26+ and Chrome/Chromium (for CAPTCHA during login).
 
 ```sh
 git clone https://github.com/major0/proton-utils.git
@@ -56,6 +58,8 @@ make build
 - [Account commands](docs/account.md) — login, logout, session management
 - [Drive commands](docs/drive.md) — file operations, shares, volumes
 - [Lumo commands](docs/lumo.md) — chat, spaces, OpenAI server
+- [ProtonFS](docs/protonfs.md) — FUSE filesystem and redirector
+- [Configuration](docs/config.md) — application settings
 
 ## License
 

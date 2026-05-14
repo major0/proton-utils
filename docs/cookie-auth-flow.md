@@ -156,8 +156,8 @@ Not `application/json`. The vendor type may trigger different server behavior.
 
 Examples: `web-account@5.0.368.0`, `web-lumo@1.3.3.4`
 
-The `+proton-utils` build metadata suffix (semver standard) has not been
-observed to cause issues, but the browser does not use it.
+The `+proton-utils` build metadata suffix (semver standard) is not used.
+Proton Utils sends version strings without any suffix, matching the browser.
 
 ### Bearer Token Invalidation
 
@@ -179,15 +179,15 @@ header with `app=proton-lumo` may influence scope grants.
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `CookieSession` | `api/cookie_session.go` | Cookie-authenticated DoJSON/DoSSE |
-| `CookieTransport` | `api/cookie_transport.go` | http.RoundTripper that strips Bearer |
-| `TransitionToCookies` | `api/cookie_session.go` | POST auth/cookies transition |
-| `CookieSessionFromForkPull` | `api/fork.go` | Child session with CookieTransport |
-| `cookieFork` | `api/fork.go` | Cookie-aware fork push/pull |
-| `CookieLoginSave` | `api/cookie_session.go` | Persist cookie session to keyring |
-| `CookieSessionRestore` | `api/cookie_session.go` | Restore cookie session from keyring |
-| `CreateAnonSession` | `api/anon_session.go` | POST auth/v4/sessions |
-| `loadProtonCookies` | `api/cookie_session.go` | Load cookies with Domain=proton.me |
+| `CookieSession` | `api/account/cookie_session.go` | Cookie-authenticated DoJSON/DoSSE |
+| `CookieTransport` | `api/account/cookie_transport.go` | http.RoundTripper that strips Bearer |
+| `TransitionToCookies` | `api/account/cookie_session.go` | POST auth/cookies transition |
+| `CookieSessionFromForkPull` | `api/account/fork.go` | Child session with CookieTransport |
+| `CookieFork` | `api/account/fork.go` | Cookie-aware fork push/pull |
+| `CookieLoginSave` | `api/account/cookie_session.go` | Persist cookie session to keyring |
+| `CookieSessionRestore` | `api/account/cookie_session.go` | Restore cookie session from keyring |
+| `CreateAnonSession` | `api/account/anon_session.go` | POST auth/v4/sessions |
+| `loadProtonCookies` | `api/account/cookie_session.go` | Load cookies with Domain=proton.me |
 
 ## Implementation Gap
 
@@ -199,7 +199,7 @@ protocol, bypassing `go-proton-api`'s Resty-based login entirely.
 
 ## Architecture Decision: go-proton-api
 
-The cookie login flow can be implemented entirely in `proton-utils`'s `api/`
+The cookie login flow can be implemented entirely in `proton-utils`'s `api/account/`
 package without forking `go-proton-api`. The approach:
 
 - **Cookie login path** (`--cookie-session`): SRP login via `go-srp` +

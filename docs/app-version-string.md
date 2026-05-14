@@ -95,8 +95,8 @@ during authentication:
   injection automatically via `WithAppVersion()`.
 - The version string must match a registered product. Arbitrary strings like
   `myapp@1.0.0` will be rejected with 5002.
-- Pre-release and build metadata in the semver (e.g. `+proton-utils`) are accepted
-  by some products but may trigger CAPTCHA.
+- Build metadata suffixes (e.g. `+proton-utils`) are not used by official clients
+  and may trigger CAPTCHA or auth errors. Proton Utils does not use any suffix.
 
 ## References
 

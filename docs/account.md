@@ -56,11 +56,12 @@ and storage usage.
 ## Status
 
 ```sh
-proton account status
+proton account status [--json]
 ```
 
 Shows session status for all services (account, drive, lumo). Reports
 token age, staleness, and whether each service session is active.
+Use `--json` for machine-readable output.
 
 ## Addresses
 
