@@ -18,7 +18,7 @@ import (
 // Validates: Requirements 1.2
 func TestNoPflagDirectImports(t *testing.T) {
 	// Walk the parent directory (project root).
-	root := filepath.Join("..")
+	root := ".."
 	root, err := filepath.Abs(root)
 	if err != nil {
 		t.Fatalf("abs: %v", err)
