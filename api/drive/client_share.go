@@ -123,13 +123,20 @@ func (c *Client) GetShare(ctx context.Context, id string) (*Share, error) {
 }
 
 // applyShareConfig sets cache levels on a share based on the loaded config.
-// Root and photos shares are always forced to disabled. Looks up the share
-// by its ShareID (not decrypted name).
+// MemoryCacheLevel is always forced to CacheMetadata — the process-lifetime
+// cost of caching decrypted names and keyrings is negligible (the CLI exits
+// immediately, the FUSE daemon needs it for acceptable Readdir/Lookup
+// performance). DiskCacheLevel is still configurable per-share.
 func (c *Client) applyShareConfig(share *Share) {
-	// Root and photos shares: caching prohibited.
+	// Always cache metadata in memory. Without this, every Name() call
+	// re-derives the parent keyring (expensive crypto) and re-decrypts
+	// the name. For a directory with 110 entries that's 110× keyring
+	// derivation per ls.
+	share.MemoryCacheLevel = api.CacheMetadata
+
+	// Root and photos shares: disk caching prohibited (no ShareID in config).
 	st := share.ProtonShare().Type
 	if st == proton.ShareTypeMain || st == ShareTypePhotos {
-		share.MemoryCacheLevel = api.CacheDisabled
 		share.DiskCacheLevel = api.DiskCacheDisabled
 		return
 	}
@@ -143,7 +150,6 @@ func (c *Client) applyShareConfig(share *Share) {
 		return
 	}
 
-	share.MemoryCacheLevel = sc.MemoryCache
 	share.DiskCacheLevel = sc.DiskCache
 }
 

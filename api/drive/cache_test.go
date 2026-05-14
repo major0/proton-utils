@@ -316,14 +316,14 @@ func TestKeyRingNoCacheWhenLinkName(t *testing.T) {
 	}
 }
 
-// TestRootPhotosProhibitCaching_Property verifies that for any ShareConfig
-// toggle combination, root and photos share types should never have caching
-// enabled. This validates the invariant — enforcement is in applyShareConfig
-// (client layer).
+// TestRootPhotosConstructorDefaults verifies that NewShare creates shares
+// with zero-value cache levels (CacheDisabled). The actual cache level is
+// set later by applyShareConfig (which forces CacheMetadata for memory
+// and DiskCacheDisabled for root/photos).
 //
-// **Property 3: Root and photos shares prohibit caching**
+// **Property 3: Share constructor defaults to disabled**
 // **Validates: Requirements 2.5, 2.11**
-func TestRootPhotosProhibitCaching_Property(t *testing.T) {
+func TestRootPhotosConstructorDefaults(t *testing.T) {
 	resolver := &mockLinkResolver{}
 	rootPLink := &proton.Link{LinkID: "root", Type: proton.LinkTypeFolder}
 
@@ -334,11 +334,12 @@ func TestRootPhotosProhibitCaching_Property(t *testing.T) {
 			nil, root, resolver, "",
 		)
 
+		// Constructor defaults — before applyShareConfig is called.
 		if share.MemoryCacheLevel != api.CacheDisabled {
-			t.Fatalf("share type %d: MemoryCacheLevel should be CacheDisabled", st)
+			t.Fatalf("share type %d: constructor MemoryCacheLevel should be CacheDisabled", st)
 		}
 		if share.DiskCacheLevel != api.DiskCacheDisabled {
-			t.Fatalf("share type %d: DiskCacheLevel should be DiskCacheDisabled", st)
+			t.Fatalf("share type %d: constructor DiskCacheLevel should be DiskCacheDisabled", st)
 		}
 	}
 }

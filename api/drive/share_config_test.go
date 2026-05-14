@@ -160,8 +160,9 @@ func TestApplyShareConfig_LinkNameLevel(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.MemoryCacheLevel != api.CacheLinkName {
-		t.Fatalf("MemoryCacheLevel: got %v, want linkname", share.MemoryCacheLevel)
+	// MemoryCacheLevel is always forced to CacheMetadata regardless of config.
+	if share.MemoryCacheLevel != api.CacheMetadata {
+		t.Fatalf("MemoryCacheLevel: got %v, want metadata", share.MemoryCacheLevel)
 	}
 	if share.DiskCacheLevel != api.DiskCacheDisabled {
 		t.Fatalf("DiskCacheLevel: got %v, want disabled", share.DiskCacheLevel)
@@ -180,8 +181,9 @@ func TestApplyShareConfig_NoMatch(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.MemoryCacheLevel != api.CacheDisabled {
-		t.Fatal("MemoryCacheLevel should be disabled for unmatched share")
+	// MemoryCacheLevel is always forced to CacheMetadata regardless of config match.
+	if share.MemoryCacheLevel != api.CacheMetadata {
+		t.Fatalf("MemoryCacheLevel: got %v, want metadata", share.MemoryCacheLevel)
 	}
 	if share.DiskCacheLevel != api.DiskCacheDisabled {
 		t.Fatal("DiskCacheLevel should be disabled for unmatched share")
@@ -190,7 +192,8 @@ func TestApplyShareConfig_NoMatch(t *testing.T) {
 
 func TestApplyShareConfig_RootForced(t *testing.T) {
 	share := testShare("root", proton.ShareTypeMain)
-	// Even with config enabling everything, root should be forced disabled.
+	// Even with config enabling disk cache, root should have disk forced disabled.
+	// Memory cache is always CacheMetadata for all share types.
 	c := &Client{
 		Config: &api.SessionConfig{
 			Shares: map[string]api.ShareConfig{
@@ -204,8 +207,11 @@ func TestApplyShareConfig_RootForced(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.MemoryCacheLevel != api.CacheDisabled || share.DiskCacheLevel != api.DiskCacheDisabled {
-		t.Fatal("root share should have all caches forced disabled")
+	if share.MemoryCacheLevel != api.CacheMetadata {
+		t.Fatalf("root share MemoryCacheLevel: got %v, want metadata", share.MemoryCacheLevel)
+	}
+	if share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("root share should have disk cache forced disabled")
 	}
 }
 
@@ -224,8 +230,11 @@ func TestApplyShareConfig_PhotosForced(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.MemoryCacheLevel != api.CacheDisabled || share.DiskCacheLevel != api.DiskCacheDisabled {
-		t.Fatal("photos share should have all caches forced disabled")
+	if share.MemoryCacheLevel != api.CacheMetadata {
+		t.Fatalf("photos share MemoryCacheLevel: got %v, want metadata", share.MemoryCacheLevel)
+	}
+	if share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("photos share should have disk cache forced disabled")
 	}
 }
 
@@ -235,8 +244,12 @@ func TestApplyShareConfig_NilConfig(t *testing.T) {
 
 	c.applyShareConfig(share)
 
-	if share.MemoryCacheLevel != api.CacheDisabled || share.DiskCacheLevel != api.DiskCacheDisabled {
-		t.Fatal("nil config should leave all caches disabled")
+	// MemoryCacheLevel is always forced to CacheMetadata regardless of config.
+	if share.MemoryCacheLevel != api.CacheMetadata {
+		t.Fatalf("MemoryCacheLevel: got %v, want metadata", share.MemoryCacheLevel)
+	}
+	if share.DiskCacheLevel != api.DiskCacheDisabled {
+		t.Fatal("nil config should leave disk cache disabled")
 	}
 }
 
@@ -255,13 +268,14 @@ func TestBlockStoreNilCache_NoDiskWrites(t *testing.T) {
 	}
 }
 
-// TestPropertyRootPhotosDisabled verifies that regardless of user
-// configuration, Root (main) and Photos shares always have both caches
-// forced to disabled after applyShareConfig.
+// TestPropertyRootPhotosDiskDisabled verifies that regardless of user
+// configuration, Root (main) and Photos shares always have disk cache
+// forced to disabled after applyShareConfig, while memory cache is
+// always CacheMetadata.
 //
-// **Property 10: Root and Photos shares forced disabled**
+// **Property 10: Root and Photos shares disk cache forced disabled**
 // **Validates: Requirement 4.6**
-func TestPropertyRootPhotosDisabled(t *testing.T) {
+func TestPropertyRootPhotosDiskDisabled(t *testing.T) {
 	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{
 		api.CacheDisabled, api.CacheLinkName, api.CacheMetadata,
 	})
@@ -299,9 +313,11 @@ func TestPropertyRootPhotosDisabled(t *testing.T) {
 
 		c.applyShareConfig(share)
 
-		if share.MemoryCacheLevel != api.CacheDisabled {
-			t.Fatalf("share type %d: MemoryCacheLevel = %v, want disabled", st, share.MemoryCacheLevel)
+		// Memory cache is always CacheMetadata for all share types.
+		if share.MemoryCacheLevel != api.CacheMetadata {
+			t.Fatalf("share type %d: MemoryCacheLevel = %v, want metadata", st, share.MemoryCacheLevel)
 		}
+		// Disk cache is forced disabled for root/photos shares.
 		if share.DiskCacheLevel != api.DiskCacheDisabled {
 			t.Fatalf("share type %d: DiskCacheLevel = %v, want disabled", st, share.DiskCacheLevel)
 		}
@@ -311,14 +327,12 @@ func TestPropertyRootPhotosDisabled(t *testing.T) {
 // TestPropertyConfigKeyingPreservesSettingsAcrossRename verifies that
 // config entries keyed by ShareID survive a share rename (name change).
 // Since applyShareConfig looks up by ShareID, changing the share's
-// decrypted name has no effect on config resolution.
+// decrypted name has no effect on config resolution. DiskCacheLevel
+// follows config; MemoryCacheLevel is always CacheMetadata.
 //
 // **Property 5: Config keying preserves settings across rename**
 // **Validates: Requirements 5.1, 6.1**
 func TestPropertyConfigKeyingPreservesSettingsAcrossRename(t *testing.T) {
-	memoryLevelGen := rapid.SampledFrom([]api.MemoryCacheLevel{
-		api.CacheDisabled, api.CacheLinkName, api.CacheMetadata,
-	})
 	diskLevelGen := rapid.SampledFrom([]api.DiskCacheLevel{
 		api.DiskCacheDisabled, api.DiskCacheObjectStore,
 	})
@@ -327,7 +341,6 @@ func TestPropertyConfigKeyingPreservesSettingsAcrossRename(t *testing.T) {
 		shareID := rapid.StringMatching(`[a-zA-Z0-9]{8,20}`).Draw(t, "shareID")
 		oldName := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{2,15}`).Draw(t, "oldName")
 		newName := rapid.StringMatching(`[a-zA-Z][a-zA-Z0-9 ]{2,15}`).Draw(t, "newName")
-		memLevel := memoryLevelGen.Draw(t, "memoryLevel")
 		diskLevel := diskLevelGen.Draw(t, "diskLevel")
 
 		// Create a share with the old name and the given ShareID.
@@ -338,8 +351,7 @@ func TestPropertyConfigKeyingPreservesSettingsAcrossRename(t *testing.T) {
 			Config: &api.SessionConfig{
 				Shares: map[string]api.ShareConfig{
 					shareID: {
-						MemoryCache: memLevel,
-						DiskCache:   diskLevel,
+						DiskCache: diskLevel,
 					},
 				},
 			},
@@ -348,8 +360,8 @@ func TestPropertyConfigKeyingPreservesSettingsAcrossRename(t *testing.T) {
 		// Apply config — should match by ShareID.
 		c.applyShareConfig(share)
 
-		if share.MemoryCacheLevel != memLevel {
-			t.Fatalf("before rename: MemoryCacheLevel = %v, want %v", share.MemoryCacheLevel, memLevel)
+		if share.MemoryCacheLevel != api.CacheMetadata {
+			t.Fatalf("before rename: MemoryCacheLevel = %v, want metadata", share.MemoryCacheLevel)
 		}
 		if share.DiskCacheLevel != diskLevel {
 			t.Fatalf("before rename: DiskCacheLevel = %v, want %v", share.DiskCacheLevel, diskLevel)
@@ -361,8 +373,8 @@ func TestPropertyConfigKeyingPreservesSettingsAcrossRename(t *testing.T) {
 		// Apply config again — should still match by ShareID.
 		c.applyShareConfig(renamedShare)
 
-		if renamedShare.MemoryCacheLevel != memLevel {
-			t.Fatalf("after rename: MemoryCacheLevel = %v, want %v", renamedShare.MemoryCacheLevel, memLevel)
+		if renamedShare.MemoryCacheLevel != api.CacheMetadata {
+			t.Fatalf("after rename: MemoryCacheLevel = %v, want metadata", renamedShare.MemoryCacheLevel)
 		}
 		if renamedShare.DiskCacheLevel != diskLevel {
 			t.Fatalf("after rename: DiskCacheLevel = %v, want %v", renamedShare.DiskCacheLevel, diskLevel)
