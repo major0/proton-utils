@@ -37,6 +37,8 @@ func NewObjectCache(basePath string) *ObjectCache {
 		Transform:    prefixTransform,
 		CacheSizeMax: 0, // no in-memory LRU — subsystems manage their own
 		TempDir:      filepath.Join(basePath, ".tmp"),
+		PathPerm:     0700, // owner-only directories — cache contains sensitive encrypted data
+		FilePerm:     0600, // owner-only files — no group/other access
 	})
 	return &ObjectCache{dv: dv}
 }
