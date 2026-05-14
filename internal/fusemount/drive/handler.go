@@ -1,0 +1,169 @@
+//go:build linux
+
+// Package drive implements the fusemount.NamespaceHandler for Proton Drive,
+// exposing shares as a read-only directory tree under the "drive" namespace.
+package drive
+
+import (
+	"context"
+	"log/slog"
+	"sync"
+	"syscall"
+
+	"github.com/ProtonMail/go-proton-api"
+	"github.com/major0/proton-utils/api/drive"
+	"github.com/major0/proton-utils/internal/fusemount"
+)
+
+// DriveHandler implements fusemount.NamespaceHandler for the "drive" namespace.
+// It exposes Proton Drive shares as top-level directories.
+type DriveHandler struct { //nolint:revive // name specified by design doc
+	client   *drive.Client
+	shares   map[string]*drive.Share // keyed by ShareID
+	sharesMu sync.RWMutex
+}
+
+// Compile-time interface assertion.
+var _ fusemount.NamespaceHandler = (*DriveHandler)(nil)
+
+// NewDriveHandler constructs a DriveHandler with the given drive client.
+func NewDriveHandler(client *drive.Client) *DriveHandler {
+	return &DriveHandler{
+		client: client,
+		shares: make(map[string]*drive.Share),
+	}
+}
+
+// Getattr returns attributes for the drive namespace root directory.
+func (h *DriveHandler) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
+	return fusemount.Attr{
+		Mode:  syscall.S_IFDIR | 0500,
+		Nlink: 2,
+	}, 0
+}
+
+// Readdir lists shares as directory entries under the drive namespace root.
+// Device shares are excluded. Standard shares use their decrypted name
+// (via GetName). Shares where decryption fails are silently skipped.
+func (h *DriveHandler) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
+	h.sharesMu.RLock()
+	defer h.sharesMu.RUnlock()
+
+	entries := make([]fusemount.DirEntry, 0, len(h.shares)+2)
+
+	for _, share := range h.shares {
+		st := share.ProtonShare().Type
+
+		switch st {
+		case proton.ShareTypeMain:
+			entries = append(entries, fusemount.DirEntry{
+				Name: "Home",
+				Mode: syscall.S_IFDIR,
+			})
+		case drive.ShareTypePhotos:
+			entries = append(entries, fusemount.DirEntry{
+				Name: "Photos",
+				Mode: syscall.S_IFDIR,
+			})
+		case proton.ShareTypeStandard:
+			name, err := share.GetName(ctx)
+			if err != nil {
+				slog.Debug("drive.Readdir: skipping share with decryption error",
+					"shareID", share.Metadata().ShareID)
+				continue
+			}
+			entries = append(entries, fusemount.DirEntry{
+				Name: name,
+				Mode: syscall.S_IFDIR,
+			})
+		case proton.ShareTypeDevice:
+			// Excluded from listing.
+			continue
+		default:
+			continue
+		}
+	}
+
+	// Virtual .linkid directory entry.
+	entries = append(entries, fusemount.DirEntry{
+		Name: ".linkid",
+		Mode: syscall.S_IFDIR,
+	})
+
+	return entries, 0
+}
+
+// Lookup resolves a name to a node within the drive namespace root.
+// "Home" maps to the main share, "Photos" to the photos share,
+// ".linkid" to the LinkID virtual directory, and standard share names
+// are resolved via O(N) decryption scan.
+func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
+	h.sharesMu.RLock()
+	defer h.sharesMu.RUnlock()
+
+	switch name {
+	case "Home":
+		for _, share := range h.shares {
+			if share.ProtonShare().Type == proton.ShareTypeMain {
+				return &ShareDirNode{share: share, client: h.client}, 0
+			}
+		}
+		return nil, syscall.ENOENT
+
+	case "Photos":
+		for _, share := range h.shares {
+			if share.ProtonShare().Type == drive.ShareTypePhotos {
+				return &ShareDirNode{share: share, client: h.client}, 0
+			}
+		}
+		return nil, syscall.ENOENT
+
+	case ".linkid":
+		return &LinkIDDir{client: h.client}, 0
+	}
+
+	// O(N) scan for standard shares by decrypted name.
+	for _, share := range h.shares {
+		if share.ProtonShare().Type != proton.ShareTypeStandard {
+			continue
+		}
+		shareName, err := share.GetName(ctx)
+		if err != nil {
+			continue
+		}
+		if shareName == name {
+			return &ShareDirNode{share: share, client: h.client}, 0
+		}
+	}
+
+	return nil, syscall.ENOENT
+}
+
+// LoadShares populates the internal share map at startup by listing all
+// share metadata and resolving each non-device share.
+func (h *DriveHandler) LoadShares(ctx context.Context) error {
+	metas, err := h.client.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	shares := make(map[string]*drive.Share, len(metas))
+	for _, meta := range metas {
+		if meta.Type == proton.ShareTypeDevice {
+			continue
+		}
+		share, err := h.client.GetShare(ctx, meta.ShareID)
+		if err != nil {
+			slog.Warn("drive.LoadShares: skipping share",
+				"shareID", meta.ShareID, "error", err)
+			continue
+		}
+		shares[meta.ShareID] = share
+	}
+
+	h.sharesMu.Lock()
+	h.shares = shares
+	h.sharesMu.Unlock()
+
+	return nil
+}

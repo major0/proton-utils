@@ -131,12 +131,19 @@ func (c *Client) InternalBlockStore() blockStore {
 	return c.blockStore
 }
 
-// getLink returns the *Link for linkID from the table, or nil if absent.
+// GetLink returns the *Link for linkID from the Link Table, or nil if
+// absent. This is the exported accessor for O(1) link resolution by ID.
 // Takes a read lock — concurrent reads are allowed.
-func (c *Client) getLink(linkID string) *Link {
+func (c *Client) GetLink(linkID string) *Link {
 	c.tableMu.RLock()
 	defer c.tableMu.RUnlock()
 	return c.linkTable[linkID]
+}
+
+// getLink returns the *Link for linkID from the table, or nil if absent.
+// Takes a read lock — concurrent reads are allowed.
+func (c *Client) getLink(linkID string) *Link {
+	return c.GetLink(linkID)
 }
 
 // GetCachedLink fetches a raw proton.Link by ID. This is the single
