@@ -124,6 +124,85 @@ func TestDispatchNodeGetattr_ChildNode(t *testing.T) {
 	}
 }
 
+func TestDispatchNodeGetattr_TimestampPropagation(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockNode{attr: Attr{
+		Mode:  syscall.S_IFREG | 0400,
+		Size:  1024,
+		Nlink: 1,
+		Mtime: 1700000000,
+		Ctime: 1699000000,
+		Atime: 1700100000,
+	}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	var out fuse.AttrOut
+	errno := d.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Mtime != 1700000000 {
+		t.Errorf("Mtime = %d, want 1700000000", out.Mtime)
+	}
+	if out.Ctime != 1699000000 {
+		t.Errorf("Ctime = %d, want 1699000000", out.Ctime)
+	}
+	if out.Atime != 1700100000 {
+		t.Errorf("Atime = %d, want 1700100000", out.Atime)
+	}
+}
+
+func TestDispatchNodeGetattr_ZeroTimestamps(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockNode{attr: Attr{
+		Mode:  syscall.S_IFDIR | 0500,
+		Nlink: 2,
+		// Mtime, Ctime, Atime left at zero (default).
+	}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	var out fuse.AttrOut
+	errno := d.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Mtime != 0 {
+		t.Errorf("Mtime = %d, want 0 (not set)", out.Mtime)
+	}
+	if out.Ctime != 0 {
+		t.Errorf("Ctime = %d, want 0 (not set)", out.Ctime)
+	}
+	if out.Atime != 0 {
+		t.Errorf("Atime = %d, want 0 (not set)", out.Atime)
+	}
+}
+
+func TestDispatchNodeGetattr_TimestampPropagation_RootHandler(t *testing.T) {
+	h := &mockHandler{attr: Attr{
+		Mode:  syscall.S_IFDIR | 0755,
+		Nlink: 2,
+		Mtime: 1680000000,
+		Ctime: 1670000000,
+		Atime: 1685000000,
+	}}
+	d := &DispatchNode{handler: h, isRoot: true}
+
+	var out fuse.AttrOut
+	errno := d.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Mtime != 1680000000 {
+		t.Errorf("Mtime = %d, want 1680000000", out.Mtime)
+	}
+	if out.Ctime != 1670000000 {
+		t.Errorf("Ctime = %d, want 1670000000", out.Ctime)
+	}
+	if out.Atime != 1685000000 {
+		t.Errorf("Atime = %d, want 1685000000", out.Atime)
+	}
+}
+
 func TestDispatchNodeReaddir_NamespaceRoot(t *testing.T) {
 	h := &mockHandler{entries: []DirEntry{
 		{Name: "file1.txt", Mode: syscall.S_IFREG},

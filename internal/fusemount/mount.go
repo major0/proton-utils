@@ -113,6 +113,21 @@ func CleanStaleMount(path string) error {
 	return nil
 }
 
+// buildFSOptions constructs the go-fuse fs.Options from a MountConfig.
+// Extracted for testability — the timeout wiring can be verified without
+// requiring /dev/fuse.
+func buildFSOptions(cfg MountConfig) *fs.Options {
+	return &fs.Options{
+		MountOptions: fuse.MountOptions{
+			FsName: "proton-fuse",
+			Name:   "proton-fuse",
+		},
+		RootStableAttr: &fs.StableAttr{Ino: 1},
+		EntryTimeout:   &cfg.EntryTimeout,
+		AttrTimeout:    &cfg.AttrTimeout,
+	}
+}
+
 // Mount creates and starts the per-user FUSE server. It ensures the mount
 // directory exists, cleans any stale mount, and starts the FUSE server with
 // the given registry as the root filesystem.
@@ -133,15 +148,7 @@ func Mount(cfg MountConfig, registry *NamespaceRegistry) (*fuse.Server, error) {
 		return nil, fmt.Errorf("stat mountpoint: %w", err)
 	}
 
-	opts := &fs.Options{
-		MountOptions: fuse.MountOptions{
-			FsName: "proton-fuse",
-			Name:   "proton-fuse",
-		},
-		RootStableAttr: &fs.StableAttr{Ino: 1},
-		EntryTimeout:   &cfg.EntryTimeout,
-		AttrTimeout:    &cfg.AttrTimeout,
-	}
+	opts := buildFSOptions(cfg)
 
 	server, err := fs.Mount(cfg.Mountpoint, NewRoot(registry, mountInfo), opts)
 	if err != nil {

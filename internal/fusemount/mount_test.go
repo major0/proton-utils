@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEnsureMountDir_CreatesWithCorrectMode(t *testing.T) {
@@ -141,5 +142,114 @@ func TestDetectStaleMount_VariousFormats(t *testing.T) {
 				t.Errorf("detectStaleMountFrom() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMountConfig_ZeroTimeouts(t *testing.T) {
+	cfg := MountConfig{
+		Mountpoint: "/run/user/1000/proton/fs",
+	}
+
+	// Zero-value timeouts mean "kernel default" — verify they are zero.
+	if cfg.EntryTimeout != 0 {
+		t.Errorf("EntryTimeout = %v, want 0 (kernel default)", cfg.EntryTimeout)
+	}
+	if cfg.AttrTimeout != 0 {
+		t.Errorf("AttrTimeout = %v, want 0 (kernel default)", cfg.AttrTimeout)
+	}
+}
+
+func TestMountConfig_ExplicitTimeouts(t *testing.T) {
+	cfg := MountConfig{
+		Mountpoint:   "/run/user/1000/proton/fs",
+		EntryTimeout: 2 * time.Second,
+		AttrTimeout:  3 * time.Second,
+	}
+
+	if cfg.EntryTimeout != 2*time.Second {
+		t.Errorf("EntryTimeout = %v, want 2s", cfg.EntryTimeout)
+	}
+	if cfg.AttrTimeout != 3*time.Second {
+		t.Errorf("AttrTimeout = %v, want 3s", cfg.AttrTimeout)
+	}
+}
+
+func TestMountConfig_TimeoutFieldsIndependent(t *testing.T) {
+	cfg := MountConfig{
+		Mountpoint:   "/run/user/1000/proton/fs",
+		EntryTimeout: 5 * time.Second,
+		// AttrTimeout left at zero.
+	}
+
+	if cfg.EntryTimeout != 5*time.Second {
+		t.Errorf("EntryTimeout = %v, want 5s", cfg.EntryTimeout)
+	}
+	if cfg.AttrTimeout != 0 {
+		t.Errorf("AttrTimeout = %v, want 0 (kernel default)", cfg.AttrTimeout)
+	}
+}
+
+func TestBuildFSOptions_TimeoutWiring(t *testing.T) {
+	cfg := MountConfig{
+		Mountpoint:   "/run/user/1000/proton/fs",
+		EntryTimeout: 2 * time.Second,
+		AttrTimeout:  3 * time.Second,
+	}
+
+	opts := buildFSOptions(cfg)
+
+	if opts.EntryTimeout == nil {
+		t.Fatal("EntryTimeout pointer is nil")
+	}
+	if *opts.EntryTimeout != 2*time.Second {
+		t.Errorf("fs.Options.EntryTimeout = %v, want 2s", *opts.EntryTimeout)
+	}
+	if opts.AttrTimeout == nil {
+		t.Fatal("AttrTimeout pointer is nil")
+	}
+	if *opts.AttrTimeout != 3*time.Second {
+		t.Errorf("fs.Options.AttrTimeout = %v, want 3s", *opts.AttrTimeout)
+	}
+}
+
+func TestBuildFSOptions_ZeroTimeoutWiring(t *testing.T) {
+	cfg := MountConfig{
+		Mountpoint: "/run/user/1000/proton/fs",
+		// EntryTimeout and AttrTimeout left at zero.
+	}
+
+	opts := buildFSOptions(cfg)
+
+	if opts.EntryTimeout == nil {
+		t.Fatal("EntryTimeout pointer is nil")
+	}
+	if *opts.EntryTimeout != 0 {
+		t.Errorf("fs.Options.EntryTimeout = %v, want 0 (kernel default)", *opts.EntryTimeout)
+	}
+	if opts.AttrTimeout == nil {
+		t.Fatal("AttrTimeout pointer is nil")
+	}
+	if *opts.AttrTimeout != 0 {
+		t.Errorf("fs.Options.AttrTimeout = %v, want 0 (kernel default)", *opts.AttrTimeout)
+	}
+}
+
+func TestBuildFSOptions_MountOptions(t *testing.T) {
+	cfg := MountConfig{
+		Mountpoint:   "/run/user/1000/proton/fs",
+		EntryTimeout: time.Second,
+		AttrTimeout:  time.Second,
+	}
+
+	opts := buildFSOptions(cfg)
+
+	if opts.FsName != "proton-fuse" {
+		t.Errorf("FsName = %q, want %q", opts.FsName, "proton-fuse")
+	}
+	if opts.Name != "proton-fuse" {
+		t.Errorf("Name = %q, want %q", opts.Name, "proton-fuse")
+	}
+	if opts.RootStableAttr == nil || opts.RootStableAttr.Ino != 1 {
+		t.Errorf("RootStableAttr.Ino = %v, want 1", opts.RootStableAttr)
 	}
 }
