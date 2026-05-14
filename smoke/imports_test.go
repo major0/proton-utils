@@ -28,10 +28,12 @@ func TestNoPflagDirectImports(t *testing.T) {
 	fset := token.NewFileSet()
 
 	// allowedFiles lists files that legitimately import pflag because they
-	// implement the custom flag type wrappers (BoolFunc, BoolFuncP, etc.).
+	// implement the custom flag type wrappers (BoolFunc, BoolFuncP, etc.)
+	// or use pflag directly for CLI flag parsing (the daemon binary).
 	allowedFiles := map[string]bool{
 		filepath.Join("internal", "cli", "flags.go"):      true,
 		filepath.Join("internal", "cli", "flags_test.go"): true,
+		filepath.Join("cmd", "proton-fuse", "main.go"):    true,
 	}
 
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
