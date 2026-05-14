@@ -34,7 +34,7 @@ func TestSymlinkTarget(t *testing.T) {
 }
 
 func TestRedirectorRoot_Getattr(t *testing.T) {
-	root := &RedirectorRoot{}
+	root := &Root{}
 	var out fuse.AttrOut
 	errno := root.Getattr(context.TODO(), nil, &out)
 	if errno != 0 {
@@ -50,7 +50,7 @@ func TestRedirectorRoot_Getattr(t *testing.T) {
 }
 
 func TestRedirectorRoot_Readdir(t *testing.T) {
-	root := &RedirectorRoot{}
+	root := &Root{}
 	stream, errno := root.Readdir(context.TODO())
 	if errno != 0 {
 		t.Fatalf("Readdir returned errno %d", errno)

@@ -9,10 +9,10 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-// NewRoot returns a new RedirectorRoot node for use as the FUSE root.
+// NewRoot returns a new Root node for use as the FUSE root.
 // The info parameter provides timestamps from the mountpoint directory.
-func NewRoot(info os.FileInfo) *RedirectorRoot {
-	return &RedirectorRoot{mtime: info.ModTime()}
+func NewRoot(info os.FileInfo) *Root {
+	return &Root{mtime: info.ModTime()}
 }
 
 // Mount creates and starts the redirector FUSE server at the given mountpoint.

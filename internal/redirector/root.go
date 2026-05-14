@@ -17,21 +17,21 @@ import (
 )
 
 // Compile-time interface assertions.
-var _ = (fs.NodeGetattrer)((*RedirectorRoot)(nil))
-var _ = (fs.NodeLookuper)((*RedirectorRoot)(nil))
-var _ = (fs.NodeReaddirer)((*RedirectorRoot)(nil))
+var _ = (fs.NodeGetattrer)((*Root)(nil))
+var _ = (fs.NodeLookuper)((*Root)(nil))
+var _ = (fs.NodeReaddirer)((*Root)(nil))
 var _ = (fs.NodeReadlinker)((*SymlinkNode)(nil))
 var _ = (fs.NodeGetattrer)((*SymlinkNode)(nil))
 
-// RedirectorRoot implements the /proton FUSE root directory.
+// Root implements the /proton FUSE root directory.
 // Every Lookup returns a symlink to /run/user/<uid>/proton/fs/<name>.
-type RedirectorRoot struct {
+type Root struct {
 	fs.Inode
 	mtime time.Time // mountpoint mtime, used for atime/mtime/ctime
 }
 
 // Getattr returns directory attributes for the redirector root.
-func (r *RedirectorRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (r *Root) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFDIR | 0555
 	out.Nlink = 2
 	out.Ino = 1
@@ -50,7 +50,7 @@ func (r *RedirectorRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fus
 // user's per-user mount directory to discover registered namespaces and
 // returns them as symlink entries. Falls back to just . and .. if the
 // per-user mount is not available.
-func (r *RedirectorRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+func (r *Root) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	dirEntries := []fuse.DirEntry{
 		{Name: ".", Mode: syscall.S_IFDIR, Ino: 1},
 		{Name: "..", Mode: syscall.S_IFDIR},
@@ -74,7 +74,7 @@ func (r *RedirectorRoot) Readdir(ctx context.Context) (fs.DirStream, syscall.Err
 
 // Lookup returns a symlink node pointing to the calling user's per-user mount.
 // Returns ENOENT for UID 0 or when called outside a FUSE context.
-func (r *RedirectorRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (r *Root) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	caller, _ := fuse.FromContext(ctx)
 	if caller == nil || caller.Uid == 0 {
 		return nil, syscall.ENOENT
@@ -86,7 +86,7 @@ func (r *RedirectorRoot) Lookup(ctx context.Context, name string, out *fuse.Entr
 	return child, 0
 }
 
-// SymlinkNode represents a symlink returned by RedirectorRoot.Lookup.
+// SymlinkNode represents a symlink returned by Root.Lookup.
 type SymlinkNode struct {
 	fs.Inode
 	target string
