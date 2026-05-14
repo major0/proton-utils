@@ -249,6 +249,9 @@ func TestBuildFSOptions_MountOptions(t *testing.T) {
 	if opts.Name != "proton-fuse" {
 		t.Errorf("Name = %q, want %q", opts.Name, "proton-fuse")
 	}
+	if !opts.AllowOther {
+		t.Error("AllowOther = false, want true")
+	}
 	if opts.RootStableAttr == nil || opts.RootStableAttr.Ino != 1 {
 		t.Errorf("RootStableAttr.Ino = %v, want 1", opts.RootStableAttr)
 	}

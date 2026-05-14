@@ -119,8 +119,9 @@ func CleanStaleMount(path string) error {
 func buildFSOptions(cfg MountConfig) *fs.Options {
 	return &fs.Options{
 		MountOptions: fuse.MountOptions{
-			FsName: "proton-fuse",
-			Name:   "proton-fuse",
+			FsName:     "proton-fuse",
+			Name:       "proton-fuse",
+			AllowOther: true,
 		},
 		RootStableAttr: &fs.StableAttr{Ino: 1},
 		EntryTimeout:   &cfg.EntryTimeout,
