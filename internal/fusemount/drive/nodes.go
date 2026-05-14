@@ -81,11 +81,15 @@ func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node,
 	// Fast path: child retained from last Readdir.
 	if n.children != nil {
 		if child, ok := n.children[name]; ok {
+			slog.Debug("ShareDirNode.Lookup: cache hit",
+				"shareID", n.share.Metadata().ShareID, "name", name)
 			return linkNode(child, n.client), 0
 		}
 	}
 
 	// Slow path: no retained children (first Lookup before Readdir).
+	slog.Debug("ShareDirNode.Lookup: cache miss, calling API",
+		"shareID", n.share.Metadata().ShareID, "name", name)
 	child, err := n.share.Link.Lookup(ctx, name)
 	if err != nil {
 		slog.Debug("ShareDirNode.Lookup: failed",
@@ -156,11 +160,15 @@ func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, 
 	// Fast path: child retained from last Readdir.
 	if n.children != nil {
 		if child, ok := n.children[name]; ok {
+			slog.Debug("LinkDirNode.Lookup: cache hit",
+				"linkID", n.link.LinkID(), "name", name)
 			return linkNode(child, n.client), 0
 		}
 	}
 
 	// Slow path: no retained children (first Lookup before Readdir).
+	slog.Debug("LinkDirNode.Lookup: cache miss, calling API",
+		"linkID", n.link.LinkID(), "name", name)
 	child, err := n.link.Lookup(ctx, name)
 	if err != nil {
 		slog.Debug("LinkDirNode.Lookup: failed",
