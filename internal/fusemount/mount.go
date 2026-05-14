@@ -128,18 +128,21 @@ func buildFSOptions(cfg MountConfig) *fs.Options {
 	}
 }
 
-// Mount creates and starts the per-user FUSE server. It ensures the mount
-// directory exists, cleans any stale mount, and starts the FUSE server with
-// the given registry as the root filesystem.
+// Mount creates and starts the per-user FUSE server. It detects and cleans
+// any stale mount, ensures the mount directory exists, and starts the FUSE
+// server with the given registry as the root filesystem.
 func Mount(cfg MountConfig, registry *NamespaceRegistry) (*fuse.Server, error) {
-	if err := EnsureMountDir(cfg.Mountpoint); err != nil {
-		return nil, fmt.Errorf("ensuring mount directory: %w", err)
-	}
-
+	// Clean stale mounts first — a dead FUSE mount at the path causes
+	// MkdirAll to fail with "file exists" because the kernel reports the
+	// mountpoint as existing but inaccessible.
 	if DetectStaleMount(cfg.Mountpoint) {
 		if err := CleanStaleMount(cfg.Mountpoint); err != nil {
 			return nil, fmt.Errorf("cleaning stale mount: %w", err)
 		}
+	}
+
+	if err := EnsureMountDir(cfg.Mountpoint); err != nil {
+		return nil, fmt.Errorf("ensuring mount directory: %w", err)
 	}
 
 	// Stat the mountpoint before mounting to capture timestamps.
