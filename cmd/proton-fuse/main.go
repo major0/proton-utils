@@ -11,8 +11,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -196,6 +198,10 @@ const responseHeaderTimeout = 30 * time.Second
 // ensuring freshness for a network-backed filesystem.
 const fuseCacheTimeout = 1 * time.Second
 
+// refreshInterval is the period between share refresh and proactive token
+// refresh checks. Both tasks run on the same ticker to simplify shutdown.
+const refreshInterval = 5 * time.Minute
+
 // requestTimeoutHook sets ResponseHeaderTimeout on the default transport
 // so individual API calls time out on dead connections. Body transfers
 // (uploads/downloads) are unaffected.
@@ -350,7 +356,66 @@ func run(cfg daemonConfig) error {
 
 	slog.Info("proton-fuse ready", "mountpoint", cfg.mountpoint, "account", acctName)
 
-	// Block until the FUSE server is done. Signal handling is task 5.1.
+	// Step 12: Start combined refresh goroutine.
+	// Initialize lastRefresh from persisted credentials.
+	creds, err := store.Load()
+	var lastRefresh time.Time
+	if err == nil && creds != nil {
+		lastRefresh = creds.LastRefresh
+	}
+
+	refreshCtx, refreshCancel := context.WithCancel(context.Background())
+	refreshDone := make(chan struct{})
+	go func() {
+		defer close(refreshDone)
+		startRefreshLoop(refreshCtx, handler, session, lastRefresh)
+	}()
+
+	// Step 13: Signal wait — SIGTERM/SIGINT triggers graceful shutdown.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	<-sigCh
+
+	slog.Info("shutdown signal received, stopping")
+
+	// Cancel refresh goroutine first.
+	refreshCancel()
+	<-refreshDone
+
+	// Unmount and wait for in-flight FUSE operations.
+	if err := server.Unmount(); err != nil {
+		return fmt.Errorf("unmount: %w", err)
+	}
 	server.Wait()
 	return nil
+}
+
+// startRefreshLoop runs the combined share refresh and proactive token
+// refresh on a periodic ticker. It blocks until ctx is cancelled.
+func startRefreshLoop(ctx context.Context, handler *fusedrv.DriveHandler, session *api.Session, lastRefresh time.Time) {
+	ticker := time.NewTicker(refreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Share refresh.
+			if err := handler.RefreshShares(ctx); err != nil {
+				slog.Warn("share refresh failed", "error", err)
+			}
+
+			// Proactive token refresh — trigger a lightweight API call
+			// if the session's token age exceeds the threshold.
+			if account.NeedsProactiveRefresh(lastRefresh) {
+				if _, err := session.Client.GetUser(ctx); err != nil {
+					slog.Warn("proactive token refresh failed", "error", err)
+				} else {
+					slog.Debug("proactive token refresh succeeded")
+					lastRefresh = time.Now()
+				}
+			}
+		}
+	}
 }

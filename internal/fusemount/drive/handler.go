@@ -167,3 +167,43 @@ func (h *DriveHandler) LoadShares(ctx context.Context) error {
 
 	return nil
 }
+
+// RefreshShares re-lists shares from the API and swaps the internal map
+// under a write lock. On API failure the existing map is retained and an
+// error is returned. Individual share resolution failures are logged and
+// skipped — the remaining shares are still updated.
+func (h *DriveHandler) RefreshShares(ctx context.Context) error {
+	metas, err := h.client.ListSharesMetadata(ctx, true)
+	if err != nil {
+		return err
+	}
+
+	shares := make(map[string]*drive.Share, len(metas))
+	for _, meta := range metas {
+		if meta.Type == proton.ShareTypeDevice {
+			continue
+		}
+		share, err := h.client.GetShare(ctx, meta.ShareID)
+		if err != nil {
+			slog.Warn("drive.RefreshShares: skipping share",
+				"shareID", meta.ShareID, "error", err)
+			continue
+		}
+		shares[meta.ShareID] = share
+	}
+
+	h.sharesMu.Lock()
+	h.shares = shares
+	h.sharesMu.Unlock()
+
+	slog.Debug("drive.RefreshShares: updated share map", "count", len(shares))
+	return nil
+}
+
+// SetShares replaces the internal share map under a write lock. This is
+// exported for testing (simulating refresh without a real API client).
+func (h *DriveHandler) SetShares(shares map[string]*drive.Share) {
+	h.sharesMu.Lock()
+	h.shares = shares
+	h.sharesMu.Unlock()
+}

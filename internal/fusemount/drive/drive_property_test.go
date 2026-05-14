@@ -12,6 +12,7 @@ import (
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-utils/api"
 	"github.com/major0/proton-utils/api/drive"
+	"github.com/major0/proton-utils/internal/fusemount"
 	"pgregory.net/rapid"
 )
 
@@ -999,4 +1000,178 @@ func TestPropertyDecryptionFailure(t *testing.T) {
 				len(goodEntries), numGoodChildren)
 		}
 	})
+}
+
+// TestPropertyShareRefresh verifies that for any initial share set and any
+// subsequent share set, after calling RefreshShares (simulated by directly
+// swapping the map), Readdir and Lookup reflect exactly the new set: new
+// shares appear, removed shares disappear.
+//
+// Feature: protonfs-daemon, Property 9: Share refresh reflects changes
+// **Validates: Requirements 12.7, 12.8**
+func TestPropertyShareRefresh(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		// Generate initial share set (0-10 shares).
+		numInitial := rapid.IntRange(0, 10).Draw(rt, "numInitial")
+		initialShares := generateShareSet(rt, numInitial, "initial")
+
+		// Generate new share set (0-10 shares, possibly overlapping IDs).
+		numNew := rapid.IntRange(0, 10).Draw(rt, "numNew")
+		newShares := generateShareSet(rt, numNew, "new")
+
+		// Build handler with initial shares.
+		h := buildTestHandler(initialShares)
+
+		// Verify initial Readdir works.
+		entries, errno := h.Readdir(context.Background())
+		if errno != 0 {
+			rt.Fatalf("initial Readdir returned errno %d", errno)
+		}
+		verifyShareEntries(rt, entries, initialShares, "initial")
+
+		// Simulate refresh by directly swapping the share map (same as
+		// RefreshShares does under the write lock).
+		h.SetShares(newShares)
+
+		// Verify Readdir reflects the new set.
+		entries, errno = h.Readdir(context.Background())
+		if errno != 0 {
+			rt.Fatalf("post-refresh Readdir returned errno %d", errno)
+		}
+		verifyShareEntries(rt, entries, newShares, "post-refresh")
+
+		// Verify Lookup for each expected name in the new set.
+		for _, share := range newShares {
+			st := share.ProtonShare().Type
+			var name string
+			switch st {
+			case proton.ShareTypeMain:
+				name = "Home"
+			case drive.ShareTypePhotos:
+				name = "Photos"
+			case proton.ShareTypeStandard:
+				n, err := share.GetName(context.Background())
+				if err != nil {
+					continue
+				}
+				name = n
+			default:
+				continue
+			}
+			_, errno := h.Lookup(context.Background(), name)
+			if errno != 0 {
+				rt.Fatalf("post-refresh Lookup(%q) returned errno %d, want 0", name, errno)
+			}
+		}
+
+		// Verify Lookup for names that were in initial but not in new returns ENOENT.
+		for _, share := range initialShares {
+			st := share.ProtonShare().Type
+			var name string
+			switch st {
+			case proton.ShareTypeMain:
+				name = "Home"
+			case drive.ShareTypePhotos:
+				name = "Photos"
+			case proton.ShareTypeStandard:
+				n, err := share.GetName(context.Background())
+				if err != nil {
+					continue
+				}
+				name = n
+			default:
+				continue
+			}
+			// Check if this name still exists in the new set.
+			if nameExistsInShares(name, newShares) {
+				continue
+			}
+			_, errno := h.Lookup(context.Background(), name)
+			if errno != syscall.ENOENT {
+				rt.Fatalf("post-refresh Lookup(%q) for removed share: got errno %d, want ENOENT", name, errno)
+			}
+		}
+	})
+}
+
+// generateShareSet creates a random set of shares for property testing.
+func generateShareSet(rt *rapid.T, count int, prefix string) map[string]*drive.Share {
+	shares := make(map[string]*drive.Share, count)
+	hasMain := false
+	hasPhotos := false
+
+	for i := 0; i < count; i++ {
+		shareID := fmt.Sprintf("%s-share-%d", prefix, i)
+
+		availableTypes := []proton.ShareType{proton.ShareTypeStandard}
+		if !hasMain {
+			availableTypes = append(availableTypes, proton.ShareTypeMain)
+		}
+		if !hasPhotos {
+			availableTypes = append(availableTypes, drive.ShareTypePhotos)
+		}
+
+		typeIdx := rapid.IntRange(0, len(availableTypes)-1).Draw(rt, fmt.Sprintf("%s-typeIdx-%d", prefix, i))
+		st := availableTypes[typeIdx]
+
+		var name string
+		switch st {
+		case proton.ShareTypeMain:
+			hasMain = true
+			name = "root"
+		case drive.ShareTypePhotos:
+			hasPhotos = true
+			name = "photos"
+		case proton.ShareTypeStandard:
+			name = fmt.Sprintf("%s-std-%d", prefix, i)
+		}
+
+		shares[shareID] = testShare(name, shareID, st)
+	}
+	return shares
+}
+
+// verifyShareEntries checks that Readdir entries match the expected shares.
+func verifyShareEntries(rt *rapid.T, entries []fusemount.DirEntry, shares map[string]*drive.Share, label string) {
+	// Count expected entries: non-device shares + .linkid.
+	expectedCount := 1 // .linkid
+	for _, share := range shares {
+		st := share.ProtonShare().Type
+		if st != proton.ShareTypeDevice {
+			expectedCount++
+		}
+	}
+
+	if len(entries) != expectedCount {
+		rt.Fatalf("%s: got %d entries, want %d", label, len(entries), expectedCount)
+	}
+}
+
+// nameExistsInShares checks if a display name exists in the share set.
+func nameExistsInShares(name string, shares map[string]*drive.Share) bool {
+	if name == ".linkid" {
+		return true
+	}
+	for _, share := range shares {
+		st := share.ProtonShare().Type
+		switch st {
+		case proton.ShareTypeMain:
+			if name == "Home" {
+				return true
+			}
+		case drive.ShareTypePhotos:
+			if name == "Photos" {
+				return true
+			}
+		case proton.ShareTypeStandard:
+			n, err := share.GetName(context.Background())
+			if err != nil {
+				continue
+			}
+			if n == name {
+				return true
+			}
+		}
+	}
+	return false
 }
