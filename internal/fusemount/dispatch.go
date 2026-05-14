@@ -31,8 +31,37 @@ type DispatchNode struct {
 	gid     uint32 // owner GID — propagated to all child nodes
 }
 
+// checkAccess verifies the calling process UID matches the daemon owner.
+// Returns EPERM if the caller is any other user, including root.
+// Encrypted data belongs to the daemon owner — no other user gets access.
+// checkAccess verifies the calling process UID matches the daemon owner.
+// Returns EPERM if the caller is not the daemon owner. Only the user who
+// started proton-fuse may access namespace contents.
+//
+// The access gate is at the namespace boundary: Getattr on the namespace
+// root is allowed for any caller (so the redirector can stat "drive/"),
+// but Readdir/Lookup/Open and all operations on child nodes require the
+// owner UID.
+func (d *DispatchNode) checkAccess(ctx context.Context) syscall.Errno {
+	caller, ok := fuse.FromContext(ctx)
+	if !ok {
+		return 0 // no caller info available — allow (internal call)
+	}
+	if caller.Uid != d.uid {
+		return syscall.EPERM
+	}
+	return 0
+}
+
 // Getattr returns file attributes, delegating to the handler or node.
+// For namespace roots (isRoot=true), Getattr is allowed without access
+// check so the redirector and mount-root ls can stat the "drive/" entry.
 func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
+	if !d.isRoot {
+		if err := d.checkAccess(ctx); err != 0 {
+			return err
+		}
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Getattr: %v\n%s", r, debug.Stack())
@@ -72,6 +101,9 @@ func (d *DispatchNode) Setattr(_ context.Context, _ fs.FileHandle, _ *fuse.SetAt
 
 // Readdir returns directory entries, delegating to the handler or DirNode.
 func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Readdir: %v\n%s", r, debug.Stack())
@@ -103,6 +135,9 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 
 // Lookup finds a child node by name, delegating to the handler or DirNode.
 func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (child *fs.Inode, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Lookup(%q): %v\n%s", name, r, debug.Stack())
@@ -148,6 +183,9 @@ func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 
 // Create delegates to NodeCreator if the handler supports it.
 func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mode uint32, _ *fuse.EntryOut) (inode *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, nil, 0, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Create(%q): %v\n%s", name, r, debug.Stack())
@@ -181,6 +219,9 @@ func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mo
 
 // Mkdir delegates to NodeMkdirer if the handler supports it.
 func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Mkdir(%q): %v\n%s", name, r, debug.Stack())
@@ -212,7 +253,10 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *f
 }
 
 // Open delegates to NodeReader or NodeWriter if the handler supports it.
-func (d *DispatchNode) Open(_ context.Context, _ uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+func (d *DispatchNode) Open(ctx context.Context, _ uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, 0, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Open: %v\n%s", r, debug.Stack())
@@ -238,6 +282,9 @@ func (d *DispatchNode) Open(_ context.Context, _ uint32) (fh fs.FileHandle, fuse
 
 // Read delegates to NodeReader if the node supports it.
 func (d *DispatchNode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Read: %v\n%s", r, debug.Stack())
@@ -269,6 +316,9 @@ func (d *DispatchNode) Read(ctx context.Context, f fs.FileHandle, dest []byte, o
 
 // Write delegates to NodeWriter if the node supports it.
 func (d *DispatchNode) Write(ctx context.Context, f fs.FileHandle, data []byte, off int64) (written uint32, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return 0, err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Write: %v\n%s", r, debug.Stack())
@@ -296,6 +346,9 @@ func (d *DispatchNode) Write(ctx context.Context, f fs.FileHandle, data []byte, 
 
 // Unlink delegates to NodeRemover if the handler supports it.
 func (d *DispatchNode) Unlink(ctx context.Context, name string) (errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Unlink(%q): %v\n%s", name, r, debug.Stack())
@@ -320,6 +373,9 @@ func (d *DispatchNode) Unlink(ctx context.Context, name string) (errno syscall.E
 
 // Rmdir delegates to NodeRemover if the handler supports it.
 func (d *DispatchNode) Rmdir(ctx context.Context, name string) (errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Rmdir(%q): %v\n%s", name, r, debug.Stack())
@@ -344,6 +400,9 @@ func (d *DispatchNode) Rmdir(ctx context.Context, name string) (errno syscall.Er
 
 // Rename delegates to NodeRenamer if the handler supports it.
 func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, _ uint32) (errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return err
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Rename(%q → %q): %v\n%s", name, newName, r, debug.Stack())
