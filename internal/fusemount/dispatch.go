@@ -49,6 +49,9 @@ func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.A
 	out.Mode = attr.Mode
 	out.Size = attr.Size
 	out.Nlink = attr.Nlink
+	out.Mtime = attr.Mtime
+	out.Ctime = attr.Ctime
+	out.Atime = attr.Atime
 	return 0
 }
 

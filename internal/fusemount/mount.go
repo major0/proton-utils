@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -19,7 +20,9 @@ import (
 
 // MountConfig holds configuration for the per-user FUSE mount.
 type MountConfig struct {
-	Mountpoint string
+	Mountpoint   string
+	EntryTimeout time.Duration // default 1s; zero = kernel default
+	AttrTimeout  time.Duration // default 1s; zero = kernel default
 }
 
 // EnsureMountDir creates the mountpoint and its parent directory with mode 0700
@@ -136,6 +139,8 @@ func Mount(cfg MountConfig, registry *NamespaceRegistry) (*fuse.Server, error) {
 			Name:   "proton-fuse",
 		},
 		RootStableAttr: &fs.StableAttr{Ino: 1},
+		EntryTimeout:   &cfg.EntryTimeout,
+		AttrTimeout:    &cfg.AttrTimeout,
 	}
 
 	server, err := fs.Mount(cfg.Mountpoint, NewRoot(registry, mountInfo), opts)

@@ -15,6 +15,9 @@ type Attr struct {
 	Mode  uint32
 	Size  uint64
 	Nlink uint32
+	Mtime uint64 // Unix seconds
+	Ctime uint64 // Unix seconds
+	Atime uint64 // Unix seconds
 }
 
 // DirEntry represents a single directory entry returned by Readdir.
