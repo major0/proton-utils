@@ -25,9 +25,11 @@ func apiErrno(err error) syscall.Errno {
 
 // ShareDirNode wraps a *drive.Share and implements fusemount.DirNode.
 // It exposes the share's root link children as directory entries.
+// Retains children from the last Readdir so Lookup can resolve locally.
 type ShareDirNode struct {
-	share  *drive.Share
-	client *drive.Client
+	share    *drive.Share
+	client   *drive.Client
+	children map[string]*drive.Link // name → Link, populated by Readdir
 }
 
 // Compile-time interface assertions.
@@ -42,11 +44,11 @@ func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno
 	}, 0
 }
 
-// Readdir lists children of the share's root link. Uses the streaming
-// Readdir channel to avoid double-decryption — EntryName() decrypts once
-// and the result is used directly. Children with decryption errors are skipped.
+// Readdir lists children of the share's root link. Retains the name→Link
+// mapping so subsequent Lookup calls resolve locally without an API call.
 func (n *ShareDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
 	var entries []fusemount.DirEntry
+	children := make(map[string]*drive.Link)
 	for de := range n.share.Link.Readdir(ctx) {
 		if de.Err != nil {
 			slog.Debug("ShareDirNode.Readdir: error from Readdir stream",
@@ -63,18 +65,27 @@ func (n *ShareDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, sysca
 		if name == "." || name == ".." {
 			continue
 		}
+		children[name] = de.Link
 		entries = append(entries, fusemount.DirEntry{
 			Name: name,
 			Mode: linkMode(de.Link),
 		})
 	}
+	n.children = children
 	return entries, 0
 }
 
-// Lookup finds a child by name within the share root. Delegates to
-// Link.Lookup which uses the cached child ID list when available,
-// avoiding redundant ListLinkChildren API calls after Readdir.
+// Lookup finds a child by name. Uses the retained children map from the
+// last Readdir to avoid a redundant ListLinkChildren API call.
 func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
+	// Fast path: child retained from last Readdir.
+	if n.children != nil {
+		if child, ok := n.children[name]; ok {
+			return linkNode(child, n.client), 0
+		}
+	}
+
+	// Slow path: no retained children (first Lookup before Readdir).
 	child, err := n.share.Link.Lookup(ctx, name)
 	if err != nil {
 		slog.Debug("ShareDirNode.Lookup: failed",
@@ -89,9 +100,11 @@ func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node,
 
 // LinkDirNode wraps a *drive.Link (folder) and implements fusemount.DirNode.
 // It exposes the link's children as directory entries.
+// Retains children from the last Readdir so Lookup can resolve locally.
 type LinkDirNode struct {
-	link   *drive.Link
-	client *drive.Client
+	link     *drive.Link
+	client   *drive.Client
+	children map[string]*drive.Link // name → Link, populated by Readdir
 }
 
 // Compile-time interface assertions.
@@ -106,11 +119,11 @@ func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno)
 	}, 0
 }
 
-// Readdir lists children of the folder link. Uses the streaming Readdir
-// channel to avoid double-decryption — EntryName() decrypts once and the
-// result is used directly. Children with decryption errors are skipped.
+// Readdir lists children of the folder link. Retains the name→Link
+// mapping so subsequent Lookup calls resolve locally without an API call.
 func (n *LinkDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscall.Errno) {
 	var entries []fusemount.DirEntry
+	children := make(map[string]*drive.Link)
 	for de := range n.link.Readdir(ctx) {
 		if de.Err != nil {
 			slog.Debug("LinkDirNode.Readdir: error from Readdir stream",
@@ -127,18 +140,27 @@ func (n *LinkDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscal
 		if name == "." || name == ".." {
 			continue
 		}
+		children[name] = de.Link
 		entries = append(entries, fusemount.DirEntry{
 			Name: name,
 			Mode: linkMode(de.Link),
 		})
 	}
+	n.children = children
 	return entries, 0
 }
 
-// Lookup finds a child by name within the folder. Delegates to
-// Link.Lookup which uses the cached child ID list when available,
-// avoiding redundant ListLinkChildren API calls after Readdir.
+// Lookup finds a child by name. Uses the retained children map from the
+// last Readdir to avoid a redundant ListLinkChildren API call.
 func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
+	// Fast path: child retained from last Readdir.
+	if n.children != nil {
+		if child, ok := n.children[name]; ok {
+			return linkNode(child, n.client), 0
+		}
+	}
+
+	// Slow path: no retained children (first Lookup before Readdir).
 	child, err := n.link.Lookup(ctx, name)
 	if err != nil {
 		slog.Debug("LinkDirNode.Lookup: failed",

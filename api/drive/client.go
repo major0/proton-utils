@@ -90,11 +90,13 @@ func (c *Client) NewChildLink(_ context.Context, parent *Link, pLink *proton.Lin
 	c.linkTable[pLink.LinkID] = link
 	c.tableMu.Unlock()
 
-	// Best-effort write to objectCache (no-op when nil).
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-		if err := c.objectCache.Write(sanitizeKey(pLink.LinkID), buf.Bytes()); err != nil {
-			slog.Debug("objectCache.Write", "key", pLink.LinkID, "error", err)
+	// Write to objectCache only when the share permits disk caching.
+	if parent.Share() != nil && parent.Share().DiskCacheLevel >= api.DiskCacheObjectStore {
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
+			if err := c.objectCache.Write(sanitizeKey(pLink.LinkID), buf.Bytes()); err != nil {
+				slog.Debug("objectCache.Write", "key", pLink.LinkID, "error", err)
+			}
 		}
 	}
 
@@ -159,13 +161,18 @@ func (c *Client) getLink(linkID string) *Link {
 // Note: GetShare bypasses this and calls the API directly — share root
 // links have a cache interaction issue that needs further investigation.
 func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (proton.Link, error) {
+	// Only use the object cache if the share permits disk caching.
+	diskAllowed := c.sharePermitsDiskCache(shareID)
+
 	// ObjectCache hit — return without API call.
-	if data, _ := c.objectCache.Read(sanitizeKey(linkID)); data != nil {
-		var pLink proton.Link
-		if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&pLink); err == nil {
-			return pLink, nil
+	if diskAllowed {
+		if data, _ := c.objectCache.Read(sanitizeKey(linkID)); data != nil {
+			var pLink proton.Link
+			if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&pLink); err == nil {
+				return pLink, nil
+			}
+			// Decode failed — fall through to API fetch.
 		}
-		// Decode failed — fall through to API fetch.
 	}
 
 	// API fetch.
@@ -174,15 +181,31 @@ func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (pro
 		return proton.Link{}, err
 	}
 
-	// Populate objectCache (no-op when nil).
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-		if err := c.objectCache.Write(sanitizeKey(linkID), buf.Bytes()); err != nil {
-			slog.Debug("objectCache.Write", "key", linkID, "error", err)
+	// Populate objectCache only when the share permits disk caching.
+	if diskAllowed {
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
+			if err := c.objectCache.Write(sanitizeKey(linkID), buf.Bytes()); err != nil {
+				slog.Debug("objectCache.Write", "key", linkID, "error", err)
+			}
 		}
 	}
 
 	return pLink, nil
+}
+
+// sharePermitsDiskCache checks whether the share identified by shareID
+// has disk caching enabled. Returns false if the config has no entry for
+// the share or if disk caching is disabled.
+func (c *Client) sharePermitsDiskCache(shareID string) bool {
+	if c.Config == nil || c.objectCache == nil {
+		return false
+	}
+	sc, ok := c.Config.Shares[shareID]
+	if !ok {
+		return false
+	}
+	return sc.DiskCache >= api.DiskCacheObjectStore
 }
 
 // putLink inserts a *Link into the table. Takes an exclusive write lock.
