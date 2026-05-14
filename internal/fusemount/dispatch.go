@@ -14,6 +14,7 @@ import (
 
 // Compile-time interface assertions.
 var _ = (fs.NodeGetattrer)((*DispatchNode)(nil))
+var _ = (fs.NodeSetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeLookuper)((*DispatchNode)(nil))
 var _ = (fs.NodeReaddirer)((*DispatchNode)(nil))
 
@@ -26,6 +27,8 @@ type DispatchNode struct {
 	handler NamespaceHandler // always set (for capability checks)
 	node    Node             // nil when isRoot=true
 	isRoot  bool
+	uid     uint32 // owner UID for namespace root nodes
+	gid     uint32 // owner GID for namespace root nodes
 }
 
 // Getattr returns file attributes, delegating to the handler or node.
@@ -52,7 +55,21 @@ func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.A
 	out.Mtime = attr.Mtime
 	out.Ctime = attr.Ctime
 	out.Atime = attr.Atime
+	if d.isRoot {
+		out.Uid = d.uid
+		out.Gid = d.gid
+	}
 	return 0
+}
+
+// Setattr rejects all attribute changes on namespace root directories.
+// Namespace roots have fixed permissions (0500) that cannot be modified.
+// For non-root nodes, returns ENOSYS (not supported).
+func (d *DispatchNode) Setattr(_ context.Context, _ fs.FileHandle, _ *fuse.SetAttrIn, _ *fuse.AttrOut) syscall.Errno {
+	if d.isRoot {
+		return syscall.EPERM
+	}
+	return syscall.ENOSYS
 }
 
 // Readdir returns directory entries, delegating to the handler or DirNode.

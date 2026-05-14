@@ -414,3 +414,45 @@ func TestDispatchNodeOpen_Unsupported(t *testing.T) {
 		t.Errorf("Open on node without NodeReader/NodeWriter returned errno %d, want ENOSYS", errno)
 	}
 }
+
+func TestDispatchNodeSetattr_NamespaceRoot_ReturnsEPERM(t *testing.T) {
+	h := &mockHandler{attr: Attr{Mode: syscall.S_IFDIR | 0500, Nlink: 2}}
+	d := &DispatchNode{handler: h, isRoot: true}
+
+	var out fuse.AttrOut
+	in := fuse.SetAttrIn{}
+	errno := d.Setattr(context.Background(), nil, &in, &out)
+	if errno != syscall.EPERM {
+		t.Errorf("Setattr on namespace root returned errno %d, want EPERM (%d)", errno, syscall.EPERM)
+	}
+}
+
+func TestDispatchNodeSetattr_ChildNode_ReturnsENOSYS(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	var out fuse.AttrOut
+	in := fuse.SetAttrIn{}
+	errno := d.Setattr(context.Background(), nil, &in, &out)
+	if errno != syscall.ENOSYS {
+		t.Errorf("Setattr on child node returned errno %d, want ENOSYS (%d)", errno, syscall.ENOSYS)
+	}
+}
+
+func TestDispatchNodeGetattr_NamespaceRoot_SetsUidGid(t *testing.T) {
+	h := &mockHandler{attr: Attr{Mode: syscall.S_IFDIR | 0500, Nlink: 2}}
+	d := &DispatchNode{handler: h, isRoot: true, uid: 1000, gid: 1000}
+
+	var out fuse.AttrOut
+	errno := d.Getattr(context.Background(), nil, &out)
+	if errno != 0 {
+		t.Fatalf("Getattr returned errno %d", errno)
+	}
+	if out.Uid != 1000 {
+		t.Errorf("Uid = %d, want 1000", out.Uid)
+	}
+	if out.Gid != 1000 {
+		t.Errorf("Gid = %d, want 1000", out.Gid)
+	}
+}

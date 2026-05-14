@@ -75,12 +75,25 @@ func (r *RootNode) Readdir(_ context.Context) (fs.DirStream, syscall.Errno) {
 }
 
 // Lookup returns a DispatchNode for a registered namespace prefix, or ENOENT.
-func (r *RootNode) Lookup(ctx context.Context, name string, _ *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+// Populates the EntryOut with the namespace's attributes so the kernel
+// caches the correct mode (0500) from the first response.
+func (r *RootNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	handler, ok := r.registry.Lookup(name)
 	if !ok {
 		return nil, syscall.ENOENT
 	}
-	node := &DispatchNode{handler: handler, isRoot: true}
+
+	// Fill EntryOut with the namespace root's attributes.
+	attr, errno := handler.Getattr(ctx)
+	if errno != 0 {
+		return nil, errno
+	}
+	out.Mode = attr.Mode
+	out.Nlink = attr.Nlink
+	out.Uid = r.uid
+	out.Gid = r.gid
+
+	node := &DispatchNode{handler: handler, isRoot: true, uid: r.uid, gid: r.gid}
 	child := r.NewInode(ctx, node, fs.StableAttr{Mode: syscall.S_IFDIR})
 	return child, 0
 }
