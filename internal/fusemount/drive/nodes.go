@@ -71,32 +71,20 @@ func (n *ShareDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, sysca
 	return entries, 0
 }
 
-// Lookup finds a child by name within the share root. Uses the streaming
-// Readdir channel with early termination — cancels remaining work as soon
-// as the match is found. Skips children with decryption errors.
+// Lookup finds a child by name within the share root. Delegates to
+// Link.Lookup which uses the cached child ID list when available,
+// avoiding redundant ListLinkChildren API calls after Readdir.
 func (n *ShareDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	for de := range n.share.Link.Readdir(ctx) {
-		if de.Err != nil {
-			slog.Debug("ShareDirNode.Lookup: error from Readdir stream",
-				"shareID", n.share.Metadata().ShareID, "error", de.Err)
-			return nil, apiErrno(de.Err)
-		}
-		entryName, err := de.EntryName()
-		if err != nil {
-			// Skip entries with decryption errors.
-			continue
-		}
-		if entryName == "." || entryName == ".." {
-			continue
-		}
-		if entryName == name {
-			return linkNode(de.Link, n.client), 0
-		}
+	child, err := n.share.Link.Lookup(ctx, name)
+	if err != nil {
+		slog.Debug("ShareDirNode.Lookup: failed",
+			"shareID", n.share.Metadata().ShareID, "name", name, "error", err)
+		return nil, apiErrno(err)
 	}
-	return nil, syscall.ENOENT
+	if child == nil {
+		return nil, syscall.ENOENT
+	}
+	return linkNode(child, n.client), 0
 }
 
 // LinkDirNode wraps a *drive.Link (folder) and implements fusemount.DirNode.
@@ -147,32 +135,20 @@ func (n *LinkDirNode) Readdir(ctx context.Context) ([]fusemount.DirEntry, syscal
 	return entries, 0
 }
 
-// Lookup finds a child by name within the folder. Uses the streaming
-// Readdir channel with early termination — cancels remaining work as soon
-// as the match is found. Skips children with decryption errors.
+// Lookup finds a child by name within the folder. Delegates to
+// Link.Lookup which uses the cached child ID list when available,
+// avoiding redundant ListLinkChildren API calls after Readdir.
 func (n *LinkDirNode) Lookup(ctx context.Context, name string) (fusemount.Node, syscall.Errno) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	for de := range n.link.Readdir(ctx) {
-		if de.Err != nil {
-			slog.Debug("LinkDirNode.Lookup: error from Readdir stream",
-				"linkID", n.link.LinkID(), "error", de.Err)
-			return nil, apiErrno(de.Err)
-		}
-		entryName, err := de.EntryName()
-		if err != nil {
-			// Skip entries with decryption errors.
-			continue
-		}
-		if entryName == "." || entryName == ".." {
-			continue
-		}
-		if entryName == name {
-			return linkNode(de.Link, n.client), 0
-		}
+	child, err := n.link.Lookup(ctx, name)
+	if err != nil {
+		slog.Debug("LinkDirNode.Lookup: failed",
+			"linkID", n.link.LinkID(), "name", name, "error", err)
+		return nil, apiErrno(err)
 	}
-	return nil, syscall.ENOENT
+	if child == nil {
+		return nil, syscall.ENOENT
+	}
+	return linkNode(child, n.client), 0
 }
 
 // linkMode returns the FUSE mode for a link based on its type.

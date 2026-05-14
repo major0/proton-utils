@@ -34,6 +34,8 @@ func (m *mockRemoveResolver) NewChildLink(_ context.Context, parent *Link, pLink
 	return NewTestLink(pLink, parent, parent.share, m, pLink.LinkID)
 }
 
+func (m *mockRemoveResolver) GetLink(_ string) *Link { return nil }
+
 func (m *mockRemoveResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }

@@ -62,6 +62,34 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 			return
 		}
 
+		// Cache hit: if cachedChildIDs is populated, yield children from
+		// the link table without an API call.
+		l.cacheMu.RLock()
+		childIDs := l.cachedChildIDs
+		l.cacheMu.RUnlock()
+
+		if childIDs != nil {
+			for _, id := range childIDs {
+				child := l.resolver.GetLink(id)
+				if child == nil {
+					// Link evicted — invalidate cache and fall through to API.
+					l.cacheMu.Lock()
+					l.cachedChildIDs = nil
+					l.cacheMu.Unlock()
+					childIDs = nil
+					break
+				}
+				select {
+				case ch <- DirEntry{Link: child}:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if childIDs != nil {
+				return // all children yielded from cache
+			}
+		}
+
 		// Respect throttle before making the API call.
 		if throttle := l.resolver.Throttle(); throttle != nil {
 			if err := throttle.Wait(ctx); err != nil {
@@ -94,6 +122,19 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 
 		if len(pChildren) == 0 {
 			return
+		}
+
+		// Cache child LinkIDs on the parent for subsequent Lookup calls.
+		// This avoids redundant ListLinkChildren API calls when the kernel
+		// issues Lookup for each entry after Readdir (the N+1 problem).
+		if l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
+			ids := make([]string, len(pChildren))
+			for i := range pChildren {
+				ids[i] = pChildren[i].LinkID
+			}
+			l.cacheMu.Lock()
+			l.cachedChildIDs = ids
+			l.cacheMu.Unlock()
 		}
 
 		// Fan out child link construction across workers.
@@ -137,12 +178,10 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 
 // Lookup finds a child by name in this folder. Returns nil if not found.
 // Handles "." (self) and ".." (parent) directly without scanning children.
-// Cancels remaining work as soon as the match is found.
 //
-// Note: Lookup fetches all children from the API via Readdir because the
-// Proton Drive API has no server-side name lookup. The context is cancelled
-// on first match to limit decryption work, but the initial ListChildren
-// API call returns the full child list regardless.
+// When cachedChildIDs is populated (from a prior Readdir), resolves
+// children from the link table without an API call. Falls back to a
+// fresh Readdir if the cache is empty.
 func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 	// Fast path for . and ..
 	switch name {
@@ -152,6 +191,30 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 		return l.Parent(), nil
 	}
 
+	// Try cached child IDs first — avoids redundant ListLinkChildren calls.
+	l.cacheMu.RLock()
+	childIDs := l.cachedChildIDs
+	l.cacheMu.RUnlock()
+
+	if childIDs != nil {
+		for _, id := range childIDs {
+			child := l.resolver.GetLink(id)
+			if child == nil {
+				continue // link evicted from table — fall through below
+			}
+			childName, err := child.Name()
+			if err != nil {
+				continue
+			}
+			if childName == name {
+				return child, nil
+			}
+		}
+		// Name not found in cached children.
+		return nil, nil
+	}
+
+	// No cache — fall back to streaming Readdir with early termination.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -161,7 +224,7 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 		}
 		entryName, err := entry.EntryName()
 		if err != nil {
-			return nil, err
+			continue // skip entries with decryption errors
 		}
 		// Skip . and ..
 		if entryName == "." || entryName == ".." {

@@ -26,6 +26,8 @@ func (m *mockLinkResolver) NewChildLink(_ context.Context, parent *Link, pLink *
 	return NewLink(pLink, parent, parent.share, m)
 }
 
+func (m *mockLinkResolver) GetLink(_ string) *Link { return nil }
+
 func (m *mockLinkResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }
@@ -502,6 +504,8 @@ func (r *readdirResolver) ListLinkChildren(_ context.Context, _, _ string, _ boo
 func (r *readdirResolver) NewChildLink(_ context.Context, parent *Link, pLink *proton.Link) *Link {
 	return NewTestLink(pLink, parent, parent.share, r, pLink.LinkID)
 }
+
+func (r *readdirResolver) GetLink(_ string) *Link { return nil }
 
 func (r *readdirResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false

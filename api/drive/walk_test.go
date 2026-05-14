@@ -32,6 +32,8 @@ func (m *walkResolver) NewChildLink(_ context.Context, parent *drive.Link, pLink
 	return drive.NewTestLink(pLink, parent, parent.Share(), m, name)
 }
 
+func (m *walkResolver) GetLink(_ string) *drive.Link { return nil }
+
 func (m *walkResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }

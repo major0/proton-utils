@@ -21,6 +21,9 @@ type LinkResolver interface {
 	// NewChildLink constructs a child Link from a raw proton.Link.
 	NewChildLink(ctx context.Context, parent *Link, pLink *proton.Link) *Link
 
+	// GetLink returns the *Link for linkID from the link table, or nil.
+	GetLink(linkID string) *Link
+
 	// AddressForEmail returns the proton.Address for the given email.
 	AddressForEmail(email string) (proton.Address, bool)
 

@@ -37,6 +37,7 @@ func (m *mockResolver) ListLinkChildren(_ context.Context, _, _ string, _ bool) 
 func (m *mockResolver) NewChildLink(_ context.Context, parent *Link, pLink *proton.Link) *Link {
 	return NewLink(pLink, parent, parent.Share(), m)
 }
+func (m *mockResolver) GetLink(_ string) *Link { return nil }
 func (m *mockResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }

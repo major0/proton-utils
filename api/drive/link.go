@@ -46,6 +46,12 @@ type Link struct {
 	// cachedKeyRing caches the derived keyring when the share's
 	// MemoryCacheLevel is >= CacheMetadata. Nil when not cached.
 	cachedKeyRing *crypto.KeyRing
+
+	// cachedChildIDs caches the child LinkIDs after a Readdir. When
+	// non-nil, Lookup can resolve children from the link table without
+	// a fresh ListLinkChildren API call. Populated by Readdir when the
+	// share's MemoryCacheLevel is >= CacheMetadata.
+	cachedChildIDs []string
 }
 
 // Type returns the link type (file or folder) without decryption.

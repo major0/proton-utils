@@ -24,6 +24,8 @@ func (m *mockResolver) NewChildLink(_ context.Context, parent *drive.Link, pLink
 	return drive.NewLink(pLink, parent, parent.Share(), m)
 }
 
+func (m *mockResolver) GetLink(_ string) *drive.Link { return nil }
+
 func (m *mockResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }
@@ -83,6 +85,8 @@ func (m *mockResolverWithChildren) ListLinkChildren(_ context.Context, _, _ stri
 func (m *mockResolverWithChildren) NewChildLink(_ context.Context, parent *drive.Link, pLink *proton.Link) *drive.Link {
 	return drive.NewTestLink(pLink, parent, parent.Share(), m, pLink.LinkID)
 }
+
+func (m *mockResolverWithChildren) GetLink(_ string) *drive.Link { return nil }
 
 func (m *mockResolverWithChildren) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false

@@ -293,6 +293,8 @@ func (r *childResolver) NewChildLink(_ context.Context, parent *drive.Link, pLin
 	return drive.NewTestLink(pLink, parent, parent.Share(), r, name)
 }
 
+func (r *childResolver) GetLink(_ string) *drive.Link { return nil }
+
 func (r *childResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }
@@ -539,6 +541,8 @@ func (r *errorResolver) NewChildLink(_ context.Context, parent *drive.Link, pLin
 	return drive.NewTestLink(pLink, parent, parent.Share(), r, "unused")
 }
 
+func (r *errorResolver) GetLink(_ string) *drive.Link { return nil }
+
 func (r *errorResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
 }
@@ -731,6 +735,8 @@ func (r *decryptFailResolver) NewChildLink(_ context.Context, parent *drive.Link
 	name := r.nameMap[pLink.LinkID]
 	return drive.NewTestLink(pLink, parent, parent.Share(), r, name)
 }
+
+func (r *decryptFailResolver) GetLink(_ string) *drive.Link { return nil }
 
 func (r *decryptFailResolver) AddressForEmail(_ string) (proton.Address, bool) {
 	return proton.Address{}, false
