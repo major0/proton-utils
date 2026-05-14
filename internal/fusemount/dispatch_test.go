@@ -15,7 +15,7 @@ type mockNode struct {
 	attr Attr
 }
 
-func (m *mockNode) Getattr(ctx context.Context) (Attr, syscall.Errno) {
+func (m *mockNode) Getattr(_ context.Context) (Attr, syscall.Errno) {
 	return m.attr, 0
 }
 
@@ -26,18 +26,18 @@ type mockDirNode struct {
 	nodes   map[string]Node
 }
 
-func (m *mockDirNode) Getattr(ctx context.Context) (Attr, syscall.Errno) {
+func (m *mockDirNode) Getattr(_ context.Context) (Attr, syscall.Errno) {
 	return m.attr, 0
 }
 
-func (m *mockDirNode) Lookup(ctx context.Context, name string) (Node, syscall.Errno) {
+func (m *mockDirNode) Lookup(_ context.Context, name string) (Node, syscall.Errno) {
 	if n, ok := m.nodes[name]; ok {
 		return n, 0
 	}
 	return nil, syscall.ENOENT
 }
 
-func (m *mockDirNode) Readdir(ctx context.Context) ([]DirEntry, syscall.Errno) {
+func (m *mockDirNode) Readdir(_ context.Context) ([]DirEntry, syscall.Errno) {
 	return m.entries, 0
 }
 
@@ -46,7 +46,7 @@ type mockCreatorHandler struct {
 	mockHandler
 }
 
-func (m *mockCreatorHandler) Create(ctx context.Context, name string, flags uint32, mode uint32) (Node, FileHandle, syscall.Errno) {
+func (m *mockCreatorHandler) Create(_ context.Context, _ string, _ uint32, _ uint32) (Node, FileHandle, syscall.Errno) {
 	return &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}, nil, 0
 }
 
@@ -55,7 +55,7 @@ type mockMkdirerHandler struct {
 	mockHandler
 }
 
-func (m *mockMkdirerHandler) Mkdir(ctx context.Context, name string, mode uint32) (Node, syscall.Errno) {
+func (m *mockMkdirerHandler) Mkdir(_ context.Context, _ string, _ uint32) (Node, syscall.Errno) {
 	return &mockNode{attr: Attr{Mode: syscall.S_IFDIR | 0755}}, 0
 }
 
@@ -64,11 +64,11 @@ type mockRemoverHandler struct {
 	mockHandler
 }
 
-func (m *mockRemoverHandler) Unlink(ctx context.Context, name string) syscall.Errno {
+func (m *mockRemoverHandler) Unlink(_ context.Context, _ string) syscall.Errno {
 	return 0
 }
 
-func (m *mockRemoverHandler) Rmdir(ctx context.Context, name string) syscall.Errno {
+func (m *mockRemoverHandler) Rmdir(_ context.Context, _ string) syscall.Errno {
 	return 0
 }
 
@@ -77,15 +77,15 @@ type panicHandler struct {
 	msg string
 }
 
-func (p *panicHandler) Lookup(ctx context.Context, name string) (Node, syscall.Errno) {
+func (p *panicHandler) Lookup(_ context.Context, _ string) (Node, syscall.Errno) {
 	panic(p.msg)
 }
 
-func (p *panicHandler) Readdir(ctx context.Context) ([]DirEntry, syscall.Errno) {
+func (p *panicHandler) Readdir(_ context.Context) ([]DirEntry, syscall.Errno) {
 	panic(p.msg)
 }
 
-func (p *panicHandler) Getattr(ctx context.Context) (Attr, syscall.Errno) {
+func (p *panicHandler) Getattr(_ context.Context) (Attr, syscall.Errno) {
 	panic(p.msg)
 }
 

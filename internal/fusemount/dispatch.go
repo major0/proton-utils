@@ -29,7 +29,7 @@ type DispatchNode struct {
 }
 
 // Getattr returns file attributes, delegating to the handler or node.
-func (d *DispatchNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
+func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.AttrOut) (errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Getattr: %v\n%s", r, debug.Stack())
@@ -84,7 +84,7 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 }
 
 // Lookup finds a child node by name, delegating to the handler or DirNode.
-func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (child *fs.Inode, errno syscall.Errno) {
+func (d *DispatchNode) Lookup(ctx context.Context, name string, _ *fuse.EntryOut) (child *fs.Inode, errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Lookup(%q): %v\n%s", name, r, debug.Stack())
@@ -120,7 +120,7 @@ func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 }
 
 // Create delegates to NodeCreator if the handler supports it.
-func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (inode *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mode uint32, _ *fuse.EntryOut) (inode *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Create(%q): %v\n%s", name, r, debug.Stack())
@@ -153,7 +153,7 @@ func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mo
 }
 
 // Mkdir delegates to NodeMkdirer if the handler supports it.
-func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
+func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Mkdir(%q): %v\n%s", name, r, debug.Stack())
@@ -185,7 +185,7 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, out 
 }
 
 // Open delegates to NodeReader or NodeWriter if the handler supports it.
-func (d *DispatchNode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+func (d *DispatchNode) Open(_ context.Context, _ uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Open: %v\n%s", r, debug.Stack())
@@ -316,7 +316,7 @@ func (d *DispatchNode) Rmdir(ctx context.Context, name string) (errno syscall.Er
 }
 
 // Rename delegates to NodeRenamer if the handler supports it.
-func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) (errno syscall.Errno) {
+func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, _ uint32) (errno syscall.Errno) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in handler Rename(%q → %q): %v\n%s", name, newName, r, debug.Stack())

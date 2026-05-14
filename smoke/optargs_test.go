@@ -35,7 +35,7 @@ var testFlags = []flagDef{
 func newPrefixTestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "test",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return nil
 		},
 	}
@@ -53,7 +53,7 @@ func newPrefixTestCmd() *cobra.Command {
 // prefixGen generates (flagIndex, prefixLength) pairs for abbreviation tests.
 type prefixGen struct{}
 
-func (prefixGen) Generate(r *rand.Rand, size int) reflect.Value {
+func (prefixGen) Generate(r *rand.Rand, _ int) reflect.Value {
 	idx := r.Intn(len(testFlags))
 	name := testFlags[idx].Name
 	// Prefix length: at least 1, at most full length.
@@ -136,7 +136,7 @@ func TestPropertyAbbreviationMatching(t *testing.T) {
 // boolFlagGen generates indices into the boolean flags in testFlags.
 type boolFlagGen struct{}
 
-func (boolFlagGen) Generate(r *rand.Rand, size int) reflect.Value {
+func (boolFlagGen) Generate(r *rand.Rand, _ int) reflect.Value {
 	var boolIdxs []int
 	for i, f := range testFlags {
 		if f.IsBool {

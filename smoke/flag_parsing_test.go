@@ -19,7 +19,7 @@ func newTestRoot() (*cobra.Command, *int, *time.Duration) {
 
 	cmd := &cobra.Command{
 		Use: "test",
-		Run: func(cmd *cobra.Command, args []string) {},
+		Run: func(_ *cobra.Command, _ []string) {},
 	}
 	cmd.PersistentFlags().CountVarP(&verbose, "verbose", "v", "verbosity")
 	cmd.PersistentFlags().DurationVarP(&timeout, "timeout", "t", 60*time.Second, "timeout")

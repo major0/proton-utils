@@ -15,18 +15,18 @@ type mockHandler struct {
 	attr    Attr
 }
 
-func (m *mockHandler) Lookup(ctx context.Context, name string) (Node, syscall.Errno) {
+func (m *mockHandler) Lookup(_ context.Context, name string) (Node, syscall.Errno) {
 	if n, ok := m.nodes[name]; ok {
 		return n, 0
 	}
 	return nil, syscall.ENOENT
 }
 
-func (m *mockHandler) Readdir(ctx context.Context) ([]DirEntry, syscall.Errno) {
+func (m *mockHandler) Readdir(_ context.Context) ([]DirEntry, syscall.Errno) {
 	return m.entries, 0
 }
 
-func (m *mockHandler) Getattr(ctx context.Context) (Attr, syscall.Errno) {
+func (m *mockHandler) Getattr(_ context.Context) (Attr, syscall.Errno) {
 	return m.attr, 0
 }
 

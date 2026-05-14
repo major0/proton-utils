@@ -42,7 +42,7 @@ func NewRoot(registry *NamespaceRegistry, info os.FileInfo) *RootNode {
 // Getattr returns directory attributes for the root (mode 0500, owned by
 // the user that started the process). Write permission is not granted at
 // the namespace root — only within individual namespaces.
-func (r *RootNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (r *RootNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFDIR | 0500
 	out.Nlink = 2
 	out.Ino = 1
@@ -61,7 +61,7 @@ func (r *RootNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Attr
 
 // Readdir returns entries from the registry as S_IFDIR directory entries.
 // Always includes . and .. for POSIX compliance.
-func (r *RootNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+func (r *RootNode) Readdir(_ context.Context) (fs.DirStream, syscall.Errno) {
 	prefixes := r.registry.List()
 	entries := make([]fuse.DirEntry, 0, 2+len(prefixes))
 	entries = append(entries,
@@ -75,7 +75,7 @@ func (r *RootNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 }
 
 // Lookup returns a DispatchNode for a registered namespace prefix, or ENOENT.
-func (r *RootNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (r *RootNode) Lookup(ctx context.Context, name string, _ *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	handler, ok := r.registry.Lookup(name)
 	if !ok {
 		return nil, syscall.ENOENT

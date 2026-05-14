@@ -247,22 +247,22 @@ type fullHandler struct {
 	mockHandler
 }
 
-func (f *fullHandler) Create(ctx context.Context, name string, flags uint32, mode uint32) (Node, FileHandle, syscall.Errno) {
+func (f *fullHandler) Create(_ context.Context, _ string, _ uint32, _ uint32) (Node, FileHandle, syscall.Errno) {
 	return &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}, nil, 0
 }
 
-func (f *fullHandler) Mkdir(ctx context.Context, name string, mode uint32) (Node, syscall.Errno) {
+func (f *fullHandler) Mkdir(_ context.Context, _ string, _ uint32) (Node, syscall.Errno) {
 	return &mockNode{attr: Attr{Mode: syscall.S_IFDIR | 0755}}, 0
 }
 
-func (f *fullHandler) Unlink(ctx context.Context, name string) syscall.Errno {
+func (f *fullHandler) Unlink(_ context.Context, _ string) syscall.Errno {
 	return 0
 }
 
-func (f *fullHandler) Rmdir(ctx context.Context, name string) syscall.Errno {
+func (f *fullHandler) Rmdir(_ context.Context, _ string) syscall.Errno {
 	return 0
 }
 
-func (f *fullHandler) Rename(ctx context.Context, oldName string, newParent Node, newName string) syscall.Errno {
+func (f *fullHandler) Rename(_ context.Context, _ string, _ Node, _ string) syscall.Errno {
 	return 0
 }

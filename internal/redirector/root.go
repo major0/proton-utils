@@ -31,7 +31,7 @@ type Root struct {
 }
 
 // Getattr returns directory attributes for the redirector root.
-func (r *Root) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (r *Root) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFDIR | 0555
 	out.Nlink = 2
 	out.Ino = 1
@@ -74,7 +74,7 @@ func (r *Root) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 // Lookup returns a symlink node pointing to the calling user's per-user mount.
 // Returns ENOENT for UID 0 or when called outside a FUSE context.
-func (r *Root) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (r *Root) Lookup(ctx context.Context, name string, _ *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	caller, _ := fuse.FromContext(ctx)
 	if caller == nil || caller.Uid == 0 {
 		return nil, syscall.ENOENT
@@ -93,12 +93,12 @@ type SymlinkNode struct {
 }
 
 // Readlink returns the symlink target path.
-func (s *SymlinkNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+func (s *SymlinkNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 	return []byte(s.target), 0
 }
 
 // Getattr returns symlink attributes including the target length as size.
-func (s *SymlinkNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (s *SymlinkNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFLNK | 0777
 	out.Size = uint64(len(s.target))
 	return 0
