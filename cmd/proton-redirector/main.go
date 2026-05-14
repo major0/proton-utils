@@ -18,7 +18,10 @@ func main() {
 	notifySocket := os.Getenv("NOTIFY_SOCKET")
 	redirector.ClearEnvironment()
 	if notifySocket != "" {
-		os.Setenv("NOTIFY_SOCKET", notifySocket)
+		if err := os.Setenv("NOTIFY_SOCKET", notifySocket); err != nil {
+			fmt.Fprintf(os.Stderr, "setenv NOTIFY_SOCKET: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if len(os.Args) < 2 || os.Args[1] != "/proton" {
