@@ -91,6 +91,7 @@ install-protonfs:
 	install -m 4755 proton-redirector $(DESTDIR)$(SBINDIR)/proton-redirector
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 0755 dist/protonctl $(DESTDIR)$(BINDIR)/protonctl
+	install -d -m 0555 $(DESTDIR)/proton
 	install -d $(DESTDIR)$(UNITDIR_USER)
 	sed 's|ExecStart=.*proton-redirector|ExecStart=$(SBINDIR)/proton-redirector|' \
 		dist/protonfs-redirector.service > $(DESTDIR)$(UNITDIR_USER)/protonfs-redirector.service
