@@ -15,12 +15,12 @@ import (
 // testMountInfo returns a fake os.FileInfo for tests.
 type testMountInfo struct{}
 
-func (testMountInfo) Name() string      { return "fs" }
-func (testMountInfo) Size() int64       { return 0 }
-func (testMountInfo) Mode() os.FileMode { return os.ModeDir | 0700 }
+func (testMountInfo) Name() string       { return "fs" }
+func (testMountInfo) Size() int64        { return 0 }
+func (testMountInfo) Mode() os.FileMode  { return os.ModeDir | 0700 }
 func (testMountInfo) ModTime() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }
-func (testMountInfo) IsDir() bool       { return true }
-func (testMountInfo) Sys() any          { return nil }
+func (testMountInfo) IsDir() bool        { return true }
+func (testMountInfo) Sys() any           { return nil }
 
 func TestRootNodeGetattr(t *testing.T) {
 	reg := NewRegistry()

@@ -59,7 +59,7 @@ func TestPropertyFormatISOValidInput(t *testing.T) {
 		month := rapid.IntRange(1, 12).Draw(t, "month")
 		day := rapid.IntRange(1, 28).Draw(t, "day") // 28 avoids invalid dates
 		hour := rapid.IntRange(0, 23).Draw(t, "hour")
-		min := rapid.IntRange(0, 59).Draw(t, "min")
+		minute := rapid.IntRange(0, 59).Draw(t, "min")
 		sec := rapid.IntRange(0, 59).Draw(t, "sec")
 		// Generate timezone offset.
 		offsetHour := rapid.IntRange(-12, 14).Draw(t, "offsetHour")
@@ -78,7 +78,7 @@ func TestPropertyFormatISOValidInput(t *testing.T) {
 			tz = fmt.Sprintf("%s%02d:%02d", sign, oh, offsetMin)
 		}
 
-		iso := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d%s", year, month, day, hour, min, sec, tz)
+		iso := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d%s", year, month, day, hour, minute, sec, tz)
 
 		result := FormatISO(iso)
 

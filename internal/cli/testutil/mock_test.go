@@ -9,7 +9,7 @@ import (
 
 // TestMockSessionStoreInterface verifies that MockSessionStore satisfies
 // the api.SessionStore interface at compile time.
-func TestMockSessionStoreInterface(t *testing.T) {
+func TestMockSessionStoreInterface(_ *testing.T) {
 	var _ api.SessionStore = (*MockSessionStore)(nil)
 }
 

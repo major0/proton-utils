@@ -58,7 +58,7 @@ func TestResolveCorrectness(t *testing.T) {
 			idx := rapid.IntRange(0, len(ids)-1).Draw(t, "idx")
 			target := ids[idx]
 			if !strings.Contains(target, "=") {
-				target = target + "="
+				target += "="
 				ids[idx] = target
 			}
 			result, err := Resolve(ids, target)

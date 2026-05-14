@@ -11,7 +11,7 @@ func TestServicePreRunE_ChainsRootAndSetsService(t *testing.T) {
 	rootCalled := false
 	root := &cobra.Command{
 		Use: "root",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			rootCalled = true
 			// Simulate what the real root PersistentPreRunE does:
 			// set up a RuntimeContext so SetServiceCmd can read it.
@@ -46,7 +46,7 @@ func TestServicePreRunE_PropagatesRootError(t *testing.T) {
 	wantErr := errors.New("root failed")
 	root := &cobra.Command{
 		Use: "root",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return wantErr
 		},
 	}
