@@ -32,7 +32,7 @@ func main() {
 	// Create the mountpoint if it doesn't exist. The binary is setuid
 	// root so it has permission to create directories at /.
 	// Ensure root:root 0755 regardless of whether we created it.
-	if err := os.MkdirAll("/proton", 0755); err != nil {
+	if err := os.MkdirAll("/proton", 0755); err != nil { //nolint:gosec // G301: /proton is world-readable by design
 		fmt.Fprintf(os.Stderr, "mkdir /proton: %v\n", err)
 		os.Exit(1)
 	}
@@ -40,7 +40,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "chown /proton: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.Chmod("/proton", 0755); err != nil {
+	if err := os.Chmod("/proton", 0755); err != nil { //nolint:gosec // G302: /proton is world-readable by design
 		fmt.Fprintf(os.Stderr, "chmod /proton: %v\n", err)
 		os.Exit(1)
 	}

@@ -23,10 +23,10 @@ func TestCookieTransport_401TriggersRefresh(t *testing.T) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/auth/refresh":
 			// Cookie refresh endpoint: set new cookies (no request body expected).
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: test cookie — security attributes not relevant here
 				Name: "AUTH-" + uid, Value: "refreshed-auth", Path: "/",
 			})
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: test cookie — security attributes not relevant here
 				Name: "REFRESH-" + uid, Value: "refreshed-refresh", Path: "/",
 			})
 			_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
@@ -162,10 +162,10 @@ func TestCookieTransport_SuccessfulRefreshPersistsCookies(t *testing.T) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/auth/refresh":
 			// Cookie refresh endpoint (no request body expected).
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: test cookie — security attributes not relevant here
 				Name: "AUTH-" + uid, Value: "new-auth-value", Path: "/",
 			})
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: test cookie — security attributes not relevant here
 				Name: "REFRESH-" + uid, Value: "new-refresh-value", Path: "/",
 			})
 			_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})

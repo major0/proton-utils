@@ -48,8 +48,8 @@ func (r *RootNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut
 	out.Ino = 1
 	out.Uid = r.uid
 	out.Gid = r.gid
-	sec := uint64(r.mtime.Unix())
-	nsec := uint32(r.mtime.Nanosecond())
+	sec := uint64(r.mtime.Unix())        //nolint:gosec // G115: time values are always positive
+	nsec := uint32(r.mtime.Nanosecond()) //nolint:gosec // G115: time values are always positive
 	out.Atime = sec
 	out.Atimensec = nsec
 	out.Mtime = sec

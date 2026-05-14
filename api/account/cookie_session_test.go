@@ -125,7 +125,7 @@ func TestCookieDoJSON_CookieSending(t *testing.T) {
 	// Inject an AUTH cookie into the jar for the test server.
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-test-uid-123", Value: "auth-token-xyz", Path: "/"},
+		{Name: "AUTH-test-uid-123", Value: "auth-token-xyz", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	err := cs.DoJSON(context.Background(), "GET", srv.URL+"/test", nil, nil)
@@ -420,7 +420,7 @@ func TestCookieDoSSE_CookieSending(t *testing.T) {
 	cs := testCookieSession(t)
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-test-uid-123", Value: "auth-token-xyz", Path: "/"},
+		{Name: "AUTH-test-uid-123", Value: "auth-token-xyz", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	rc, err := cs.DoSSE(context.Background(), srv.URL+"/test", nil)
@@ -500,9 +500,9 @@ func TestTransitionToCookies_Success(t *testing.T) {
 		_ = json.Unmarshal(data, &gotBody)
 
 		// Set AUTH and REFRESH cookies in the response.
-		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "auth-cookie-val", Path: "/"})
-		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "refresh-cookie-val", Path: "/"})
-		http.SetCookie(w, &http.Cookie{Name: "Session-Id", Value: "sid-123", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "auth-cookie-val", Path: "/"})       //nolint:gosec // G124: test cookie — security attributes not relevant here
+		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "refresh-cookie-val", Path: "/"}) //nolint:gosec // G124: test cookie — security attributes not relevant here
+		http.SetCookie(w, &http.Cookie{Name: "Session-Id", Value: "sid-123", Path: "/"})                //nolint:gosec // G124: test cookie — security attributes not relevant here
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
@@ -595,8 +595,8 @@ func TestExtractRefreshCookie_Found(t *testing.T) {
 	cs.BaseURL = "http://localhost"
 	srvURL, _ := url.Parse(cs.BaseURL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-uid-42", Value: "auth-val", Path: "/"},
-		{Name: "REFRESH-uid-42", Value: "refresh-val", Path: "/"},
+		{Name: "AUTH-uid-42", Value: "auth-val", Path: "/"},       //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-uid-42", Value: "refresh-val", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	uid, token, err := cs.extractRefreshCookie()
@@ -616,7 +616,7 @@ func TestExtractRefreshCookie_Missing(t *testing.T) {
 	cs.BaseURL = "http://localhost"
 	srvURL, _ := url.Parse(cs.BaseURL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-uid-42", Value: "auth-val", Path: "/"},
+		{Name: "AUTH-uid-42", Value: "auth-val", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	_, _, err := cs.extractRefreshCookie()
@@ -641,8 +641,8 @@ func TestRefreshCookies_Success(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 
 		// Return new cookies (no request body expected — REFRESH cookie is the token).
-		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth-token", Path: "/"})
-		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh-token", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth-token", Path: "/"})       //nolint:gosec // G124: test cookie — security attributes not relevant here
+		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh-token", Path: "/"}) //nolint:gosec // G124: test cookie — security attributes not relevant here
 		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
@@ -653,8 +653,8 @@ func TestRefreshCookies_Success(t *testing.T) {
 	// Seed the jar with old cookies.
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-" + uid, Value: "old-auth-token", Path: "/"},
-		{Name: "REFRESH-" + uid, Value: "old-refresh-token", Path: "/"},
+		{Name: "AUTH-" + uid, Value: "old-auth-token", Path: "/"},       //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-" + uid, Value: "old-refresh-token", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	err := cs.RefreshCookies(context.Background())
@@ -688,7 +688,7 @@ func TestRefreshCookies_MissingRefreshCookie(t *testing.T) {
 	// Jar has AUTH but no REFRESH cookie.
 	srvURL, _ := url.Parse(cs.BaseURL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-test-uid-123", Value: "auth-val", Path: "/"},
+		{Name: "AUTH-test-uid-123", Value: "auth-val", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	err := cs.RefreshCookies(context.Background())
@@ -716,7 +716,7 @@ func TestRefreshCookies_APIError(t *testing.T) {
 	cs.BaseURL = srv.URL
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "REFRESH-" + uid, Value: "bad-token", Path: "/"},
+		{Name: "REFRESH-" + uid, Value: "bad-token", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	err := cs.RefreshCookies(context.Background())
@@ -742,8 +742,8 @@ func TestRefreshCookies_Headers(t *testing.T) {
 		gotAppVer = r.Header.Get("x-pm-appversion")
 		gotUA = r.Header.Get("User-Agent")
 		gotCT = r.Header.Get("Content-Type")
-		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "a", Path: "/"})
-		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "r", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "a", Path: "/"})    //nolint:gosec // G124: test cookie — security attributes not relevant here
+		http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "r", Path: "/"}) //nolint:gosec // G124: test cookie — security attributes not relevant here
 		_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 	}))
 	defer srv.Close()
@@ -754,7 +754,7 @@ func TestRefreshCookies_Headers(t *testing.T) {
 	cs.UserAgent = "proton-cli/2.0"
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "REFRESH-" + uid, Value: "old-refresh", Path: "/"},
+		{Name: "REFRESH-" + uid, Value: "old-refresh", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	_ = cs.RefreshCookies(context.Background())
@@ -800,8 +800,8 @@ func TestDoJSON_401RetrySuccess(t *testing.T) {
 
 		case "/auth/refresh":
 			// Refresh endpoint: return new cookies (no request body expected).
-			http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth", Path: "/"})
-			http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh", Path: "/"})
+			http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth", Path: "/"})       //nolint:gosec // G124: test cookie — security attributes not relevant here
+			http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh", Path: "/"}) //nolint:gosec // G124: test cookie — security attributes not relevant here
 			_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 
 		default:
@@ -814,8 +814,8 @@ func TestDoJSON_401RetrySuccess(t *testing.T) {
 	cs.BaseURL = srv.URL
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-" + uid, Value: "expired-auth", Path: "/"},
-		{Name: "REFRESH-" + uid, Value: "valid-refresh", Path: "/"},
+		{Name: "AUTH-" + uid, Value: "expired-auth", Path: "/"},     //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-" + uid, Value: "valid-refresh", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	type result struct {
@@ -851,8 +851,8 @@ func TestDoJSON_401RetryStillFails(t *testing.T) {
 
 		case "/auth/refresh":
 			// Refresh succeeds but the retry still gets 401.
-			http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth", Path: "/"})
-			http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh", Path: "/"})
+			http.SetCookie(w, &http.Cookie{Name: "AUTH-" + uid, Value: "new-auth", Path: "/"})       //nolint:gosec // G124: test cookie — security attributes not relevant here
+			http.SetCookie(w, &http.Cookie{Name: "REFRESH-" + uid, Value: "new-refresh", Path: "/"}) //nolint:gosec // G124: test cookie — security attributes not relevant here
 			_ = json.NewEncoder(w).Encode(map[string]any{"Code": 1000})
 
 		default:
@@ -865,8 +865,8 @@ func TestDoJSON_401RetryStillFails(t *testing.T) {
 	cs.BaseURL = srv.URL
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-" + uid, Value: "expired-auth", Path: "/"},
-		{Name: "REFRESH-" + uid, Value: "valid-refresh", Path: "/"},
+		{Name: "AUTH-" + uid, Value: "expired-auth", Path: "/"},     //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-" + uid, Value: "valid-refresh", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	err := cs.DoJSON(context.Background(), "GET", "/test", nil, nil)
@@ -950,8 +950,8 @@ func TestDoJSON_401RefreshFails(t *testing.T) {
 	cs.BaseURL = srv.URL
 	srvURL, _ := url.Parse(srv.URL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-" + uid, Value: "expired-auth", Path: "/"},
-		{Name: "REFRESH-" + uid, Value: "bad-refresh", Path: "/"},
+		{Name: "AUTH-" + uid, Value: "expired-auth", Path: "/"},   //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-" + uid, Value: "bad-refresh", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	err := cs.DoJSON(context.Background(), "GET", "/test", nil, nil)
@@ -972,9 +972,9 @@ func TestCookieSessionConfig_RoundTrip(t *testing.T) {
 	cs.BaseURL = "http://localhost"
 	srvURL, _ := url.Parse(cs.BaseURL)
 	cs.cookieJar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-" + uid, Value: "auth-token-abc", Path: "/"},
-		{Name: "REFRESH-" + uid, Value: "refresh-token-xyz", Path: "/"},
-		{Name: "Session-Id", Value: "sid-42", Path: "/"},
+		{Name: "AUTH-" + uid, Value: "auth-token-abc", Path: "/"},       //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-" + uid, Value: "refresh-token-xyz", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "Session-Id", Value: "sid-42", Path: "/"},                //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	config := cs.Config()

@@ -27,7 +27,7 @@ func TestReady_FilesystemSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // test cleanup
 
 	t.Setenv("NOTIFY_SOCKET", sock)
 
@@ -55,7 +55,7 @@ func TestReady_AbstractSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // test cleanup
 
 	// Set NOTIFY_SOCKET with @ prefix (systemd convention).
 	t.Setenv("NOTIFY_SOCKET", "@"+abstract[1:])
@@ -77,7 +77,7 @@ func TestReady_AbstractSocket(t *testing.T) {
 }
 
 func TestReady_UnsetSocket(t *testing.T) {
-	os.Unsetenv("NOTIFY_SOCKET")
+	os.Unsetenv("NOTIFY_SOCKET") //nolint:errcheck // test cleanup
 
 	if err := sdnotify.Ready(); err != nil {
 		t.Fatalf("Ready() with unset NOTIFY_SOCKET: %v", err)

@@ -53,7 +53,7 @@ func EnsureMountDir(path string) error {
 	mode := info.Mode().Perm()
 	if mode&0077 != 0 {
 		// Directory is group/world accessible — tighten to 0700.
-		if err := os.Chmod(parentDir, 0700); err != nil {
+		if err := os.Chmod(parentDir, 0700); err != nil { //nolint:gosec // G302: tightening permissions is intentional
 			return fmt.Errorf("mount parent directory %s has mode %04o, chmod to 0700 failed: %w", parentDir, mode, err)
 		}
 	}

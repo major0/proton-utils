@@ -44,7 +44,7 @@ func TestEnsureMountDir_ExistingCorrectDir(t *testing.T) {
 func TestEnsureMountDir_FixesWrongMode(t *testing.T) {
 	tmpDir := t.TempDir()
 	parentDir := filepath.Join(tmpDir, "proton")
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0755); err != nil { //nolint:gosec // G301: test setup — verifying EnsureMountDir tightens permissions
 		t.Fatalf("setup: %v", err)
 	}
 

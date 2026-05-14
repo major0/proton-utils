@@ -49,7 +49,7 @@ func TestCookieTransport_SendsCookies(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	srvURL, _ := url.Parse(srv.URL)
 	jar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-uid-123", Value: "cookie-token", Path: "/"},
+		{Name: "AUTH-uid-123", Value: "cookie-token", Path: "/"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	ct := &CookieTransport{Base: http.DefaultTransport}

@@ -156,7 +156,7 @@ func TestDoJSON_CookiesAttached(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		if callCount == 1 {
-			http.SetCookie(w, &http.Cookie{Name: "Session-Id", Value: "abc123", Path: "/"})
+			http.SetCookie(w, &http.Cookie{Name: "Session-Id", Value: "abc123", Path: "/"}) //nolint:gosec // G124: test cookie — security attributes not relevant here
 		} else {
 			c, err := r.Cookie("Session-Id")
 			if err != nil {

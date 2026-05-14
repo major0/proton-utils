@@ -557,8 +557,8 @@ func TestDoJSONCookie_SendsAuthHeaders(t *testing.T) {
 	// Set an AUTH-* cookie in the jar for the test server.
 	srvURL, _ := url.Parse(srv.URL)
 	jar.SetCookies(srvURL, []*http.Cookie{
-		{Name: "AUTH-parent-uid", Value: "parent-token"},
-		{Name: "Session-Id", Value: "sid-123"},
+		{Name: "AUTH-parent-uid", Value: "parent-token"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "Session-Id", Value: "sid-123"},           //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	s := &Session{

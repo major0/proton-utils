@@ -101,7 +101,7 @@ func loadProtonCookies(jar http.CookieJar, cookies []api.SerialCookie, baseURL s
 		if isProton && (domain == "" || domain == CookieDomain || strings.HasSuffix(domain, "."+CookieDomain)) {
 			domain = CookieDomain
 		}
-		httpCookies[i] = &http.Cookie{
+		httpCookies[i] = &http.Cookie{ //nolint:gosec // G124: client-side jar injection — server controls cookie attributes
 			Name:   c.Name,
 			Value:  c.Value,
 			Domain: domain,

@@ -35,8 +35,8 @@ func (r *Root) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) sy
 	out.Mode = syscall.S_IFDIR | 0555
 	out.Nlink = 2
 	out.Ino = 1
-	sec := uint64(r.mtime.Unix())
-	nsec := uint32(r.mtime.Nanosecond())
+	sec := uint64(r.mtime.Unix())        //nolint:gosec // G115: time values are always positive
+	nsec := uint32(r.mtime.Nanosecond()) //nolint:gosec // G115: time values are always positive
 	out.Atime = sec
 	out.Atimensec = nsec
 	out.Mtime = sec

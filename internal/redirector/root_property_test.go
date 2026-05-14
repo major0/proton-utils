@@ -60,7 +60,7 @@ func TestPropertyEnvironmentClearing(t *testing.T) {
 		for i := range count {
 			key := fmt.Sprintf("PROP_TEST_%d", i)
 			value := rapid.StringMatching(`[a-zA-Z0-9]{1,20}`).Draw(t, fmt.Sprintf("val_%d", i))
-			os.Setenv(key, value)
+			os.Setenv(key, value) //nolint:errcheck,gosec // test setup
 		}
 
 		ClearEnvironment()

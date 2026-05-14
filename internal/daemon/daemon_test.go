@@ -113,12 +113,12 @@ func TestWaitWithSignal_UnmountErrorWrittenToStderr(t *testing.T) {
 		t.Fatal("WaitWithSignal did not return after signal")
 	}
 
-	w.Close()
+	w.Close() //nolint:errcheck,gosec // test cleanup
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
-	r.Close()
+	r.Close() //nolint:errcheck,gosec // test cleanup
 
 	expected := fmt.Sprintf("unmount: %v\n", srv.unmountErr)
 	if buf.String() != expected {

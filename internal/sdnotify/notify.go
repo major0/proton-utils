@@ -22,7 +22,7 @@ func Ready() error {
 		addr = "\x00" + addr[1:]
 	}
 
-	conn, err := net.Dial("unixgram", addr)
+	conn, err := net.Dial("unixgram", addr) //nolint:gosec // G704: Unix domain socket — not a network SSRF vector
 	if err != nil {
 		return err
 	}

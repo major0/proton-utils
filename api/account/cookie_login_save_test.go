@@ -41,8 +41,8 @@ func TestCookieLoginSave_CookieStoreFields(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	u, _ := url.Parse("https://account.proton.me/api/auth/refresh")
 	jar.SetCookies(u, []*http.Cookie{
-		{Name: "AUTH-uid1", Value: "auth-val"},
-		{Name: "REFRESH-uid1", Value: "refresh-val"},
+		{Name: "AUTH-uid1", Value: "auth-val"},       //nolint:gosec // G124: test cookie — security attributes not relevant here
+		{Name: "REFRESH-uid1", Value: "refresh-val"}, //nolint:gosec // G124: test cookie — security attributes not relevant here
 	})
 
 	session := &api.Session{

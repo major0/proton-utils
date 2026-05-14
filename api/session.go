@@ -99,7 +99,7 @@ func LoadCookies(jar http.CookieJar, cookies []SerialCookie, apiURL *url.URL) {
 	}
 	httpCookies := make([]*http.Cookie, len(cookies))
 	for i, c := range cookies {
-		httpCookies[i] = &http.Cookie{
+		httpCookies[i] = &http.Cookie{ //nolint:gosec // G124: client-side jar injection — server controls cookie attributes
 			Name:   c.Name,
 			Value:  c.Value,
 			Domain: c.Domain,
