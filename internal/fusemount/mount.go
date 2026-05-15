@@ -20,9 +20,10 @@ import (
 
 // MountConfig holds configuration for the per-user FUSE mount.
 type MountConfig struct {
-	Mountpoint   string
-	EntryTimeout time.Duration // default 1s; zero = kernel default
-	AttrTimeout  time.Duration // default 1s; zero = kernel default
+	Mountpoint     string
+	EntryTimeout   time.Duration // default 1s; zero = kernel default
+	AttrTimeout    time.Duration // default 1s; zero = kernel default
+	PrefetchBlocks int           // kernel read-ahead in blocks (0 = kernel default, max 64)
 }
 
 // EnsureMountDir creates the mountpoint and its parent directory with mode 0700
@@ -113,16 +114,25 @@ func CleanStaleMount(path string) error {
 	return nil
 }
 
+// blockSize is the Proton Drive block size (4 MiB). Defined locally to
+// avoid importing api/drive from the fusemount package.
+const blockSize = 4 * 1024 * 1024
+
 // buildFSOptions constructs the go-fuse fs.Options from a MountConfig.
 // Extracted for testability — the timeout wiring can be verified without
 // requiring /dev/fuse.
 func buildFSOptions(cfg MountConfig) *fs.Options {
+	mopts := fuse.MountOptions{
+		FsName:     "proton-fuse",
+		Name:       "proton-fuse",
+		AllowOther: true,
+		MaxWrite:   blockSize, // 4 MiB — aligns FUSE reads with block size
+	}
+	if cfg.PrefetchBlocks > 0 {
+		mopts.MaxReadAhead = cfg.PrefetchBlocks * blockSize
+	}
 	return &fs.Options{
-		MountOptions: fuse.MountOptions{
-			FsName:     "proton-fuse",
-			Name:       "proton-fuse",
-			AllowOther: true,
-		},
+		MountOptions:   mopts,
 		RootStableAttr: &fs.StableAttr{Ino: 1},
 		EntryTimeout:   &cfg.EntryTimeout,
 		AttrTimeout:    &cfg.AttrTimeout,

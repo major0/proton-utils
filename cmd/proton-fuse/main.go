@@ -320,43 +320,54 @@ func run(cfg daemonConfig) error {
 	session.Config = sessionCfg
 	session.UserAgent = userAgent
 
-	// Step 7: Construct drive client.
+	// Step 7: Compute prefetch configuration from config.
+	prefetchBlocks := appCfg.PrefetchBlocks.Value()
+	if prefetchBlocks < 0 {
+		prefetchBlocks = 0
+	}
+	if prefetchBlocks > 64 {
+		prefetchBlocks = 64
+	}
+
+	// Step 8: Construct drive client.
 	driveClient, err := drive.NewClient(ctx, session)
 	if err != nil {
 		return fmt.Errorf("creating drive client: %w", err)
 	}
 	driveClient.Config = sessionCfg
 	driveClient.InitObjectCache()
+	driveClient.PrefetchBlocks = prefetchBlocks
 
-	// Step 8: Construct DriveHandler and load shares.
+	// Step 9: Construct DriveHandler and load shares.
 	handler := fusedrv.NewDriveHandler(driveClient)
 	if err := handler.LoadShares(ctx); err != nil {
 		return fmt.Errorf("loading shares: %w", err)
 	}
 
-	// Step 9: Register in NamespaceRegistry.
+	// Step 10: Register in NamespaceRegistry.
 	registry := fusemount.NewRegistry()
 	registry.Register("drive", handler)
 
-	// Step 10: Mount FUSE filesystem.
+	// Step 11: Mount FUSE filesystem.
 	mountCfg := fusemount.MountConfig{
-		Mountpoint:   cfg.mountpoint,
-		EntryTimeout: fuseCacheTimeout,
-		AttrTimeout:  fuseCacheTimeout,
+		Mountpoint:     cfg.mountpoint,
+		EntryTimeout:   fuseCacheTimeout,
+		AttrTimeout:    fuseCacheTimeout,
+		PrefetchBlocks: prefetchBlocks,
 	}
 	server, err := fusemount.Mount(mountCfg, registry)
 	if err != nil {
 		return fmt.Errorf("mounting filesystem: %w", err)
 	}
 
-	// Step 11: Signal systemd readiness.
+	// Step 12: Signal systemd readiness.
 	if err := sdnotify.Ready(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: sd_notify: %v\n", err)
 	}
 
 	slog.Info("proton-fuse ready", "mountpoint", cfg.mountpoint, "account", acctName)
 
-	// Step 12: Start combined refresh goroutine.
+	// Step 13: Start combined refresh goroutine.
 	// Initialize lastRefresh from persisted credentials.
 	creds, err := store.Load()
 	var lastRefresh time.Time
@@ -371,7 +382,7 @@ func run(cfg daemonConfig) error {
 		startRefreshLoop(refreshCtx, handler, session, lastRefresh)
 	}()
 
-	// Step 13: Signal wait — SIGTERM/SIGINT triggers graceful shutdown.
+	// Step 14: Signal wait — SIGTERM/SIGINT triggers graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	<-sigCh

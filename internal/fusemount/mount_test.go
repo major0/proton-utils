@@ -252,7 +252,40 @@ func TestBuildFSOptions_MountOptions(t *testing.T) {
 	if !opts.AllowOther {
 		t.Error("AllowOther = false, want true")
 	}
+	if opts.MaxWrite != blockSize {
+		t.Errorf("MaxWrite = %d, want %d", opts.MaxWrite, blockSize)
+	}
 	if opts.RootStableAttr == nil || opts.RootStableAttr.Ino != 1 {
 		t.Errorf("RootStableAttr.Ino = %v, want 1", opts.RootStableAttr)
+	}
+}
+
+func TestBuildFSOptions_PrefetchBlocks(t *testing.T) {
+	tests := []struct {
+		name           string
+		prefetchBlocks int
+		wantReadAhead  int
+	}{
+		{"zero means kernel default", 0, 0},
+		{"one block", 1, 4 * 1024 * 1024},
+		{"four blocks", 4, 16 * 1024 * 1024},
+		{"max 64 blocks", 64, 64 * 4 * 1024 * 1024},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := MountConfig{
+				Mountpoint:     "/run/user/1000/proton/fs",
+				EntryTimeout:   time.Second,
+				AttrTimeout:    time.Second,
+				PrefetchBlocks: tt.prefetchBlocks,
+			}
+
+			opts := buildFSOptions(cfg)
+
+			if opts.MaxReadAhead != tt.wantReadAhead {
+				t.Errorf("MaxReadAhead = %d, want %d", opts.MaxReadAhead, tt.wantReadAhead)
+			}
+		})
 	}
 }
