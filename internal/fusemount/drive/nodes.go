@@ -42,7 +42,7 @@ var _ fusemount.DirNode = (*ShareDirNode)(nil)
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	//nolint:gosec // ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0555,
+		Mode:  syscall.S_IFDIR | 0700,
 		Nlink: 2,
 		Mtime: uint64(n.share.Link.ModifyTime()),
 		Ctime: uint64(n.share.Link.CreateTime()),
@@ -132,7 +132,7 @@ var _ fusemount.DirNode = (*LinkDirNode)(nil)
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	//nolint:gosec // ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0555,
+		Mode:  syscall.S_IFDIR | 0700,
 		Nlink: 2,
 		Mtime: uint64(n.link.ModifyTime()),
 		Ctime: uint64(n.link.CreateTime()),
@@ -203,13 +203,14 @@ func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, sy
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
-// Directories use 0555 (execute = traverse). Files use 0444 (read-only,
-// no execute bit — semantically correct for data files).
+// Directories use 0700 (owner rwx). Files use 0600 (owner rw).
+// Group/other bits are cosmetic — DispatchNode.checkAccess enforces
+// UID-gated access at the FUSE layer regardless of permission bits.
 func linkMode(l *drive.Link) uint32 {
 	if l.Type() == proton.LinkTypeFolder {
-		return syscall.S_IFDIR | 0555
+		return syscall.S_IFDIR | 0700
 	}
-	return syscall.S_IFREG | 0444
+	return syscall.S_IFREG | 0600
 }
 
 // linkNode returns the appropriate fusemount.Node for a link based on its type.
@@ -245,7 +246,7 @@ var _ fusemount.FileHandle = (*fdHandle)(nil)
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFREG | 0444,
+		Mode:  syscall.S_IFREG | 0600,
 		Size:  uint64(n.link.Size()),
 		Nlink: 1,
 		Mtime: uint64(n.link.ModifyTime()),
@@ -318,7 +319,7 @@ var _ fusemount.DirNode = (*LinkIDDir)(nil)
 // Getattr returns directory attributes for the .linkid virtual directory.
 func (n *LinkIDDir) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0555,
+		Mode:  syscall.S_IFDIR | 0700,
 		Nlink: 2,
 		Mtime: n.mtime,
 		Ctime: n.ctime,
