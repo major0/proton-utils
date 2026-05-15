@@ -11,7 +11,7 @@ type slotState int
 const (
 	slotEmpty    slotState = iota
 	slotFetching           // fetch in progress, waiters block on ready
-	slotClean              // encrypted data available
+	slotClean              // data available
 )
 
 // cacheKey identifies a block in the buffer cache.
@@ -20,17 +20,17 @@ type cacheKey struct {
 	index  int
 }
 
-// cacheSlot holds one encrypted block in the buffer cache.
+// cacheSlot holds one block in the buffer cache.
 type cacheSlot struct {
 	key   cacheKey
-	data  []byte        // encrypted block data (nil until clean)
+	data  []byte        // block data (encrypted or decrypted depending on mode)
 	ready chan struct{} // closed when state transitions to clean/error
 	err   error         // fetch error (nil on success)
 	elem  *list.Element // position in LRU list
 	state slotState
 }
 
-// bufferCache is a fixed-size in-memory cache of encrypted block data.
+// bufferCache is a fixed-size in-memory cache of block data.
 // Slots are keyed by (linkID, blockIndex) for O(1) lookup. LRU eviction
 // targets clean slots only — fetching slots are never evicted.
 type bufferCache struct {
@@ -100,7 +100,7 @@ func (bc *bufferCache) Get(linkID string, index int) ([]byte, error) {
 	}
 }
 
-// Put stores encrypted block data in the cache. If the slot already
+// Put stores block data in the cache. If the slot already
 // exists (from Reserve), it transitions to clean and wakes waiters.
 // If the slot doesn't exist, creates it directly as clean.
 func (bc *bufferCache) Put(linkID string, index int, data []byte) {
