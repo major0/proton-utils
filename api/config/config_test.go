@@ -215,6 +215,10 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 		if rapid.Bool().Draw(t, "setPrefetchBlocks") {
 			cfg.PrefetchBlocks.SetFile(rapid.IntRange(0, 64).Draw(t, "prefetchBlocks"))
 		}
+		if rapid.Bool().Draw(t, "setBlockCacheMode") {
+			mode := rapid.SampledFrom([]string{"encrypted", "decrypted"}).Draw(t, "blockCacheMode")
+			cfg.BlockCacheMode.SetFile(mode)
+		}
 
 		// Random shares.
 		nShares := rapid.IntRange(0, 5).Draw(t, "nShares")
@@ -264,6 +268,7 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 		assertParamEqual(t, "AppVersion", cfg.AppVersion, loaded.AppVersion)
 		assertParamEqualArr(t, "MemoryCacheWatermark", cfg.MemoryCacheWatermark, loaded.MemoryCacheWatermark)
 		assertParamEqual(t, "PrefetchBlocks", cfg.PrefetchBlocks, loaded.PrefetchBlocks)
+		assertParamEqual(t, "BlockCacheMode", cfg.BlockCacheMode, loaded.BlockCacheMode)
 
 		// Verify shares.
 		if len(cfg.Shares) != len(loaded.Shares) {
@@ -432,5 +437,139 @@ func TestPrefetchBlocks_LoadFromYAML(t *testing.T) {
 	}
 	if loaded.PrefetchBlocks.Source() != File {
 		t.Fatalf("PrefetchBlocks source: got %v, want File", loaded.PrefetchBlocks.Source())
+	}
+}
+
+// --- BlockCacheMode unit tests ---
+
+func TestBlockCacheMode_Default(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.BlockCacheMode.Value() != "encrypted" {
+		t.Fatalf("default BlockCacheMode: got %q, want %q", cfg.BlockCacheMode.Value(), "encrypted")
+	}
+	if cfg.BlockCacheMode.IsSet() {
+		t.Fatal("BlockCacheMode should not be set by default")
+	}
+}
+
+func TestBlockCacheMode_AcceptsValid(t *testing.T) {
+	cfg := DefaultConfig()
+
+	for _, mode := range []string{"encrypted", "decrypted"} {
+		sel, _ := Parse("protonfs.block_cache_mode")
+		if err := Set(cfg, sel, mode); err != nil {
+			t.Fatalf("Set(%q): unexpected error: %v", mode, err)
+		}
+		got, err := Get(cfg, sel)
+		if err != nil {
+			t.Fatalf("Get after Set(%q): %v", mode, err)
+		}
+		if got != mode {
+			t.Fatalf("Get after Set(%q): got %q", mode, got)
+		}
+	}
+}
+
+func TestBlockCacheMode_RejectsInvalid(t *testing.T) {
+	cfg := DefaultConfig()
+	sel, _ := Parse("protonfs.block_cache_mode")
+
+	for _, bad := range []string{"", "plaintext", "ENCRYPTED", "Decrypted", "both", "none"} {
+		err := Set(cfg, sel, bad)
+		if err == nil {
+			t.Fatalf("Set(%q): expected error", bad)
+		}
+		if !strings.Contains(err.Error(), `block_cache_mode must be "encrypted" or "decrypted"`) {
+			t.Fatalf("Set(%q): unexpected error message: %v", bad, err)
+		}
+	}
+}
+
+func TestBlockCacheMode_YAMLRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.BlockCacheMode.SetFile("decrypted")
+
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if loaded.BlockCacheMode.Source() != File {
+		t.Fatalf("BlockCacheMode source: got %v, want File", loaded.BlockCacheMode.Source())
+	}
+	if loaded.BlockCacheMode.Value() != "decrypted" {
+		t.Fatalf("BlockCacheMode value: got %q, want %q", loaded.BlockCacheMode.Value(), "decrypted")
+	}
+}
+
+func TestBlockCacheMode_NotPersistedWhenDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	if strings.Contains(string(data), "block_cache_mode") {
+		t.Fatal("block_cache_mode should not appear in YAML when not explicitly set")
+	}
+}
+
+func TestBlockCacheMode_UnsetRevertsToDefault(t *testing.T) {
+	cfg := DefaultConfig()
+	sel, _ := Parse("protonfs.block_cache_mode")
+
+	// Set to decrypted.
+	if err := Set(cfg, sel, "decrypted"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if cfg.BlockCacheMode.Value() != "decrypted" {
+		t.Fatalf("after Set: got %q, want %q", cfg.BlockCacheMode.Value(), "decrypted")
+	}
+
+	// Unset.
+	if err := UnsetField(cfg, sel); err != nil {
+		t.Fatalf("UnsetField: %v", err)
+	}
+	if cfg.BlockCacheMode.Value() != "encrypted" {
+		t.Fatalf("after Unset: got %q, want %q", cfg.BlockCacheMode.Value(), "encrypted")
+	}
+	if cfg.BlockCacheMode.IsSet() {
+		t.Fatal("BlockCacheMode should not be set after unset")
+	}
+}
+
+func TestBlockCacheMode_LoadFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	yamlData := []byte("block_cache_mode: decrypted\n")
+	if err := os.WriteFile(path, yamlData, 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if loaded.BlockCacheMode.Value() != "decrypted" {
+		t.Fatalf("BlockCacheMode: got %q, want %q", loaded.BlockCacheMode.Value(), "decrypted")
+	}
+	if loaded.BlockCacheMode.Source() != File {
+		t.Fatalf("BlockCacheMode source: got %v, want File", loaded.BlockCacheMode.Source())
 	}
 }

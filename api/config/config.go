@@ -35,6 +35,10 @@ type Config struct {
 	// block size (4 MiB). 0 means kernel default; max 64.
 	PrefetchBlocks Param[int]
 
+	// BlockCacheMode controls whether the buffer cache stores encrypted
+	// or decrypted block data. Default: "encrypted".
+	BlockCacheMode Param[string]
+
 	// Shares is keyed by Proton share ID.
 	Shares map[string]api.ShareConfig
 
@@ -66,6 +70,7 @@ type configYAML struct {
 	coreConfigYAML       `yaml:",inline"`
 	MemoryCacheWatermark *string                    `yaml:"memory_cache_watermark,omitempty"`
 	PrefetchBlocks       *int                       `yaml:"prefetch_blocks,omitempty"`
+	BlockCacheMode       *string                    `yaml:"block_cache_mode,omitempty"`
 	Shares               map[string]api.ShareConfig `yaml:"shares,omitempty"`
 	Subsystems           map[string]coreConfigYAML  `yaml:"subsystems,omitempty"`
 }
@@ -85,6 +90,10 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 	if c.PrefetchBlocks.Source() == File {
 		v := c.PrefetchBlocks.Value()
 		y.PrefetchBlocks = &v
+	}
+	if c.BlockCacheMode.Source() == File {
+		v := c.BlockCacheMode.Value()
+		y.BlockCacheMode = &v
 	}
 	for id, sc := range c.Shares {
 		y.Shares[id] = sc
@@ -121,6 +130,9 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	}
 	if y.PrefetchBlocks != nil {
 		c.PrefetchBlocks.SetFile(*y.PrefetchBlocks)
+	}
+	if y.BlockCacheMode != nil {
+		c.BlockCacheMode.SetFile(*y.BlockCacheMode)
 	}
 	if y.Shares != nil {
 		c.Shares = y.Shares
@@ -202,6 +214,7 @@ func DefaultConfig() *Config {
 		},
 		MemoryCacheWatermark: NewParam([2]int64{0, 0}),
 		PrefetchBlocks:       NewParam(1),
+		BlockCacheMode:       NewParam("encrypted"),
 		Shares:               make(map[string]api.ShareConfig),
 		Subsystems:           make(map[string]*CoreConfig),
 	}

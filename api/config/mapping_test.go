@@ -47,8 +47,8 @@ func allValidLeafSelectors(cfg *Config) []string {
 
 // genValidSelectorAndValue generates a random valid (selector string, value string) pair.
 func genValidSelectorAndValue(t *rapid.T) (string, string) {
-	// Choose a category: core, subsystem, or share.
-	category := rapid.IntRange(0, 2).Draw(t, "category")
+	// Choose a category: core, subsystem, share, or protonfs.
+	category := rapid.IntRange(0, 3).Draw(t, "category")
 
 	switch category {
 	case 0: // core
@@ -86,7 +86,7 @@ func genValidSelectorAndValue(t *rapid.T) (string, string) {
 			v := rapid.StringMatching(`[0-9]+\.[0-9]+\.[0-9]+`).Draw(t, "appVersion")
 			return svc + ".app_version", v
 		}
-	default: // share
+	case 2: // share
 		id := rapid.StringMatching(`[a-zA-Z0-9]{8,16}`).Draw(t, "shareID")
 		field := rapid.IntRange(0, 1).Draw(t, "shareField")
 		switch field {
@@ -96,6 +96,16 @@ func genValidSelectorAndValue(t *rapid.T) (string, string) {
 		default:
 			v := rapid.SampledFrom([]string{"disabled", "objectstore"}).Draw(t, "diskCache")
 			return "share[id=" + id + "].disk_cache", v
+		}
+	default: // protonfs
+		field := rapid.IntRange(0, 1).Draw(t, "protonfsField")
+		switch field {
+		case 0:
+			v := rapid.IntRange(0, 64).Draw(t, "prefetchBlocks")
+			return "protonfs.prefetch_blocks", formatInt(v)
+		default:
+			v := rapid.SampledFrom([]string{"encrypted", "decrypted"}).Draw(t, "blockCacheMode")
+			return "protonfs.block_cache_mode", v
 		}
 	}
 }
@@ -425,6 +435,39 @@ func snapshotConfig(cfg *Config) configSnapshot {
 		b += e.Selector + "=" + e.Value + "(" + e.Source.String() + ")\n"
 	}
 	return configSnapshot{entries: b}
+}
+
+// TestBlockCacheModeValidation_Property verifies that for any string that is
+// not "encrypted" or "decrypted", setting protonfs.block_cache_mode returns
+// a validation error.
+//
+// **Property 1: Invalid config values are rejected**
+// **Validates: Requirement 1.3**
+func TestBlockCacheModeValidation_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		cfg := DefaultConfig()
+
+		// Generate an arbitrary string that is NOT "encrypted" or "decrypted".
+		value := rapid.String().Draw(t, "value")
+		for value == "encrypted" || value == "decrypted" {
+			value = rapid.String().Draw(t, "value")
+		}
+
+		sel, err := Parse("protonfs.block_cache_mode")
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+
+		err = Set(cfg, sel, value)
+		if err == nil {
+			t.Fatalf("Set(protonfs.block_cache_mode, %q) should have returned error", value)
+		}
+
+		// Verify the config was not modified.
+		if cfg.BlockCacheMode.IsSet() {
+			t.Fatalf("BlockCacheMode should not be set after failed validation")
+		}
+	})
 }
 
 // --- Unit tests for mapping functions ---

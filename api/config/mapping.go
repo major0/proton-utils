@@ -158,6 +158,15 @@ func List(cfg *Config) []Entry {
 		})
 	}
 
+	// Core-only: block_cache_mode.
+	if cfg.BlockCacheMode.Source() == File {
+		entries = append(entries, Entry{
+			Selector: "protonfs.block_cache_mode",
+			Value:    cfg.BlockCacheMode.Value(),
+			Source:   File,
+		})
+	}
+
 	// Subsystem overrides.
 	for _, svc := range sortedKeys(cfg.Subsystems) {
 		sub := cfg.Subsystems[svc]
@@ -227,6 +236,14 @@ func Show(cfg *Config) []Entry {
 		Selector: "protonfs.prefetch_blocks",
 		Value:    pbInfo.Value,
 		Source:   pbInfo.Source,
+	})
+
+	// Core-only: block_cache_mode.
+	bcmInfo := cfg.BlockCacheMode.Info(formatString)
+	entries = append(entries, Entry{
+		Selector: "protonfs.block_cache_mode",
+		Value:    bcmInfo.Value,
+		Source:   bcmInfo.Source,
 	})
 
 	// Subsystem overrides.
@@ -506,7 +523,8 @@ func unsetSubsystemField(cfg *Config, sel Selector) error {
 
 // protonfsFields maps field names in the "protonfs" namespace.
 var protonfsFields = map[string]bool{
-	"prefetch_blocks": true,
+	"prefetch_blocks":  true,
+	"block_cache_mode": true,
 }
 
 func getProtonFSField(cfg *Config, sel Selector) (string, error) {
@@ -514,6 +532,8 @@ func getProtonFSField(cfg *Config, sel Selector) (string, error) {
 	switch fieldName {
 	case "prefetch_blocks":
 		return formatInt(cfg.PrefetchBlocks.Value()), nil
+	case "block_cache_mode":
+		return cfg.BlockCacheMode.Value(), nil
 	default:
 		return "", unknownFieldError("protonfs", fieldName)
 	}
@@ -529,6 +549,12 @@ func setProtonFSField(cfg *Config, sel Selector, value string) error {
 		}
 		cfg.PrefetchBlocks.SetFile(v.(int))
 		return nil
+	case "block_cache_mode":
+		if value != "encrypted" && value != "decrypted" {
+			return fmt.Errorf("config: block_cache_mode must be \"encrypted\" or \"decrypted\", got %q", value)
+		}
+		cfg.BlockCacheMode.SetFile(value)
+		return nil
 	default:
 		return unknownFieldError("protonfs", fieldName)
 	}
@@ -539,6 +565,9 @@ func unsetProtonFSField(cfg *Config, sel Selector) error {
 	switch fieldName {
 	case "prefetch_blocks":
 		cfg.PrefetchBlocks.Reset()
+		return nil
+	case "block_cache_mode":
+		cfg.BlockCacheMode.Reset()
 		return nil
 	default:
 		return unknownFieldError("protonfs", fieldName)
