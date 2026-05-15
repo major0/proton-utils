@@ -37,10 +37,10 @@ func (m *memBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ str
 	return nil
 }
 
-func (m *memBlockStore) Invalidate(_ string) {}
+func (m *memBlockStore) Invalidate(_ string, _ int) {}
 
 func (m *memBlockStore) fetchBlock(_ context.Context, _ string, index int, _, _ string) ([]byte, error) {
-	return m.GetBlock(nil, "", index, "", "")
+	return m.GetBlock(context.TODO(), "", index, "", "")
 }
 
 func (m *memBlockStore) getBufCache() *bufferCache { return nil }

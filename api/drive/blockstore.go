@@ -32,7 +32,7 @@ type blockStore interface {
 	UploadBlock(ctx context.Context, linkID string, index int, bareURL, token string, data []byte) error
 	// Invalidate removes cached blocks for a linkID from both the
 	// buffer cache and the on-disk cache.
-	Invalidate(linkID string)
+	Invalidate(linkID string, blockCount int)
 }
 
 // blockReader wraps a []byte to satisfy resty.MultiPartStream.
@@ -164,18 +164,13 @@ func (s *httpBlockStore) UploadBlock(ctx context.Context, linkID string, index i
 
 // Invalidate removes cached blocks for a linkID from both the buffer
 // cache and the on-disk ObjectCache.
-func (s *httpBlockStore) Invalidate(linkID string) {
+func (s *httpBlockStore) Invalidate(linkID string, blockCount int) {
 	if s.bufCache != nil {
 		s.bufCache.Invalidate(linkID)
 	}
-	if s.cache != nil {
-		prefix := linkID + ".block."
-		cancel := make(chan struct{})
-		defer close(cancel)
-		for key := range s.cache.Keys(cancel) {
-			if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
-				_ = s.cache.Erase(key)
-			}
+	if s.cache != nil && blockCount > 0 {
+		for i := 1; i <= blockCount; i++ {
+			_ = s.cache.Erase(blockCacheKey(linkID, i))
 		}
 	}
 }

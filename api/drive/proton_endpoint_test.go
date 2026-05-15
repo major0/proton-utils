@@ -33,7 +33,7 @@ func (m *mockBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ st
 	return nil
 }
 
-func (m *mockBlockStore) Invalidate(_ string) {}
+func (m *mockBlockStore) Invalidate(_ string, _ int) {}
 
 func (m *mockBlockStore) fetchBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
 	return m.GetBlock(ctx, linkID, index, bareURL, token)

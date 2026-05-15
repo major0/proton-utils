@@ -40,7 +40,7 @@ func TestPropertyBufferCachePlaintextHit(t *testing.T) {
 		bc := newBufferCache(64)
 
 		linkID := rapid.StringMatching(`[a-zA-Z0-9]{4,16}`).Draw(t, "linkID")
-		index := rapid.IntRange(0, 100).Draw(t, "index")
+		index := rapid.IntRange(1, 100).Draw(t, "index")
 		plaintext := rapid.SliceOfN(rapid.Byte(), 1, 256).Draw(t, "plaintext")
 
 		// Simulate FD layer putting decrypted plaintext.
@@ -73,13 +73,13 @@ func TestBlockStoreDiskCacheHit(t *testing.T) {
 	}
 
 	want := []byte("disk-cached-block")
-	key := blockCacheKey("link-disk", 0)
+	key := blockCacheKey("link-disk", 1)
 	if err := dc.Write(key, want); err != nil {
 		t.Fatalf("ObjectCache.Write: %v", err)
 	}
 
 	// fetchBlock should find it in disk cache.
-	got, err := store.fetchBlock(context.Background(), "link-disk", 0, "", "")
+	got, err := store.fetchBlock(context.Background(), "link-disk", 1, "", "")
 	if err != nil {
 		t.Fatalf("fetchBlock: %v", err)
 	}
@@ -105,9 +105,9 @@ func TestBlockStoreCacheMissFetchPopulates(t *testing.T) {
 	// We can't easily mock session.Client.GetBlock, so instead we
 	// verify the cache population logic directly: manually simulate
 	// what the FD layer does — Put plaintext, then verify Get.
-	bc.Put("link-miss", 0, want)
+	bc.Put("link-miss", 1, want)
 
-	got, err := bc.Get("link-miss", 0)
+	got, err := bc.Get("link-miss", 1)
 	if err != nil {
 		t.Fatalf("bufferCache.Get: %v", err)
 	}
@@ -129,16 +129,16 @@ func TestBlockStoreInvalidateClearsBufferCache(t *testing.T) {
 		bufCache: bc,
 	}
 
-	// Populate several blocks.
-	for i := 0; i < 5; i++ {
+	// Populate several blocks (1-based indices matching production).
+	for i := 1; i <= 5; i++ {
 		bc.Put("link-inv", i, []byte(fmt.Sprintf("block-%d", i)))
 	}
 
 	// Invalidate.
-	store.Invalidate("link-inv")
+	store.Invalidate("link-inv", 5)
 
 	// All slots should be gone.
-	for i := 0; i < 5; i++ {
+	for i := 1; i <= 5; i++ {
 		got, err := bc.Get("link-inv", i)
 		if got != nil || err != nil {
 			t.Fatalf("slot %d still present after Invalidate: (%v, %v)", i, got, err)
@@ -158,17 +158,17 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 		bufCache: bc,
 	}
 
-	// Populate both caches.
-	bc.Put("link-both", 0, []byte("buf-data"))
-	key := blockCacheKey("link-both", 0)
+	// Populate both caches (1-based index matching production).
+	bc.Put("link-both", 1, []byte("buf-data"))
+	key := blockCacheKey("link-both", 1)
 	if err := dc.Write(key, []byte("disk-data")); err != nil {
 		t.Fatalf("ObjectCache.Write: %v", err)
 	}
 
-	store.Invalidate("link-both")
+	store.Invalidate("link-both", 1)
 
 	// Buffer cache should be empty.
-	got, _ := bc.Get("link-both", 0)
+	got, _ := bc.Get("link-both", 1)
 	if got != nil {
 		t.Fatal("buffer cache not cleared after Invalidate")
 	}

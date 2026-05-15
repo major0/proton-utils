@@ -52,10 +52,10 @@ func (s *testBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ st
 	return nil
 }
 
-func (s *testBlockStore) Invalidate(_ string) {}
+func (s *testBlockStore) Invalidate(_ string, _ int) {}
 
 func (s *testBlockStore) fetchBlock(_ context.Context, _ string, index int, _, _ string) ([]byte, error) {
-	return s.GetBlock(nil, "", index, "", "")
+	return s.GetBlock(context.TODO(), "", index, "", "")
 }
 
 func (s *testBlockStore) getBufCache() *bufferCache { return nil }
