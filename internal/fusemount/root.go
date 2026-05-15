@@ -89,7 +89,11 @@ func (r *RootNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 		return nil, errno
 	}
 	out.Mode = attr.Mode
+	out.Size = attr.Size
 	out.Nlink = attr.Nlink
+	out.Mtime = attr.Mtime
+	out.Ctime = attr.Ctime
+	out.Atime = attr.Atime
 	out.Uid = r.uid
 	out.Gid = r.gid
 
