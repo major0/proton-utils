@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -147,20 +148,26 @@ func (c *Client) OpenFile(ctx context.Context, link *Link) (*FileHandle, error) 
 	shareID := link.Share().ProtonShare().ShareID
 	revisionID := pLink.FileProperties.ActiveRevision.ID
 
+	t0 := time.Now()
 	revision, err := c.Session.Client.GetRevisionAllBlocks(ctx, shareID, link.LinkID(), revisionID)
 	if err != nil {
 		return nil, fmt.Errorf("OpenFile: %s: get revision: %w", link.LinkID(), err)
 	}
+	slog.Debug("OpenFile: GetRevisionAllBlocks", "linkID", link.LinkID(), "elapsed", time.Since(t0))
 
+	t1 := time.Now()
 	nodeKR, err := link.KeyRing()
 	if err != nil {
 		return nil, fmt.Errorf("OpenFile: %s: keyring: %w", link.LinkID(), err)
 	}
+	slog.Debug("OpenFile: KeyRing", "linkID", link.LinkID(), "elapsed", time.Since(t1))
 
+	t2 := time.Now()
 	sessionKey, err := pLink.GetSessionKey(nodeKR)
 	if err != nil {
 		return nil, fmt.Errorf("OpenFile: %s: session key: %w", link.LinkID(), err)
 	}
+	slog.Debug("OpenFile: GetSessionKey", "linkID", link.LinkID(), "elapsed", time.Since(t2))
 
 	// Extract mtime from revision XAttr if available.
 	var modTime time.Time
