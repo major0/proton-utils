@@ -35,9 +35,11 @@ func NewDriveHandler(client *drive.Client) *DriveHandler {
 }
 
 // Getattr returns attributes for the drive namespace root directory.
+// Mode 0500: only the daemon owner can access namespace contents.
+// checkAccess enforces this at the dispatch layer.
 func (h *DriveHandler) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	return fusemount.Attr{
-		Mode:  syscall.S_IFDIR | 0555,
+		Mode:  syscall.S_IFDIR | 0500,
 		Nlink: 2,
 	}, 0
 }

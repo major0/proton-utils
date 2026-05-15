@@ -31,7 +31,7 @@ func TestRootNodeGetattr(t *testing.T) {
 	if errno != 0 {
 		t.Fatalf("Getattr returned errno %d", errno)
 	}
-	wantMode := uint32(syscall.S_IFDIR | 0500)
+	wantMode := uint32(syscall.S_IFDIR | 0555)
 	if out.Mode != wantMode {
 		t.Errorf("Mode = %o, want %o", out.Mode, wantMode)
 	}

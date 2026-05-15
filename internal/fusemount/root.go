@@ -39,11 +39,11 @@ func NewRoot(registry *NamespaceRegistry, info os.FileInfo) *RootNode {
 	}
 }
 
-// Getattr returns directory attributes for the root (mode 0500, owned by
-// the user that started the process). Write permission is not granted at
-// the namespace root — only within individual namespaces.
+// Getattr returns directory attributes for the root (mode 0555 — world-
+// traversable so the redirector and other processes can stat namespace
+// entries). Access control is enforced at the namespace boundary, not here.
 func (r *RootNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = syscall.S_IFDIR | 0500
+	out.Mode = syscall.S_IFDIR | 0555
 	out.Nlink = 2
 	out.Ino = 1
 	out.Uid = r.uid
@@ -76,7 +76,7 @@ func (r *RootNode) Readdir(_ context.Context) (fs.DirStream, syscall.Errno) {
 
 // Lookup returns a DispatchNode for a registered namespace prefix, or ENOENT.
 // Populates the EntryOut with the namespace's attributes so the kernel
-// caches the correct mode (0500) from the first response.
+// caches the correct mode from the first response.
 func (r *RootNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	handler, ok := r.registry.Lookup(name)
 	if !ok {
