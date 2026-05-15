@@ -31,6 +31,10 @@ type Config struct {
 	// MemoryCacheWatermark is core-only (not overridable per-subsystem).
 	MemoryCacheWatermark Param[[2]int64]
 
+	// PrefetchBlocks controls the FUSE MaxReadAhead value in units of
+	// block size (4 MiB). 0 means kernel default; max 64.
+	PrefetchBlocks Param[int]
+
 	// Shares is keyed by Proton share ID.
 	Shares map[string]api.ShareConfig
 
@@ -61,6 +65,7 @@ type coreConfigYAML struct {
 type configYAML struct {
 	coreConfigYAML       `yaml:",inline"`
 	MemoryCacheWatermark *string                    `yaml:"memory_cache_watermark,omitempty"`
+	PrefetchBlocks       *int                       `yaml:"prefetch_blocks,omitempty"`
 	Shares               map[string]api.ShareConfig `yaml:"shares,omitempty"`
 	Subsystems           map[string]coreConfigYAML  `yaml:"subsystems,omitempty"`
 }
@@ -76,6 +81,10 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 		wm := c.MemoryCacheWatermark.Value()
 		s := fmt.Sprintf("%d:%d", wm[0], wm[1])
 		y.MemoryCacheWatermark = &s
+	}
+	if c.PrefetchBlocks.Source() == File {
+		v := c.PrefetchBlocks.Value()
+		y.PrefetchBlocks = &v
 	}
 	for id, sc := range c.Shares {
 		y.Shares[id] = sc
@@ -109,6 +118,9 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 			return fmt.Errorf("memory_cache_watermark: %w", err)
 		}
 		c.MemoryCacheWatermark.SetFile(wm)
+	}
+	if y.PrefetchBlocks != nil {
+		c.PrefetchBlocks.SetFile(*y.PrefetchBlocks)
 	}
 	if y.Shares != nil {
 		c.Shares = y.Shares
@@ -189,6 +201,7 @@ func DefaultConfig() *Config {
 			AppVersion: NewParam(""),
 		},
 		MemoryCacheWatermark: NewParam([2]int64{0, 0}),
+		PrefetchBlocks:       NewParam(1),
 		Shares:               make(map[string]api.ShareConfig),
 		Subsystems:           make(map[string]*CoreConfig),
 	}

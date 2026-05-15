@@ -74,6 +74,8 @@ func Get(cfg *Config, sel Selector) (string, error) {
 	switch ns {
 	case "core":
 		return getCoreField(cfg, sel)
+	case "protonfs":
+		return getProtonFSField(cfg, sel)
 	case "share":
 		return getShareField(cfg, sel)
 	default:
@@ -92,6 +94,8 @@ func Set(cfg *Config, sel Selector, value string) error {
 	switch ns {
 	case "core":
 		return setCoreField(cfg, sel, value)
+	case "protonfs":
+		return setProtonFSField(cfg, sel, value)
 	case "share":
 		return setShareField(cfg, sel, value)
 	default:
@@ -110,6 +114,8 @@ func UnsetField(cfg *Config, sel Selector) error {
 	switch ns {
 	case "core":
 		return unsetCoreField(cfg, sel)
+	case "protonfs":
+		return unsetProtonFSField(cfg, sel)
 	case "share":
 		return unsetShareField(cfg, sel)
 	default:
@@ -139,6 +145,15 @@ func List(cfg *Config) []Entry {
 		entries = append(entries, Entry{
 			Selector: "core.memory_cache_watermark",
 			Value:    formatWatermark(cfg.MemoryCacheWatermark.Value()),
+			Source:   File,
+		})
+	}
+
+	// Core-only: prefetch_blocks.
+	if cfg.PrefetchBlocks.Source() == File {
+		entries = append(entries, Entry{
+			Selector: "protonfs.prefetch_blocks",
+			Value:    formatInt(cfg.PrefetchBlocks.Value()),
 			Source:   File,
 		})
 	}
@@ -204,6 +219,14 @@ func Show(cfg *Config) []Entry {
 		Selector: "core.memory_cache_watermark",
 		Value:    wmInfo.Value,
 		Source:   wmInfo.Source,
+	})
+
+	// Core-only: prefetch_blocks.
+	pbInfo := cfg.PrefetchBlocks.Info(formatInt)
+	entries = append(entries, Entry{
+		Selector: "protonfs.prefetch_blocks",
+		Value:    pbInfo.Value,
+		Source:   pbInfo.Source,
 	})
 
 	// Subsystem overrides.
@@ -479,12 +502,63 @@ func unsetSubsystemField(cfg *Config, sel Selector) error {
 	return nil
 }
 
+// --- ProtonFS field dispatch ---
+
+// protonfsFields maps field names in the "protonfs" namespace.
+var protonfsFields = map[string]bool{
+	"prefetch_blocks": true,
+}
+
+func getProtonFSField(cfg *Config, sel Selector) (string, error) {
+	fieldName := sel.Segments[1].Name
+	switch fieldName {
+	case "prefetch_blocks":
+		return formatInt(cfg.PrefetchBlocks.Value()), nil
+	default:
+		return "", unknownFieldError("protonfs", fieldName)
+	}
+}
+
+func setProtonFSField(cfg *Config, sel Selector, value string) error {
+	fieldName := sel.Segments[1].Name
+	switch fieldName {
+	case "prefetch_blocks":
+		v, err := parseNonNegativeInt(value)
+		if err != nil {
+			return err
+		}
+		cfg.PrefetchBlocks.SetFile(v.(int))
+		return nil
+	default:
+		return unknownFieldError("protonfs", fieldName)
+	}
+}
+
+func unsetProtonFSField(cfg *Config, sel Selector) error {
+	fieldName := sel.Segments[1].Name
+	switch fieldName {
+	case "prefetch_blocks":
+		cfg.PrefetchBlocks.Reset()
+		return nil
+	default:
+		return unknownFieldError("protonfs", fieldName)
+	}
+}
+
 // --- Validation/parse functions ---
 
 func parsePositiveInt(s string) (any, error) {
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return nil, fmt.Errorf("config: max_jobs must be a positive integer, got %q", s)
+	}
+	return n, nil
+}
+
+func parseNonNegativeInt(s string) (any, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return nil, fmt.Errorf("config: prefetch_blocks must be a non-negative integer, got %q", s)
 	}
 	return n, nil
 }
@@ -554,7 +628,7 @@ func formatWatermark(wm [2]int64) string {
 
 func unknownNamespaceError(ns string) error {
 	var valid []string
-	valid = append(valid, "core", "share")
+	valid = append(valid, "core", "protonfs", "share")
 	for name := range api.Services {
 		valid = append(valid, name)
 	}
@@ -567,6 +641,10 @@ func unknownFieldError(ns, field string) error {
 	switch ns {
 	case "share":
 		for name := range shareFields {
+			valid = append(valid, name)
+		}
+	case "protonfs":
+		for name := range protonfsFields {
 			valid = append(valid, name)
 		}
 	default:

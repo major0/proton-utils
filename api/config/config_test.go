@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/major0/proton-utils/api"
@@ -211,6 +212,9 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 			hi := rapid.Int64Range(lo, lo+1000).Draw(t, "wmMax")
 			cfg.MemoryCacheWatermark.SetFile([2]int64{lo, hi})
 		}
+		if rapid.Bool().Draw(t, "setPrefetchBlocks") {
+			cfg.PrefetchBlocks.SetFile(rapid.IntRange(0, 64).Draw(t, "prefetchBlocks"))
+		}
 
 		// Random shares.
 		nShares := rapid.IntRange(0, 5).Draw(t, "nShares")
@@ -259,6 +263,7 @@ func TestConfigRoundTrip_Property(t *testing.T) {
 		assertParamEqual(t, "Account", cfg.Account, loaded.Account)
 		assertParamEqual(t, "AppVersion", cfg.AppVersion, loaded.AppVersion)
 		assertParamEqualArr(t, "MemoryCacheWatermark", cfg.MemoryCacheWatermark, loaded.MemoryCacheWatermark)
+		assertParamEqual(t, "PrefetchBlocks", cfg.PrefetchBlocks, loaded.PrefetchBlocks)
 
 		// Verify shares.
 		if len(cfg.Shares) != len(loaded.Shares) {
@@ -353,5 +358,79 @@ func TestSaveConfigError(t *testing.T) {
 	err := SaveConfig("/proc/nonexistent/deep/path/config.yaml", DefaultConfig())
 	if err == nil {
 		t.Fatal("expected error for unwritable path")
+	}
+}
+
+func TestPrefetchBlocks_Default(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.PrefetchBlocks.Value() != 1 {
+		t.Fatalf("default PrefetchBlocks: got %d, want 1", cfg.PrefetchBlocks.Value())
+	}
+}
+
+func TestPrefetchBlocks_YAMLRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.PrefetchBlocks.SetFile(8)
+
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if loaded.PrefetchBlocks.Source() != File {
+		t.Fatalf("PrefetchBlocks source: got %v, want File", loaded.PrefetchBlocks.Source())
+	}
+	if loaded.PrefetchBlocks.Value() != 8 {
+		t.Fatalf("PrefetchBlocks value: got %d, want 8", loaded.PrefetchBlocks.Value())
+	}
+}
+
+func TestPrefetchBlocks_NotPersistedWhenDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	// PrefetchBlocks not set via SetFile — should not appear in YAML.
+
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	if strings.Contains(string(data), "prefetch_blocks") {
+		t.Fatal("prefetch_blocks should not appear in YAML when not explicitly set")
+	}
+}
+
+func TestPrefetchBlocks_LoadFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	yaml := []byte("prefetch_blocks: 16\n")
+	if err := os.WriteFile(path, yaml, 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if loaded.PrefetchBlocks.Value() != 16 {
+		t.Fatalf("PrefetchBlocks: got %d, want 16", loaded.PrefetchBlocks.Value())
+	}
+	if loaded.PrefetchBlocks.Source() != File {
+		t.Fatalf("PrefetchBlocks source: got %v, want File", loaded.PrefetchBlocks.Source())
 	}
 }
