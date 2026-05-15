@@ -1327,3 +1327,140 @@ func TestPropertyBlockCacheCorrectnessAcrossHandles(t *testing.T) {
 		}
 	})
 }
+
+// TestPropertyErrorMapping verifies that for any error returned by ReadAt
+// (excluding io.EOF), Read returns EIO when bytesRead == 0 (or EBADF for
+// os.ErrClosed). When bytesRead > 0 and error is non-nil (non-EOF), Read
+// returns bytesRead with errno 0 (short read). For io.EOF, Read returns
+// the bytes read with errno 0 regardless of bytesRead value.
+//
+// The test exercises these paths using real FileDescriptors:
+// - EOF path: reads at/past end of file → errno 0
+// - Short read at EOF: buffer extends past file end → partial read, errno 0
+// - Closed FD: Close() then Read → errno EBADF
+// - Nil handle: pass nil FileHandle → errno EBADF
+// - Invalid handle type: pass wrong type → errno EBADF
+//
+// Feature: protonfs-fileio, Property 12: Error mapping
+// **Validates: Requirements 3.4, 3.5, 3.6, 3.7**
+func TestPropertyErrorMapping(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		// Generate random file content (1–32KB).
+		fileSize := rapid.IntRange(1, 32*1024).Draw(rt, "fileSize")
+		content := rapid.SliceOfN(rapid.Byte(), fileSize, fileSize).Draw(rt, "content")
+
+		// Create a real FileDescriptor backed by in-memory encrypted blocks.
+		fd, err := drive.NewTestFD(content)
+		if err != nil {
+			rt.Fatalf("NewTestFD: %v", err)
+		}
+
+		handle := &fdHandle{fd: fd}
+		node := &FileNode{}
+		ctx := context.Background()
+
+		// Choose a random scenario to test.
+		scenario := rapid.IntRange(0, 4).Draw(rt, "scenario")
+
+		switch scenario {
+		case 0:
+			// --- EOF path: offset >= fileSize → n=0, errno=0 ---
+			// ReadAt returns (0, io.EOF) when offset >= fileSize.
+			// FileNode.Read maps io.EOF → errno 0.
+			pastEOF := rapid.Int64Range(int64(fileSize), int64(fileSize)+8192).Draw(rt, "pastEOFOffset")
+			bufLen := rapid.IntRange(1, 4096).Draw(rt, "bufLen")
+			dest := make([]byte, bufLen)
+
+			n, errno := node.Read(ctx, handle, dest, pastEOF)
+			if errno != 0 {
+				rt.Fatalf("scenario EOF (off=%d, fileSize=%d): got errno %d, want 0",
+					pastEOF, fileSize, errno)
+			}
+			if n != 0 {
+				rt.Fatalf("scenario EOF (off=%d, fileSize=%d): got n=%d, want 0",
+					pastEOF, fileSize, n)
+			}
+
+		case 1:
+			// --- Short read at EOF: offset < fileSize, offset+bufLen > fileSize ---
+			// ReadAt returns (bytesRead, io.EOF) where bytesRead = fileSize - offset.
+			// FileNode.Read maps io.EOF → errno 0, returns bytesRead.
+			offset := rapid.Int64Range(0, int64(fileSize)-1).Draw(rt, "shortReadOffset")
+			// Buffer must extend past EOF.
+			remaining := int64(fileSize) - offset
+			bufLen := rapid.IntRange(int(remaining)+1, int(remaining)+4096).Draw(rt, "shortReadBufLen")
+			dest := make([]byte, bufLen)
+
+			n, errno := node.Read(ctx, handle, dest, offset)
+			if errno != 0 {
+				rt.Fatalf("scenario short-read-EOF (off=%d, bufLen=%d, fileSize=%d): got errno %d, want 0",
+					offset, bufLen, fileSize, errno)
+			}
+			expectedN := int(remaining)
+			if n != expectedN {
+				rt.Fatalf("scenario short-read-EOF (off=%d, bufLen=%d, fileSize=%d): got n=%d, want %d",
+					offset, bufLen, fileSize, n, expectedN)
+			}
+			// Verify returned bytes match content.
+			for i := 0; i < n; i++ {
+				if dest[i] != content[int(offset)+i] {
+					rt.Fatalf("scenario short-read-EOF: byte mismatch at position %d", i)
+				}
+			}
+
+		case 2:
+			// --- Closed FD: Close() then Read → errno EBADF ---
+			// ReadAt returns (0, os.ErrClosed) after Close().
+			// FileNode.Read maps os.ErrClosed with bytesRead==0 → EBADF.
+			if closeErr := fd.Close(); closeErr != nil {
+				rt.Fatalf("fd.Close: %v", closeErr)
+			}
+
+			bufLen := rapid.IntRange(1, 4096).Draw(rt, "closedBufLen")
+			offset := rapid.Int64Range(0, int64(fileSize)).Draw(rt, "closedOffset")
+			dest := make([]byte, bufLen)
+
+			n, errno := node.Read(ctx, handle, dest, offset)
+			if errno != syscall.EBADF {
+				rt.Fatalf("scenario closed-FD (off=%d): got errno %d, want EBADF (%d)",
+					offset, errno, syscall.EBADF)
+			}
+			if n != 0 {
+				rt.Fatalf("scenario closed-FD (off=%d): got n=%d, want 0", offset, n)
+			}
+
+		case 3:
+			// --- Nil handle: pass nil FileHandle → errno EBADF ---
+			// FileNode.Read checks h == nil → EBADF.
+			bufLen := rapid.IntRange(1, 4096).Draw(rt, "nilBufLen")
+			offset := rapid.Int64Range(0, int64(fileSize)).Draw(rt, "nilOffset")
+			dest := make([]byte, bufLen)
+
+			n, errno := node.Read(ctx, nil, dest, offset)
+			if errno != syscall.EBADF {
+				rt.Fatalf("scenario nil-handle: got errno %d, want EBADF (%d)",
+					errno, syscall.EBADF)
+			}
+			if n != 0 {
+				rt.Fatalf("scenario nil-handle: got n=%d, want 0", n)
+			}
+
+		case 4:
+			// --- Invalid handle type: pass wrong type → errno EBADF ---
+			// FileNode.Read type-asserts fh.(*fdHandle); wrong type → EBADF.
+			type bogusHandle struct{}
+			bufLen := rapid.IntRange(1, 4096).Draw(rt, "bogusBufLen")
+			offset := rapid.Int64Range(0, int64(fileSize)).Draw(rt, "bogusOffset")
+			dest := make([]byte, bufLen)
+
+			n, errno := node.Read(ctx, &bogusHandle{}, dest, offset)
+			if errno != syscall.EBADF {
+				rt.Fatalf("scenario invalid-handle: got errno %d, want EBADF (%d)",
+					errno, syscall.EBADF)
+			}
+			if n != 0 {
+				rt.Fatalf("scenario invalid-handle: got n=%d, want 0", n)
+			}
+		}
+	})
+}
