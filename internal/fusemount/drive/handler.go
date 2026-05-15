@@ -121,7 +121,7 @@ func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node,
 		return nil, syscall.ENOENT
 
 	case ".linkid":
-		return &LinkIDDir{client: h.client}, 0
+		return &LinkIDDir{client: h.client, shares: h.snapshotShares}, 0
 	}
 
 	// O(N) scan for standard shares by decrypted name.
@@ -208,4 +208,12 @@ func (h *DriveHandler) SetShares(shares map[string]*drive.Share) {
 	h.sharesMu.Lock()
 	h.shares = shares
 	h.sharesMu.Unlock()
+}
+
+// snapshotShares returns the current share map under a read lock.
+// Used by LinkIDDir.Readdir to list share root LinkIDs.
+func (h *DriveHandler) snapshotShares() map[string]*drive.Share {
+	h.sharesMu.RLock()
+	defer h.sharesMu.RUnlock()
+	return h.shares
 }

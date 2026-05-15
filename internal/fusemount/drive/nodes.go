@@ -241,9 +241,12 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 
 // LinkIDDir is the virtual .linkid/ directory that provides O(1) access
 // to any link by its LinkID. Implements fusemount.DirNode.
-// Full implementation is provided in a later task.
+//
+// Readdir lists share root links by their sanitized LinkID (no decryption
+// needed). Lookup resolves any LinkID to a node from the client's link table.
 type LinkIDDir struct {
 	client *drive.Client
+	shares func() map[string]*drive.Share // returns current share map snapshot
 }
 
 // Compile-time interface assertions.
@@ -258,18 +261,40 @@ func (n *LinkIDDir) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	}, 0
 }
 
-// Readdir returns an empty listing — enumerating all LinkIDs is not feasible.
+// Readdir lists share root links as directories using their sanitized LinkID.
+// No name decryption is performed — IDs are used directly.
 func (n *LinkIDDir) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.Errno) {
-	return nil, 0
+	shares := n.shares()
+	entries := make([]fusemount.DirEntry, 0, len(shares))
+	for _, share := range shares {
+		linkID := share.Link.LinkID()
+		entries = append(entries, fusemount.DirEntry{
+			Name: drive.SanitizeLinkID(linkID),
+			Mode: syscall.S_IFDIR,
+		})
+	}
+	return entries, 0
 }
 
-// Lookup resolves a LinkID to a node. The name parameter IS the LinkID.
-// Resolution is by ID only — no name decryption is performed.
-// Returns ENOENT if the link is not in the client's link table.
+// Lookup resolves a LinkID to a node. The name parameter IS the LinkID
+// (sanitized — trailing '=' stripped). Resolution is by ID only — no
+// name decryption is performed.
+// Checks the client's link table first, then share root links.
+// Returns ENOENT if the link is not found.
 func (n *LinkIDDir) Lookup(_ context.Context, name string) (fusemount.Node, syscall.Errno) {
+	// Check the client's link table (O(1) by ID).
 	link := n.client.GetLink(name)
-	if link == nil {
-		return nil, syscall.ENOENT
+	if link != nil {
+		return linkNode(link, n.client), 0
 	}
-	return linkNode(link, n.client), 0
+
+	// Check share root links — these may not be in the link table.
+	shares := n.shares()
+	for _, share := range shares {
+		if drive.SanitizeLinkID(share.Link.LinkID()) == name {
+			return &ShareDirNode{share: share, client: n.client}, 0
+		}
+	}
+
+	return nil, syscall.ENOENT
 }

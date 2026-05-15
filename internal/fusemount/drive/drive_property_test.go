@@ -677,7 +677,7 @@ func TestPropertyLinkIDLookup(t *testing.T) {
 		client := drive.NewTestClient(linkMap)
 
 		// Construct the LinkIDDir under test.
-		node := &LinkIDDir{client: client}
+		node := &LinkIDDir{client: client, shares: func() map[string]*drive.Share { return nil }}
 		ctx := context.Background()
 
 		// --- Verify each link in the table returns the correct node type ---

@@ -127,7 +127,11 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 		return nil, errno
 	}
 
-	fuseEntries := make([]fuse.DirEntry, 0, len(entries))
+	fuseEntries := make([]fuse.DirEntry, 0, 2+len(entries))
+	fuseEntries = append(fuseEntries,
+		fuse.DirEntry{Name: ".", Mode: syscall.S_IFDIR},
+		fuse.DirEntry{Name: "..", Mode: syscall.S_IFDIR},
+	)
 	for _, e := range entries {
 		fuseEntries = append(fuseEntries, fuse.DirEntry{Name: e.Name, Mode: e.Mode})
 	}

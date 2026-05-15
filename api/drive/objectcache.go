@@ -15,6 +15,13 @@ func sanitizeKey(id string) string {
 	return strings.TrimRight(id, "=")
 }
 
+// SanitizeLinkID strips '=' padding from a LinkID for use as a directory
+// entry name. Proton LinkIDs are base64-encoded and may contain trailing
+// '=' which is problematic in filesystem paths.
+func SanitizeLinkID(id string) string {
+	return strings.TrimRight(id, "=")
+}
+
 // InitObjectCache constructs the shared ObjectCache instance if the config
 // has any share with disk_cache: objectstore and $XDG_RUNTIME_DIR is
 // set. The cache is a single flat namespace at

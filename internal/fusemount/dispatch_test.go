@@ -220,11 +220,17 @@ func TestDispatchNodeReaddir_NamespaceRoot(t *testing.T) {
 		e, _ := stream.Next()
 		entries = append(entries, e)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(entries))
+	if len(entries) != 4 { // . + .. + file1.txt + subdir
+		t.Fatalf("expected 4 entries, got %d", len(entries))
 	}
-	if entries[0].Name != "file1.txt" {
-		t.Errorf("entries[0].Name = %q, want %q", entries[0].Name, "file1.txt")
+	if entries[0].Name != "." {
+		t.Errorf("entries[0].Name = %q, want %q", entries[0].Name, ".")
+	}
+	if entries[1].Name != ".." {
+		t.Errorf("entries[1].Name = %q, want %q", entries[1].Name, "..")
+	}
+	if entries[2].Name != "file1.txt" {
+		t.Errorf("entries[2].Name = %q, want %q", entries[2].Name, "file1.txt")
 	}
 }
 
@@ -245,8 +251,8 @@ func TestDispatchNodeReaddir_ChildDirNode(t *testing.T) {
 		e, _ := stream.Next()
 		entries = append(entries, e)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(entries))
+	if len(entries) != 3 { // . + .. + child.txt
+		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
 }
 
