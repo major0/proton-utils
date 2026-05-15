@@ -201,13 +201,13 @@ func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, sy
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
-// Proton Drive has no Unix permission model — use 0555 (read+execute
-// for owner/group/other) matching the CLI's display of "rwxr-xr-x".
+// Directories use 0555 (execute = traverse). Files use 0444 (read-only,
+// no execute bit — semantically correct for data files).
 func linkMode(l *drive.Link) uint32 {
 	if l.Type() == proton.LinkTypeFolder {
 		return syscall.S_IFDIR | 0555
 	}
-	return syscall.S_IFREG | 0555
+	return syscall.S_IFREG | 0444
 }
 
 // linkNode returns the appropriate fusemount.Node for a link based on its type.
@@ -215,13 +215,14 @@ func linkNode(l *drive.Link, client *drive.Client) fusemount.Node {
 	if l.Type() == proton.LinkTypeFolder {
 		return &LinkDirNode{link: l, client: client}
 	}
-	return &FileNode{link: l}
+	return &FileNode{link: l, client: client}
 }
 
 // FileNode wraps a *drive.Link (file) and implements fusemount.Node.
 // Full implementation is provided in a later task.
 type FileNode struct {
-	link *drive.Link
+	link   *drive.Link
+	client *drive.Client
 }
 
 // Compile-time interface assertion.
@@ -231,7 +232,7 @@ var _ fusemount.Node = (*FileNode)(nil)
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
-		Mode:  syscall.S_IFREG | 0555,
+		Mode:  syscall.S_IFREG | 0444,
 		Size:  uint64(n.link.Size()),
 		Nlink: 1,
 		Mtime: uint64(n.link.ModifyTime()),

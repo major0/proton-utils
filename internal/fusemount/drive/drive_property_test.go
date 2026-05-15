@@ -412,7 +412,7 @@ func TestPropertyDirNodeChildOps(t *testing.T) {
 			if !ok {
 				rt.Fatalf("Readdir missing entry for child %q", c.name)
 			}
-			expectedMode := uint32(syscall.S_IFREG | 0555)
+			expectedMode := uint32(syscall.S_IFREG | 0444)
 			if c.isDir {
 				expectedMode = syscall.S_IFDIR | 0555
 			}
@@ -456,7 +456,7 @@ func TestPropertyDirNodeChildOps(t *testing.T) {
 // TestPropertyFileNodeAttributes verifies that for any file link with
 // arbitrary size and timestamps, FileNode.Getattr returns Size equal to
 // uint64(link.Size()), mtime equal to uint64(link.ModifyTime()), and ctime
-// equal to uint64(link.CreateTime()), with mode S_IFREG|0400 and Nlink 1.
+// equal to uint64(link.CreateTime()), with mode S_IFREG|0444 and Nlink 1.
 //
 // Feature: protonfs-daemon, Property 8: File node attributes
 // **Validates: Requirements 10.2, 10.3**
@@ -501,7 +501,7 @@ func TestPropertyFileNodeAttributes(t *testing.T) {
 		}
 
 		// Verify mode.
-		expectedMode := uint32(syscall.S_IFREG | 0555)
+		expectedMode := uint32(syscall.S_IFREG | 0444)
 		if attr.Mode != expectedMode {
 			rt.Fatalf("Mode = %o, want %o", attr.Mode, expectedMode)
 		}
