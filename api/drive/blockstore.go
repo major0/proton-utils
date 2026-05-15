@@ -69,10 +69,35 @@ func blockCacheKey(linkID string, index int) string {
 	return fmt.Sprintf("%s.block.%d", linkID, index)
 }
 
-// GetBlock fetches a raw encrypted block from disk cache or HTTP.
-// The buffer cache is managed by the FD layer (stores decrypted
-// plaintext) — this method does not interact with it.
+// GetBlock fetches a raw encrypted block. In encrypted mode the buffer
+// cache is managed here: check Get → Reserve → fetchBlock → Put. In
+// decrypted mode the FD layer calls fetchBlock directly and never
+// reaches this method. When bufCache is nil, falls through to fetchBlock.
 func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
+	if s.bufCache != nil {
+		// Fast path: already cached.
+		if data, err := s.bufCache.Get(linkID, index); data != nil || err != nil {
+			return data, err
+		}
+
+		// Reserve a slot. If another goroutine holds it, re-Get to
+		// block on their result.
+		if !s.bufCache.Reserve(linkID, index) {
+			if data, err := s.bufCache.Get(linkID, index); data != nil || err != nil {
+				return data, err
+			}
+			// Slot was evicted/invalidated while waiting — fall through.
+		} else {
+			// We own the slot. Fetch encrypted bytes and Put.
+			data, err := s.fetchBlock(ctx, linkID, index, bareURL, token)
+			if err != nil {
+				s.bufCache.PutError(linkID, index, err)
+				return nil, err
+			}
+			s.bufCache.Put(linkID, index, data)
+			return data, nil
+		}
+	}
 	return s.fetchBlock(ctx, linkID, index, bareURL, token)
 }
 
@@ -128,10 +153,8 @@ func (s *httpBlockStore) UploadBlock(ctx context.Context, linkID string, index i
 		return fmt.Errorf("blockstore.UploadBlock %s block %d: %w", linkID, index, err)
 	}
 
-	// Cache populate (best-effort).
-	if s.bufCache != nil {
-		s.bufCache.Put(linkID, index, data)
-	}
+	// Populate disk cache only (always encrypted).
+	// NOTE: bufCache.Put removed — avoids mode-dependent corruption.
 	if err := s.cache.Write(blockCacheKey(linkID, index), data); err != nil {
 		slog.Debug("blockstore.cache.Write", "key", blockCacheKey(linkID, index), "error", err)
 	}
