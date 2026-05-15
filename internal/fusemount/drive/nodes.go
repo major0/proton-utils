@@ -247,6 +247,8 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 type LinkIDDir struct {
 	client *drive.Client
 	shares func() map[string]*drive.Share // returns current share map snapshot
+	mtime  uint64                         // copied from main volume at startup
+	ctime  uint64                         // copied from main volume at startup
 }
 
 // Compile-time interface assertions.
@@ -258,6 +260,8 @@ func (n *LinkIDDir) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	return fusemount.Attr{
 		Mode:  syscall.S_IFDIR | 0555,
 		Nlink: 2,
+		Mtime: n.mtime,
+		Ctime: n.ctime,
 	}, 0
 }
 

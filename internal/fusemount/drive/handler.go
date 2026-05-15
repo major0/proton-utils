@@ -21,6 +21,12 @@ type DriveHandler struct { //nolint:revive // name specified by design doc
 	client   *drive.Client
 	shares   map[string]*drive.Share // keyed by ShareID
 	sharesMu sync.RWMutex
+
+	// volumeMtime and volumeCtime are captured from the main share's root
+	// link at startup. Used as timestamps for the namespace directory and
+	// the .linkid virtual directory.
+	volumeMtime uint64
+	volumeCtime uint64
 }
 
 // Compile-time interface assertion.
@@ -37,10 +43,13 @@ func NewDriveHandler(client *drive.Client) *DriveHandler {
 // Getattr returns attributes for the drive namespace root directory.
 // Mode 0500: only the daemon owner can access namespace contents.
 // checkAccess enforces this at the dispatch layer.
+// Timestamps are captured from the main share's root link at startup.
 func (h *DriveHandler) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	return fusemount.Attr{
 		Mode:  syscall.S_IFDIR | 0500,
 		Nlink: 2,
+		Mtime: h.volumeMtime,
+		Ctime: h.volumeCtime,
 	}, 0
 }
 
@@ -121,7 +130,12 @@ func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node,
 		return nil, syscall.ENOENT
 
 	case ".linkid":
-		return &LinkIDDir{client: h.client, shares: h.snapshotShares}, 0
+		return &LinkIDDir{
+			client: h.client,
+			shares: h.snapshotShares,
+			mtime:  h.volumeMtime,
+			ctime:  h.volumeCtime,
+		}, 0
 	}
 
 	// O(N) scan for standard shares by decrypted name.
@@ -142,7 +156,8 @@ func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node,
 }
 
 // LoadShares populates the internal share map at startup by listing all
-// share metadata and resolving each non-device share.
+// share metadata and resolving each non-device share. Captures the main
+// volume's root link timestamps for use in Getattr.
 func (h *DriveHandler) LoadShares(ctx context.Context) error {
 	metas, err := h.client.ListSharesMetadata(ctx, true)
 	if err != nil {
@@ -161,6 +176,24 @@ func (h *DriveHandler) LoadShares(ctx context.Context) error {
 			continue
 		}
 		shares[meta.ShareID] = share
+	}
+
+	// Capture main volume timestamps for namespace directory attrs.
+	for _, share := range shares {
+		if share.ProtonShare().Type == proton.ShareTypeMain {
+			//nolint:gosec // timestamps are non-negative from API
+			mtime := uint64(share.Link.ModifyTime())
+			//nolint:gosec // timestamps are non-negative from API
+			ctime := uint64(share.Link.CreateTime())
+			// Fall back to CreateTime if ModifyTime is zero (common for
+			// share root links where the API doesn't populate ModifyTime).
+			if mtime == 0 {
+				mtime = ctime
+			}
+			h.volumeMtime = mtime
+			h.volumeCtime = ctime
+			break
+		}
 	}
 
 	h.sharesMu.Lock()
