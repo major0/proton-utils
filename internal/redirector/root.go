@@ -27,16 +27,17 @@ var _ = (fs.NodeGetattrer)((*SymlinkNode)(nil))
 // Every Lookup returns a symlink to /run/user/<uid>/proton/fs/<name>.
 type Root struct {
 	fs.Inode
-	mtime time.Time // mountpoint mtime, used for atime/mtime/ctime
+	startTime time.Time // process start time, used for atime/mtime/ctime
 }
 
 // Getattr returns directory attributes for the redirector root.
+// Timestamps reflect the process start time, serving as an uptime indicator.
 func (r *Root) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFDIR | 0555
 	out.Nlink = 2
 	out.Ino = 1
-	sec := uint64(r.mtime.Unix())        //nolint:gosec // G115: time values are always positive
-	nsec := uint32(r.mtime.Nanosecond()) //nolint:gosec // G115: time values are always positive
+	sec := uint64(r.startTime.Unix())        //nolint:gosec // G115: time values are always positive
+	nsec := uint32(r.startTime.Nanosecond()) //nolint:gosec // G115: time values are always positive
 	out.Atime = sec
 	out.Atimensec = nsec
 	out.Mtime = sec
@@ -98,9 +99,17 @@ func (s *SymlinkNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 }
 
 // Getattr returns symlink attributes including the target length as size.
+// Timestamps are copied from the target directory if it exists.
 func (s *SymlinkNode) Getattr(_ context.Context, _ fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFLNK | 0777
 	out.Size = uint64(len(s.target))
+	// Copy mtime/ctime from the target directory so the symlink shows
+	// meaningful timestamps (e.g., account creation date from the
+	// namespace handler's Getattr).
+	if info, err := os.Stat(s.target); err == nil {
+		out.Mtime = uint64(info.ModTime().Unix()) //nolint:gosec // G115: time values are always positive
+		out.Ctime = uint64(info.ModTime().Unix()) //nolint:gosec // G115: time values are always positive
+	}
 	return 0
 }
 

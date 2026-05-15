@@ -61,7 +61,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	server, err := redirector.Mount(mountpoint, mountInfo)
+	server, err := redirector.Mount(mountpoint)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mount failed: %v\n", err)
 		os.Exit(1)
