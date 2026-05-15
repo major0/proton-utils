@@ -17,6 +17,7 @@ var _ = (fs.NodeGetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeSetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeLookuper)((*DispatchNode)(nil))
 var _ = (fs.NodeReaddirer)((*DispatchNode)(nil))
+var _ = (fs.NodeReleaser)((*DispatchNode)(nil))
 
 // DispatchNode bridges a namespace handler's Node to go-fuse's InodeEmbedder.
 // It operates in two modes:
@@ -252,8 +253,8 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *f
 	return child, 0
 }
 
-// Open delegates to NodeReader or NodeWriter if the handler supports it.
-func (d *DispatchNode) Open(ctx context.Context, _ uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+// Open delegates to NodeOpener, NodeReader, or NodeWriter if the node supports it.
+func (d *DispatchNode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	if err := d.checkAccess(ctx); err != 0 {
 		return nil, 0, err
 	}
@@ -269,7 +270,16 @@ func (d *DispatchNode) Open(ctx context.Context, _ uint32) (fh fs.FileHandle, fu
 		return nil, 0, syscall.ENOSYS
 	}
 
-	// Return a handle if the node supports read or write.
+	// If node supports NodeOpener, call it to get a handle with per-open state.
+	if opener, ok := d.node.(NodeOpener); ok {
+		handle, errno := opener.Open(ctx, flags)
+		if errno != 0 {
+			return nil, 0, errno
+		}
+		return &dispatchFileHandle{handle: handle}, 0, 0
+	}
+
+	// NodeReader/NodeWriter without NodeOpener — return nil-handle.
 	if _, ok := d.node.(NodeReader); ok {
 		return &dispatchFileHandle{}, 0, 0
 	}
@@ -278,6 +288,30 @@ func (d *DispatchNode) Open(ctx context.Context, _ uint32) (fh fs.FileHandle, fu
 	}
 
 	return nil, 0, syscall.ENOSYS
+}
+
+// Release delegates to NodeReleaser if the node supports it.
+func (d *DispatchNode) Release(ctx context.Context, f fs.FileHandle) (errno syscall.Errno) {
+	if d.isRoot || d.node == nil {
+		return 0
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler Release: %v\n%s", r, debug.Stack())
+			errno = syscall.EIO
+		}
+	}()
+
+	releaser, ok := d.node.(NodeReleaser)
+	if !ok {
+		return 0
+	}
+
+	var handle FileHandle
+	if dfh, ok := f.(*dispatchFileHandle); ok {
+		handle = dfh.handle
+	}
+	return releaser.Release(ctx, handle)
 }
 
 // Read delegates to NodeReader if the node supports it.

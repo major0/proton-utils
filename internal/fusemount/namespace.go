@@ -68,12 +68,24 @@ type NodeMkdirer interface {
 	Mkdir(ctx context.Context, name string, mode uint32) (Node, syscall.Errno)
 }
 
-// NodeWriter indicates the handler supports write operations.
+// NodeOpener indicates the node supports Open (creating per-open state).
+// Nodes implementing NodeOpener typically also implement NodeReader and/or
+// NodeWriter. NodeOpener creates per-open state; NodeReader/NodeWriter consume it.
+type NodeOpener interface {
+	Open(ctx context.Context, flags uint32) (FileHandle, syscall.Errno)
+}
+
+// NodeReleaser indicates the node supports Release (cleanup on close).
+type NodeReleaser interface {
+	Release(ctx context.Context, fh FileHandle) syscall.Errno
+}
+
+// NodeWriter indicates the node supports write operations.
 type NodeWriter interface {
 	Write(ctx context.Context, fh FileHandle, data []byte, off int64) (uint32, syscall.Errno)
 }
 
-// NodeReader indicates the handler supports read operations.
+// NodeReader indicates the node supports read operations.
 type NodeReader interface {
 	Read(ctx context.Context, fh FileHandle, dest []byte, off int64) (int, syscall.Errno)
 }

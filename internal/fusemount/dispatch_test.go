@@ -456,3 +456,162 @@ func TestDispatchNodeGetattr_NamespaceRoot_SetsUidGid(t *testing.T) {
 		t.Errorf("Gid = %d, want 1000", out.Gid)
 	}
 }
+
+// mockOpenerNode implements Node + NodeOpener for testing.
+type mockOpenerNode struct {
+	attr   Attr
+	handle FileHandle
+	errno  syscall.Errno
+}
+
+func (m *mockOpenerNode) Getattr(_ context.Context) (Attr, syscall.Errno) {
+	return m.attr, 0
+}
+
+func (m *mockOpenerNode) Open(_ context.Context, _ uint32) (FileHandle, syscall.Errno) {
+	return m.handle, m.errno
+}
+
+// mockReaderNode implements Node + NodeReader (without NodeOpener).
+type mockReaderNode struct {
+	attr Attr
+}
+
+func (m *mockReaderNode) Getattr(_ context.Context) (Attr, syscall.Errno) {
+	return m.attr, 0
+}
+
+func (m *mockReaderNode) Read(_ context.Context, _ FileHandle, _ []byte, _ int64) (int, syscall.Errno) {
+	return 0, 0
+}
+
+// mockReleaserNode implements Node + NodeReleaser for testing.
+type mockReleaserNode struct {
+	attr     Attr
+	released bool
+	handle   FileHandle
+}
+
+func (m *mockReleaserNode) Getattr(_ context.Context) (Attr, syscall.Errno) {
+	return m.attr, 0
+}
+
+func (m *mockReleaserNode) Release(_ context.Context, fh FileHandle) syscall.Errno {
+	m.released = true
+	m.handle = fh
+	return 0
+}
+
+func TestDispatchNodeOpen_WithNodeOpener(t *testing.T) {
+	h := &mockHandler{}
+	handle := &struct{ val int }{val: 42}
+	n := &mockOpenerNode{
+		attr:   Attr{Mode: syscall.S_IFREG | 0444},
+		handle: handle,
+		errno:  0,
+	}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	fh, flags, errno := d.Open(context.Background(), syscall.O_RDONLY)
+	if errno != 0 {
+		t.Fatalf("Open returned errno %d", errno)
+	}
+	if flags != 0 {
+		t.Errorf("flags = %d, want 0", flags)
+	}
+
+	dfh, ok := fh.(*dispatchFileHandle)
+	if !ok {
+		t.Fatalf("returned FileHandle is %T, want *dispatchFileHandle", fh)
+	}
+	if dfh.handle != handle {
+		t.Errorf("dispatchFileHandle.handle = %v, want %v", dfh.handle, handle)
+	}
+}
+
+func TestDispatchNodeOpen_WithNodeOpener_Error(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockOpenerNode{
+		attr:  Attr{Mode: syscall.S_IFREG | 0444},
+		errno: syscall.EIO,
+	}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	fh, _, errno := d.Open(context.Background(), 0)
+	if errno != syscall.EIO {
+		t.Errorf("Open returned errno %d, want EIO (%d)", errno, syscall.EIO)
+	}
+	if fh != nil {
+		t.Errorf("Open returned non-nil handle on error")
+	}
+}
+
+func TestDispatchNodeOpen_WithNodeReaderOnly(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockReaderNode{attr: Attr{Mode: syscall.S_IFREG | 0444}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	fh, _, errno := d.Open(context.Background(), 0)
+	if errno != 0 {
+		t.Fatalf("Open returned errno %d", errno)
+	}
+
+	dfh, ok := fh.(*dispatchFileHandle)
+	if !ok {
+		t.Fatalf("returned FileHandle is %T, want *dispatchFileHandle", fh)
+	}
+	// NodeReader-only nodes get a nil-handle dispatchFileHandle.
+	if dfh.handle != nil {
+		t.Errorf("dispatchFileHandle.handle = %v, want nil", dfh.handle)
+	}
+}
+
+func TestDispatchNodeRelease_WithNodeReleaser(t *testing.T) {
+	h := &mockHandler{}
+	handle := &struct{ val string }{val: "test-handle"}
+	n := &mockReleaserNode{attr: Attr{Mode: syscall.S_IFREG | 0444}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	fh := &dispatchFileHandle{handle: handle}
+	errno := d.Release(context.Background(), fh)
+	if errno != 0 {
+		t.Fatalf("Release returned errno %d", errno)
+	}
+	if !n.released {
+		t.Error("NodeReleaser.Release was not called")
+	}
+	if n.handle != handle {
+		t.Errorf("Release received handle %v, want %v", n.handle, handle)
+	}
+}
+
+func TestDispatchNodeRelease_WithoutNodeReleaser(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0444}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	errno := d.Release(context.Background(), &dispatchFileHandle{})
+	if errno != 0 {
+		t.Errorf("Release on node without NodeReleaser returned errno %d, want 0", errno)
+	}
+}
+
+func TestDispatchNodeRelease_RootNode(t *testing.T) {
+	h := &mockHandler{}
+	d := &DispatchNode{handler: h, isRoot: true}
+
+	errno := d.Release(context.Background(), nil)
+	if errno != 0 {
+		t.Errorf("Release on root node returned errno %d, want 0", errno)
+	}
+}
+
+func TestDispatchNodeRelease_NilNode(t *testing.T) {
+	h := &mockHandler{}
+	d := &DispatchNode{handler: h, node: nil, isRoot: false}
+
+	errno := d.Release(context.Background(), nil)
+	if errno != 0 {
+		t.Errorf("Release on nil node returned errno %d, want 0", errno)
+	}
+}
