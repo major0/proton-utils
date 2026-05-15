@@ -39,6 +39,12 @@ func (m *memBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ str
 
 func (m *memBlockStore) Invalidate(_ string) {}
 
+func (m *memBlockStore) fetchBlock(_ context.Context, _ string, index int, _, _ string) ([]byte, error) {
+	return m.GetBlock(nil, "", index, "", "")
+}
+
+func (m *memBlockStore) getBufCache() *bufferCache { return nil }
+
 // newTestFD creates a read-mode FileDescriptor backed by real crypto.
 // The mock blockStore returns encrypted blocks that the session key can
 // decrypt, exercising the full decrypt path.

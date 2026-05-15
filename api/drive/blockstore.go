@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-utils/api"
@@ -19,6 +20,12 @@ type blockStore interface {
 	// Checks buffer cache, then disk cache, then HTTP. Returns the full
 	// block bytes.
 	GetBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error)
+	// fetchBlock fetches an encrypted block from disk cache or HTTP,
+	// bypassing the buffer cache. Used by the FD layer which manages
+	// its own plaintext caching via the buffer cache.
+	fetchBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error)
+	// getBufCache returns the buffer cache (or nil if disabled).
+	getBufCache() *bufferCache
 	// RequestUpload obtains upload URLs for a batch of blocks.
 	RequestUpload(ctx context.Context, req proton.BlockUploadReq) ([]proton.BlockUploadLink, error)
 	// UploadBlock uploads an encrypted block to the given URL.
@@ -52,33 +59,39 @@ func newBlockStore(session *api.Session, diskCache *api.ObjectCache, bufCache *b
 	return &httpBlockStore{session: session, cache: diskCache, bufCache: bufCache}
 }
 
+// getBufCache returns the buffer cache (or nil if disabled).
+func (s *httpBlockStore) getBufCache() *bufferCache {
+	return s.bufCache
+}
+
 // blockCacheKey returns the cache key for a cached block.
 func blockCacheKey(linkID string, index int) string {
 	return fmt.Sprintf("%s.block.%d", linkID, index)
 }
 
-// GetBlock fetches a raw encrypted block. Checks the buffer cache first,
-// then the on-disk ObjectCache, then falls through to HTTP. Populates
-// both caches on fetch.
+// GetBlock fetches a raw encrypted block from disk cache or HTTP.
+// The buffer cache is managed by the FD layer (stores decrypted
+// plaintext) — this method does not interact with it.
 func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
-	// 1. Buffer cache check.
-	if s.bufCache != nil {
-		if data, err := s.bufCache.Get(linkID, index); data != nil || err != nil {
-			return data, err
-		}
-	}
+	return s.fetchBlock(ctx, linkID, index, bareURL, token)
+}
 
-	// 2. Disk cache check (ObjectCache).
+// fetchBlock reads a block from the disk cache or HTTP, populating the
+// disk cache on HTTP fetch. Does not interact with the buffer cache.
+func (s *httpBlockStore) fetchBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
+	// Disk cache check (ObjectCache).
 	key := blockCacheKey(linkID, index)
+	t0 := time.Now()
 	if data, _ := s.cache.Read(key); data != nil {
-		// Populate buffer cache on disk hit.
-		if s.bufCache != nil {
-			s.bufCache.Put(linkID, index, data)
-		}
+		slog.Debug("blockstore.GetBlock disk-cache hit", "linkID", linkID, "block", index, "elapsed", time.Since(t0))
 		return data, nil
 	}
+	if elapsed := time.Since(t0); elapsed > 100*time.Millisecond {
+		slog.Warn("blockstore.GetBlock disk-cache SLOW miss", "linkID", linkID, "block", index, "elapsed", elapsed)
+	}
 
-	// 3. HTTP fetch.
+	// HTTP fetch.
+	t0 = time.Now()
 	rc, err := s.session.Client.GetBlock(ctx, bareURL, token)
 	if err != nil {
 		return nil, fmt.Errorf("blockstore.GetBlock %s block %d: %w", linkID, index, err)
@@ -89,11 +102,9 @@ func (s *httpBlockStore) GetBlock(ctx context.Context, linkID string, index int,
 	if err != nil {
 		return nil, fmt.Errorf("blockstore.GetBlock %s block %d: read: %w", linkID, index, err)
 	}
+	slog.Debug("blockstore.GetBlock HTTP", "linkID", linkID, "block", index, "size", len(data), "elapsed", time.Since(t0))
 
-	// Populate both caches (best-effort).
-	if s.bufCache != nil {
-		s.bufCache.Put(linkID, index, data)
-	}
+	// Populate disk cache (best-effort).
 	if err := s.cache.Write(key, data); err != nil {
 		slog.Debug("blockstore.cache.Write", "key", key, "error", err)
 	}

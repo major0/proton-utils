@@ -80,6 +80,9 @@ type FileDescriptor struct {
 	// Shared infrastructure
 	store blockStore
 
+	// Prefetch configuration
+	prefetchBlocks int // number of blocks to prefetch ahead (0 = disabled)
+
 	// Link reference for Stat
 	link *Link
 }
@@ -107,16 +110,17 @@ func (c *Client) OpenFD(ctx context.Context, link *Link) (*FileDescriptor, error
 	store := c.blockStore
 
 	return &FileDescriptor{
-		linkID:     fh.LinkID,
-		revisionID: fh.RevisionID,
-		shareID:    fh.Share.ProtonShare().ShareID,
-		sessionKey: fh.SessionKey,
-		blocks:     fh.Blocks,
-		fileSize:   fh.FileSize,
-		mode:       fdRead,
-		ctx:        ctx,
-		store:      store,
-		link:       link,
+		linkID:         fh.LinkID,
+		revisionID:     fh.RevisionID,
+		shareID:        fh.Share.ProtonShare().ShareID,
+		sessionKey:     fh.SessionKey,
+		blocks:         fh.Blocks,
+		fileSize:       fh.FileSize,
+		mode:           fdRead,
+		ctx:            ctx,
+		store:          store,
+		prefetchBlocks: c.PrefetchBlocks,
+		link:           link,
 	}, nil
 }
 
@@ -240,20 +244,119 @@ func (fd *FileDescriptor) ReadAt(p []byte, off int64) (int, error) {
 }
 
 // readBlock fetches and decrypts a single block by index. The blockStore
-// handles caching and read-ahead internally.
+// checks the in-memory buffer cache first (which stores decrypted
+// plaintext), then disk cache, then HTTP. The buffer cache is populated
+// with decrypted data so subsequent reads skip decryption entirely.
 func (fd *FileDescriptor) readBlock(blockIdx int) ([]byte, error) {
 	if blockIdx >= len(fd.blocks) {
 		return nil, fmt.Errorf("block index %d out of range (have %d blocks)", blockIdx, len(fd.blocks))
 	}
-	pb := fd.blocks[blockIdx]
 
-	// blockStore uses 1-based indices for the API.
-	encrypted, err := fd.store.GetBlock(fd.ctx, fd.linkID, blockIdx+1, pb.BareURL, pb.Token)
+	// Fire prefetch before blocking on current block — lets upcoming
+	// blocks decrypt in parallel while caller consumes this one.
+	fd.prefetch(blockIdx)
+
+	return fd.getDecryptedBlock(blockIdx)
+}
+
+// getDecryptedBlock returns decrypted plaintext for a block. Checks the
+// buffer cache first (stores plaintext). On miss, reserves a slot,
+// fetches encrypted data, decrypts, and populates the cache.
+func (fd *FileDescriptor) getDecryptedBlock(blockIdx int) ([]byte, error) {
+	apiIdx := blockIdx + 1
+	store := fd.store
+
+	// 1. Buffer cache check — stores decrypted plaintext.
+	if bc := store.getBufCache(); bc != nil {
+		if data, err := bc.Get(fd.linkID, apiIdx); data != nil || err != nil {
+			return data, err
+		}
+
+		// 2. Reserve a slot for this block. If Reserve returns false,
+		// another goroutine claimed it — re-Get to wait on their result.
+		if !bc.Reserve(fd.linkID, apiIdx) {
+			data, err := bc.Get(fd.linkID, apiIdx)
+			if data != nil || err != nil {
+				return data, err
+			}
+			// Slot was evicted/invalidated — fall through to fetch.
+		} else {
+			// We own the fetching slot. Fetch, decrypt, Put plaintext.
+			plain, err := fd.fetchDecrypt(blockIdx)
+			if err != nil {
+				bc.PutError(fd.linkID, apiIdx, err)
+				return nil, err
+			}
+			bc.Put(fd.linkID, apiIdx, plain)
+			return plain, nil
+		}
+	}
+
+	// No buffer cache or slot lost — fetch and decrypt directly.
+	return fd.fetchDecrypt(blockIdx)
+}
+
+// fetchDecrypt fetches an encrypted block from disk/HTTP and decrypts it.
+func (fd *FileDescriptor) fetchDecrypt(blockIdx int) ([]byte, error) {
+	pb := fd.blocks[blockIdx]
+	apiIdx := blockIdx + 1
+
+	encrypted, err := fd.store.fetchBlock(fd.ctx, fd.linkID, apiIdx, pb.BareURL, pb.Token)
 	if err != nil {
 		return nil, err
 	}
 
 	return fd.decryptBlock(encrypted)
+}
+
+// prefetch initiates background fetches for blocks ahead of blockIdx.
+// Each prefetch goroutine fetches the encrypted block, decrypts it, and
+// stores the plaintext in the buffer cache. Uses Reserve for
+// deduplication — only one goroutine fetches/decrypts a given block.
+func (fd *FileDescriptor) prefetch(blockIdx int) {
+	if fd.prefetchBlocks <= 0 {
+		return
+	}
+	for i := 1; i <= fd.prefetchBlocks; i++ {
+		idx := blockIdx + i
+		if idx >= len(fd.blocks) {
+			break
+		}
+
+		store := fd.store
+		bc := store.getBufCache()
+		if bc == nil {
+			continue
+		}
+
+		apiIdx := idx + 1
+		linkID := fd.linkID
+
+		// Reserve before spawning goroutine — avoids goroutine overhead
+		// when the block is already cached or being fetched.
+		if !bc.Reserve(linkID, apiIdx) {
+			continue
+		}
+
+		// We own the fetching slot. Spawn goroutine to fetch+decrypt.
+		pb := fd.blocks[idx]
+		ctx := fd.ctx
+		sessionKey := fd.sessionKey
+
+		go func() {
+			encrypted, err := store.fetchBlock(ctx, linkID, apiIdx, pb.BareURL, pb.Token)
+			if err != nil {
+				bc.PutError(linkID, apiIdx, err)
+				return
+			}
+			msg, err := sessionKey.Decrypt(encrypted)
+			if err != nil {
+				bc.PutError(linkID, apiIdx, err)
+				return
+			}
+			bc.Put(linkID, apiIdx, msg.GetBinary())
+		}()
+	}
 }
 
 // Seek implements io.Seeker. It repositions the FD offset without

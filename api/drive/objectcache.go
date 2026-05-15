@@ -51,6 +51,6 @@ func (c *Client) InitObjectCache() {
 
 	c.objectCache = api.NewObjectCache(filepath.Join(xdgRuntimeDir, "proton", "drive"))
 
-	// Initialize the shared block store with the disk cache.
-	c.blockStore = newBlockStore(c.Session, c.objectCache, nil)
+	// Initialize the shared block store with the disk cache and buffer cache.
+	c.blockStore = newBlockStore(c.Session, c.objectCache, newBufferCache(64))
 }

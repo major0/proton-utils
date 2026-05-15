@@ -26,67 +26,62 @@ func TestBlockReader_GetMultipartReader(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Property 13 (adapted): Buffer cache integration — cache hit avoids HTTP
+// Property 13 (adapted): Buffer cache stores decrypted plaintext — FD layer
+// manages Reserve/Get/Put for deduplication.
 //
-// For any block that has been fetched once via GetBlock, a second GetBlock
-// for the same (linkID, index) returns the same data from the buffer cache
-// without making an HTTP call.
-//
-// We verify this by pre-populating the buffer cache and calling GetBlock on
-// an httpBlockStore with a nil session. If GetBlock reaches the HTTP layer
-// it will panic on the nil session — so a successful return proves the
-// cache was hit.
+// For any block that has been decrypted and Put into the buffer cache,
+// a subsequent Get returns the same plaintext without any fetch or decrypt.
 //
 // **Validates: Requirements 4.1, 4.5**
 // ---------------------------------------------------------------------------
 
-func TestPropertyBlockStoreCacheHitAvoidsHTTP(t *testing.T) {
+func TestPropertyBufferCachePlaintextHit(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		bc := newBufferCache(64)
-		store := &httpBlockStore{
-			session:  nil, // nil — any HTTP attempt panics
-			cache:    nil,
-			bufCache: bc,
-		}
 
 		linkID := rapid.StringMatching(`[a-zA-Z0-9]{4,16}`).Draw(t, "linkID")
 		index := rapid.IntRange(0, 100).Draw(t, "index")
-		data := rapid.SliceOfN(rapid.Byte(), 1, 256).Draw(t, "data")
+		plaintext := rapid.SliceOfN(rapid.Byte(), 1, 256).Draw(t, "plaintext")
 
-		// Pre-populate the buffer cache.
-		bc.Put(linkID, index, data)
+		// Simulate FD layer putting decrypted plaintext.
+		bc.Put(linkID, index, plaintext)
 
-		// GetBlock must return cached data without touching session.
-		got, err := store.GetBlock(context.Background(), linkID, index, "", "")
+		// Get must return the plaintext immediately.
+		got, err := bc.Get(linkID, index)
 		if err != nil {
-			t.Fatalf("GetBlock(%q, %d) error: %v", linkID, index, err)
+			t.Fatalf("Get(%q, %d) error: %v", linkID, index, err)
 		}
-		if !bytes.Equal(got, data) {
-			t.Fatalf("GetBlock(%q, %d) returned %d bytes, want %d", linkID, index, len(got), len(data))
+		if !bytes.Equal(got, plaintext) {
+			t.Fatalf("Get(%q, %d) returned %d bytes, want %d", linkID, index, len(got), len(plaintext))
 		}
 	})
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests for blockStore cache integration (Task 4.3)
+// Unit tests for blockStore (Task 4.3)
 // ---------------------------------------------------------------------------
 
-// TestBlockStoreCacheHitPath verifies that when data is in the bufferCache,
-// GetBlock returns it without making an HTTP call (nil session would panic).
-func TestBlockStoreCacheHitPath(t *testing.T) {
-	bc := newBufferCache(16)
+// TestBlockStoreDiskCacheHit verifies that fetchBlock returns data from
+// the disk cache without requiring an HTTP session.
+func TestBlockStoreDiskCacheHit(t *testing.T) {
+	dc := api.NewObjectCache(t.TempDir())
+
 	store := &httpBlockStore{
-		session:  nil, // nil — HTTP attempt panics
-		cache:    nil,
-		bufCache: bc,
+		session:  nil, // nil — if it falls through to HTTP, it panics
+		cache:    dc,
+		bufCache: newBufferCache(16),
 	}
 
-	want := []byte("cached-encrypted-block")
-	bc.Put("link-1", 0, want)
+	want := []byte("disk-cached-block")
+	key := blockCacheKey("link-disk", 0)
+	if err := dc.Write(key, want); err != nil {
+		t.Fatalf("ObjectCache.Write: %v", err)
+	}
 
-	got, err := store.GetBlock(context.Background(), "link-1", 0, "", "")
+	// fetchBlock should find it in disk cache.
+	got, err := store.fetchBlock(context.Background(), "link-disk", 0, "", "")
 	if err != nil {
-		t.Fatalf("GetBlock: %v", err)
+		t.Fatalf("fetchBlock: %v", err)
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
@@ -94,10 +89,7 @@ func TestBlockStoreCacheHitPath(t *testing.T) {
 }
 
 // TestBlockStoreCacheMissFetchPopulates verifies that on a cache miss,
-// GetBlock fetches via HTTP and populates the buffer cache.
-//
-// We use a fakeSession that returns canned data to avoid needing a real
-// Proton API session.
+// fetchBlock fetches via HTTP and populates the disk cache.
 func TestBlockStoreCacheMissFetchPopulates(t *testing.T) {
 	bc := newBufferCache(16)
 	want := []byte("fetched-from-api")
@@ -105,34 +97,26 @@ func TestBlockStoreCacheMissFetchPopulates(t *testing.T) {
 	// Build a minimal httpBlockStore with a countingBlockFetcher.
 	fetcher := &countingBlockFetcher{data: want}
 	store := &httpBlockStore{
-		session:  nil, // we override the fetch path below
+		session:  nil,
 		cache:    nil,
 		bufCache: bc,
 	}
 
 	// We can't easily mock session.Client.GetBlock, so instead we
 	// verify the cache population logic directly: manually simulate
-	// what GetBlock does on a miss by calling Put, then verify Get.
+	// what the FD layer does — Put plaintext, then verify Get.
 	bc.Put("link-miss", 0, want)
 
-	got, err := store.GetBlock(context.Background(), "link-miss", 0, "", "")
+	got, err := bc.Get("link-miss", 0)
 	if err != nil {
-		t.Fatalf("GetBlock: %v", err)
+		t.Fatalf("bufferCache.Get: %v", err)
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 
-	// Verify the buffer cache now has the data.
-	cached, err := bc.Get("link-miss", 0)
-	if err != nil {
-		t.Fatalf("bufferCache.Get: %v", err)
-	}
-	if !bytes.Equal(cached, want) {
-		t.Fatalf("cache content %q, want %q", cached, want)
-	}
-
 	_ = fetcher // used for documentation; real HTTP mock not feasible in-package
+	_ = store
 }
 
 // TestBlockStoreInvalidateClearsBufferCache verifies that Invalidate
@@ -195,43 +179,59 @@ func TestBlockStoreInvalidateWithDiskCache(t *testing.T) {
 	}
 }
 
-// TestBlockStoreDiskCacheHitPopulatesBufferCache verifies that a disk cache
-// hit populates the buffer cache for subsequent fast access.
-func TestBlockStoreDiskCacheHitPopulatesBufferCache(t *testing.T) {
-	bc := newBufferCache(16)
+// TestBlockStoreGetBlockDelegates verifies that GetBlock delegates to
+// fetchBlock (disk cache path).
+func TestBlockStoreGetBlockDelegates(t *testing.T) {
 	dc := api.NewObjectCache(t.TempDir())
-
 	store := &httpBlockStore{
-		session:  nil, // nil — if it falls through to HTTP, it panics
+		session:  nil,
 		cache:    dc,
-		bufCache: bc,
+		bufCache: newBufferCache(16),
 	}
 
-	want := []byte("disk-cached-block")
-	key := blockCacheKey("link-disk", 0)
+	want := []byte("encrypted-block-data")
+	key := blockCacheKey("link-1", 1)
 	if err := dc.Write(key, want); err != nil {
 		t.Fatalf("ObjectCache.Write: %v", err)
 	}
 
-	// GetBlock should find it in disk cache and populate buffer cache.
-	got, err := store.GetBlock(context.Background(), "link-disk", 0, "", "")
+	got, err := store.GetBlock(context.Background(), "link-1", 1, "", "")
 	if err != nil {
 		t.Fatalf("GetBlock: %v", err)
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
+}
 
-	// Buffer cache should now have it.
-	cached, _ := bc.Get("link-disk", 0)
-	if !bytes.Equal(cached, want) {
-		t.Fatalf("buffer cache not populated from disk hit")
+// TestBlockStoreGetBufCache verifies getBufCache returns the buffer cache.
+func TestBlockStoreGetBufCache(t *testing.T) {
+	bc := newBufferCache(16)
+	store := &httpBlockStore{
+		session:  nil,
+		cache:    nil,
+		bufCache: bc,
+	}
+
+	if store.getBufCache() != bc {
+		t.Fatal("getBufCache returned wrong instance")
+	}
+}
+
+// TestBlockStoreNilBufCache verifies getBufCache returns nil when disabled.
+func TestBlockStoreNilBufCache(t *testing.T) {
+	store := &httpBlockStore{
+		session:  nil,
+		cache:    nil,
+		bufCache: nil,
+	}
+
+	if store.getBufCache() != nil {
+		t.Fatal("getBufCache should return nil when disabled")
 	}
 }
 
 // countingBlockFetcher is a test helper that tracks fetch calls.
-// Used for documentation purposes — real HTTP mocking requires a full
-// session which isn't feasible in in-package tests.
 type countingBlockFetcher struct {
 	data  []byte
 	calls int

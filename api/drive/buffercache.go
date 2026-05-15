@@ -146,6 +146,33 @@ func (bc *bufferCache) Put(linkID string, index int, data []byte) {
 	bc.slots[k] = slot
 }
 
+// PutError records a fetch error on a fetching slot and wakes waiters.
+// Subsequent Get calls will return (nil, err). The slot is removed from
+// the cache so a future Reserve can retry.
+func (bc *bufferCache) PutError(linkID string, index int, err error) {
+	k := cacheKey{linkID: linkID, index: index}
+
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
+	slot, ok := bc.slots[k]
+	if !ok {
+		return
+	}
+
+	slot.data = nil
+	slot.err = err
+	slot.state = slotClean
+	// Remove the failed slot so future requests can retry.
+	delete(bc.slots, k)
+	// Wake all waiters.
+	select {
+	case <-slot.ready:
+	default:
+		close(slot.ready)
+	}
+}
+
 // Reserve creates a fetching slot if absent. Returns true if a new slot
 // was created (caller should fetch the block). Returns false if the slot
 // already exists (fetching or clean — don't fetch again) or if the cache

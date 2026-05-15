@@ -54,6 +54,12 @@ func (s *testBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ st
 
 func (s *testBlockStore) Invalidate(_ string) {}
 
+func (s *testBlockStore) fetchBlock(_ context.Context, _ string, index int, _, _ string) ([]byte, error) {
+	return s.GetBlock(nil, "", index, "", "")
+}
+
+func (s *testBlockStore) getBufCache() *bufferCache { return nil }
+
 // NewTestFD creates a read-mode FileDescriptor backed by real crypto for
 // use in external test packages. The plaintext is split into blocks,
 // encrypted with a generated session key, and stored in an in-memory

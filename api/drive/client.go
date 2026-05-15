@@ -19,6 +19,7 @@ import (
 type Client struct {
 	Session         *api.Session
 	Config          *api.SessionConfig // loaded config for cache policy lookup; may be nil
+	PrefetchBlocks  int                // number of blocks to prefetch ahead on read (0 = disabled)
 	addresses       map[string]proton.Address
 	addressKeyRings map[string]*crypto.KeyRing
 

@@ -35,6 +35,12 @@ func (m *mockBlockStore) UploadBlock(_ context.Context, _ string, _ int, _, _ st
 
 func (m *mockBlockStore) Invalidate(_ string) {}
 
+func (m *mockBlockStore) fetchBlock(ctx context.Context, linkID string, index int, bareURL, token string) ([]byte, error) {
+	return m.GetBlock(ctx, linkID, index, bareURL, token)
+}
+
+func (m *mockBlockStore) getBufCache() *bufferCache { return nil }
+
 // newMockStore creates a mockBlockStore pre-populated with block data.
 func newMockStore(linkID string, blocks map[int][]byte) *mockBlockStore {
 	m := &mockBlockStore{blocks: make(map[string][]byte)}
