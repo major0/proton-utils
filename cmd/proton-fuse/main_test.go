@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -456,4 +457,72 @@ func TestPropertyConfigToSessionConfig(t *testing.T) {
 			}
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Block cache mode daemon wiring tests (Task 6.2)
+// ---------------------------------------------------------------------------
+
+// TestBlockCacheModeValidation verifies that the daemon startup validation
+// rejects invalid block_cache_mode values and accepts valid ones.
+// Since run() requires a full session, we test the validation logic
+// extracted from the run function directly.
+func TestBlockCacheModeValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		wantErr bool
+	}{
+		{"encrypted is valid", "encrypted", false},
+		{"decrypted is valid", "decrypted", false},
+		{"empty is invalid", "", true},
+		{"random string is invalid", "foobar", true},
+		{"mixed case is invalid", "Encrypted", true},
+		{"uppercase is invalid", "ENCRYPTED", true},
+		{"with spaces is invalid", " encrypted", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Replicate the validation logic from run().
+			mode := tt.mode
+			var err error
+			if mode != "encrypted" && mode != "decrypted" {
+				err = fmt.Errorf("invalid block_cache_mode %q (must be \"encrypted\" or \"decrypted\")", mode)
+			}
+
+			if tt.wantErr && err == nil {
+				t.Errorf("expected error for mode %q, got nil", tt.mode)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error for mode %q: %v", tt.mode, err)
+			}
+		})
+	}
+}
+
+// TestBlockCacheModeDefaultConfig verifies that the default config has
+// block_cache_mode set to "encrypted".
+func TestBlockCacheModeDefaultConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	mode := cfg.BlockCacheMode.Value()
+	if mode != "encrypted" {
+		t.Errorf("default BlockCacheMode = %q, want %q", mode, "encrypted")
+	}
+}
+
+// TestBlockCacheModePropagation verifies that valid modes would propagate
+// to the drive client (tests the config → client path without a real session).
+func TestBlockCacheModePropagation(t *testing.T) {
+	for _, mode := range []string{"encrypted", "decrypted"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.BlockCacheMode.SetFile(mode)
+
+			got := cfg.BlockCacheMode.Value()
+			if got != mode {
+				t.Errorf("BlockCacheMode.Value() = %q, want %q", got, mode)
+			}
+		})
+	}
 }

@@ -338,6 +338,14 @@ func run(cfg daemonConfig) error {
 	driveClient.InitObjectCache()
 	driveClient.PrefetchBlocks = prefetchBlocks
 
+	// Step 8b: Validate and propagate block cache mode.
+	blockCacheMode := appCfg.BlockCacheMode.Value()
+	if blockCacheMode != "encrypted" && blockCacheMode != "decrypted" {
+		return fmt.Errorf("invalid block_cache_mode %q (must be \"encrypted\" or \"decrypted\")", blockCacheMode)
+	}
+	slog.Info("block cache mode", "mode", blockCacheMode)
+	driveClient.BlockCacheMode = blockCacheMode
+
 	// Step 9: Construct DriveHandler and load shares.
 	handler := fusedrv.NewDriveHandler(driveClient)
 	if err := handler.LoadShares(ctx); err != nil {
