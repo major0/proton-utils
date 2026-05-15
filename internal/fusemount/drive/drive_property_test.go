@@ -1178,3 +1178,79 @@ func nameExistsInShares(name string, shares map[string]*drive.Share) bool {
 	}
 	return false
 }
+
+// TestPropertyReadOffsetCorrectness verifies that for any file size S,
+// dest buffer of length L > 0, and offset ∈ [0, S+L], FileNode.Read
+// returns exactly the bytes at positions [off, off+n) where n is the
+// return value (error-free path only). When off < S and off + L > S,
+// n = S - off (short read at EOF). When off >= S, n = 0 with errno 0
+// (FUSE EOF signal).
+//
+// Feature: protonfs-fileio, Property 10: Read offset correctness
+// **Validates: Requirements 3.2, 3.3, 3.4**
+func TestPropertyReadOffsetCorrectness(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		// Generate random file content (1–64KB).
+		fileSize := rapid.IntRange(1, 64*1024).Draw(rt, "fileSize")
+		content := rapid.SliceOfN(rapid.Byte(), fileSize, fileSize).Draw(rt, "content")
+
+		// Create a real FileDescriptor backed by in-memory encrypted blocks.
+		fd, err := drive.NewTestFD(content)
+		if err != nil {
+			rt.Fatalf("NewTestFD: %v", err)
+		}
+
+		// Wrap in an fdHandle (the type FileNode.Read expects).
+		handle := &fdHandle{fd: fd}
+
+		// Generate random offset in [0, fileSize + bufLen] and buffer length > 0.
+		bufLen := rapid.IntRange(1, 8192).Draw(rt, "bufLen")
+		maxOffset := int64(fileSize + bufLen)
+		offset := rapid.Int64Range(0, maxOffset).Draw(rt, "offset")
+
+		// Construct a FileNode (link/client unused in Read path).
+		node := &FileNode{}
+
+		// Call Read.
+		dest := make([]byte, bufLen)
+		n, errno := node.Read(context.Background(), handle, dest, offset)
+
+		// Verify errno is always 0 (error-free path — our mock never errors).
+		if errno != 0 {
+			rt.Fatalf("Read returned errno %d, want 0", errno)
+		}
+
+		// Compute expected bytes read.
+		S := int64(fileSize)
+		L := int64(bufLen)
+		var expectedN int64
+		switch {
+		case offset >= S:
+			// Past EOF: n = 0, errno = 0 (FUSE EOF signal).
+			expectedN = 0
+		case offset+L > S:
+			// Short read at EOF: n = S - offset.
+			expectedN = S - offset
+		default:
+			// Full read: n = L.
+			expectedN = L
+		}
+
+		if int64(n) != expectedN {
+			rt.Fatalf("Read(off=%d, len=%d, fileSize=%d): got n=%d, want n=%d",
+				offset, bufLen, fileSize, n, expectedN)
+		}
+
+		// Verify the returned bytes match the expected slice of original content.
+		if n > 0 {
+			expected := content[offset : offset+int64(n)]
+			got := dest[:n]
+			for i := range expected {
+				if got[i] != expected[i] {
+					rt.Fatalf("Read(off=%d, len=%d): byte mismatch at position %d: got %d, want %d",
+						offset, bufLen, i, got[i], expected[i])
+				}
+			}
+		}
+	})
+}
