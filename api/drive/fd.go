@@ -80,6 +80,11 @@ type FileDescriptor struct {
 	// Shared infrastructure
 	store blockStore
 
+	// Read strategy — selected at FD construction based on BlockCacheMode.
+	// nil defaults to decryptedReadStrategy behavior (for test FDs not
+	// constructed via OpenFD).
+	reader readStrategy
+
 	// Prefetch configuration
 	prefetchBlocks int // number of blocks to prefetch ahead (0 = disabled)
 
@@ -109,6 +114,15 @@ func (c *Client) OpenFD(ctx context.Context, link *Link) (*FileDescriptor, error
 
 	store := c.blockStore
 
+	// Select read strategy based on BlockCacheMode. Default to encrypted
+	// for any value other than "decrypted" (defensive).
+	var strategy readStrategy
+	if c.BlockCacheMode == "decrypted" {
+		strategy = decryptedReadStrategy{}
+	} else {
+		strategy = encryptedReadStrategy{}
+	}
+
 	return &FileDescriptor{
 		linkID:         fh.LinkID,
 		revisionID:     fh.RevisionID,
@@ -119,6 +133,7 @@ func (c *Client) OpenFD(ctx context.Context, link *Link) (*FileDescriptor, error
 		mode:           fdRead,
 		ctx:            ctx,
 		store:          store,
+		reader:         strategy,
 		prefetchBlocks: c.PrefetchBlocks,
 		link:           link,
 	}, nil
@@ -243,20 +258,80 @@ func (fd *FileDescriptor) ReadAt(p []byte, off int64) (int, error) {
 	return totalRead, nil
 }
 
-// readBlock fetches and decrypts a single block by index. The blockStore
-// checks the in-memory buffer cache first (which stores decrypted
-// plaintext), then disk cache, then HTTP. The buffer cache is populated
-// with decrypted data so subsequent reads skip decryption entirely.
+// readBlock fetches and decrypts a single block by index. Delegates to
+// the readStrategy selected at FD construction time. If no strategy is
+// set (test FDs not constructed via OpenFD), defaults to decrypted-mode
+// behavior for backward compatibility.
 func (fd *FileDescriptor) readBlock(blockIdx int) ([]byte, error) {
 	if blockIdx >= len(fd.blocks) {
 		return nil, fmt.Errorf("block index %d out of range (have %d blocks)", blockIdx, len(fd.blocks))
 	}
 
-	// Fire prefetch before blocking on current block — lets upcoming
-	// blocks decrypt in parallel while caller consumes this one.
-	fd.prefetch(blockIdx)
+	r := fd.reader
+	if r == nil {
+		r = decryptedReadStrategy{}
+	}
+	return r.readBlock(fd, blockIdx)
+}
 
+// readStrategy abstracts the mode-dependent read path. Implementations
+// are selected once at FD construction based on BlockCacheMode.
+type readStrategy interface {
+	// readBlock returns decrypted plaintext for the given block index.
+	readBlock(fd *FileDescriptor, blockIdx int) ([]byte, error)
+	// prefetch initiates background fetches for blocks ahead of blockIdx.
+	prefetch(fd *FileDescriptor, blockIdx int)
+}
+
+// encryptedReadStrategy implements readStrategy for encrypted mode.
+// The blockStore's GetBlock manages the buffer cache with ciphertext.
+// The FD layer calls GetBlock and decrypts the result every time.
+type encryptedReadStrategy struct{}
+
+func (encryptedReadStrategy) readBlock(fd *FileDescriptor, blockIdx int) ([]byte, error) {
+	encryptedReadStrategy{}.prefetch(fd, blockIdx)
+
+	pb := fd.blocks[blockIdx]
+	apiIdx := blockIdx + 1
+	encrypted, err := fd.store.GetBlock(fd.ctx, fd.linkID, apiIdx, pb.BareURL, pb.Token)
+	if err != nil {
+		return nil, err
+	}
+	return fd.decryptBlock(encrypted)
+}
+
+func (encryptedReadStrategy) prefetch(fd *FileDescriptor, blockIdx int) {
+	if fd.prefetchBlocks <= 0 {
+		return
+	}
+	for i := 1; i <= fd.prefetchBlocks; i++ {
+		idx := blockIdx + i
+		if idx >= len(fd.blocks) {
+			break
+		}
+		pb := fd.blocks[idx]
+		apiIdx := idx + 1
+		store := fd.store
+		ctx := fd.ctx
+		linkID := fd.linkID
+		go func() {
+			_, _ = store.GetBlock(ctx, linkID, apiIdx, pb.BareURL, pb.Token)
+		}()
+	}
+}
+
+// decryptedReadStrategy implements readStrategy for decrypted mode.
+// The FD layer manages the buffer cache directly with plaintext. This
+// wraps the existing getDecryptedBlock/prefetch methods on FileDescriptor.
+type decryptedReadStrategy struct{}
+
+func (decryptedReadStrategy) readBlock(fd *FileDescriptor, blockIdx int) ([]byte, error) {
+	fd.prefetch(blockIdx)
 	return fd.getDecryptedBlock(blockIdx)
+}
+
+func (decryptedReadStrategy) prefetch(fd *FileDescriptor, blockIdx int) {
+	fd.prefetch(blockIdx)
 }
 
 // getDecryptedBlock returns decrypted plaintext for a block. Checks the

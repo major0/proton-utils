@@ -20,6 +20,7 @@ type Client struct {
 	Session         *api.Session
 	Config          *api.SessionConfig // loaded config for cache policy lookup; may be nil
 	PrefetchBlocks  int                // number of blocks to prefetch ahead on read (0 = disabled)
+	BlockCacheMode  string             // "encrypted" or "decrypted"; controls buffer cache content type
 	addresses       map[string]proton.Address
 	addressKeyRings map[string]*crypto.KeyRing
 
