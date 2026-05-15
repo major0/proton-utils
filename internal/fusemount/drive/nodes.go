@@ -282,6 +282,7 @@ func (n *FileNode) Read(_ context.Context, fh fusemount.FileHandle, dest []byte,
 		if errors.Is(err, os.ErrClosed) {
 			return 0, syscall.EBADF
 		}
+		slog.Debug("FileNode.Read: EIO", "linkID", n.link.LinkID(), "offset", off, "error", err)
 		return 0, syscall.EIO
 	}
 	return bytesRead, 0

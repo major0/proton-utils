@@ -208,6 +208,9 @@ func (fd *FileDescriptor) ReadAt(p []byte, off int64) (int, error) {
 	totalRead := 0
 	for len(p) > 0 && off < fileSize {
 		blockIdx := int(off / BlockSize)
+		if blockIdx >= len(fd.blocks) {
+			break // no more blocks available
+		}
 		blockOffset := off % BlockSize
 
 		plain, err := fd.readBlock(blockIdx)
