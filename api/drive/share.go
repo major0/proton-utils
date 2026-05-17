@@ -83,7 +83,7 @@ func (s *Share) ListChildren(ctx context.Context, all bool) ([]*Link, error) {
 
 // ResolvePath resolves a slash-separated path relative to the share's root link.
 func (s *Share) ResolvePath(ctx context.Context, path string, all bool) (*Link, error) {
-	slog.Debug("share.ResolvePath", "path", path, "all", all)
+	slog.Debug("share.ResolvePath", "shareID", s.Metadata().ShareID, "all", all)
 	return s.Link.ResolvePath(ctx, path, all)
 }
 

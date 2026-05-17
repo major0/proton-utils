@@ -593,7 +593,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	slog.Debug("drive.list", "args", args)
+	slog.Debug("drive.list", "argCount", len(args))
 
 	entries, err := resolveEntries(ctx, dc, args, opts)
 	if err != nil {

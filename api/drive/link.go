@@ -338,7 +338,7 @@ func NewLink(pLink *proton.Link, parent *Link, share *Share, resolver LinkResolv
 // ResolvePath resolves a slash-separated path relative to this link.
 // Only decrypts names along the path — siblings are not decrypted.
 func (l *Link) ResolvePath(ctx context.Context, path string, _ bool) (*Link, error) {
-	slog.Debug("link.ResolvePath", "path", path)
+	slog.Debug("link.ResolvePath", "linkID", l.LinkID())
 	path = strings.Trim(path, "/")
 	if path == "" {
 		return l, nil

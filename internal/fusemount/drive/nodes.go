@@ -96,7 +96,7 @@ func (n *ShareDirNode) Create(_ context.Context, name string, _ uint32, _ uint32
 		if errors.Is(err, drive.ErrFileNameExist) {
 			return nil, nil, syscall.EEXIST
 		}
-		slog.Debug("ShareDirNode.Create: failed", "shareID", n.share.Metadata().ShareID, "name", name, "error", err)
+		slog.Debug("ShareDirNode.Create: failed", "shareID", n.share.Metadata().ShareID, "error", err)
 		return nil, nil, syscall.EIO
 	}
 
@@ -116,18 +116,18 @@ func (n *ShareDirNode) Lookup(_ context.Context, name string) (fusemount.Node, s
 	if n.children != nil {
 		if child, ok := n.children[name]; ok {
 			slog.Debug("ShareDirNode.Lookup: cache hit",
-				"shareID", n.share.Metadata().ShareID, "name", name)
+				"shareID", n.share.Metadata().ShareID)
 			return linkNode(child, n.client), 0
 		}
 	}
 
 	// Slow path: no retained children (first Lookup before Readdir).
 	slog.Debug("ShareDirNode.Lookup: cache miss, calling API",
-		"shareID", n.share.Metadata().ShareID, "name", name)
+		"shareID", n.share.Metadata().ShareID)
 	child, err := n.share.Link.Lookup(context.Background(), name)
 	if err != nil {
 		slog.Debug("ShareDirNode.Lookup: failed",
-			"shareID", n.share.Metadata().ShareID, "name", name, "error", err)
+			"shareID", n.share.Metadata().ShareID, "error", err)
 		return nil, apiErrno(err)
 	}
 	if child == nil {
@@ -204,18 +204,18 @@ func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, sy
 	if n.children != nil {
 		if child, ok := n.children[name]; ok {
 			slog.Debug("LinkDirNode.Lookup: cache hit",
-				"linkID", n.link.LinkID(), "name", name)
+				"linkID", n.link.LinkID())
 			return linkNode(child, n.client), 0
 		}
 	}
 
 	// Slow path: no retained children (first Lookup before Readdir).
 	slog.Debug("LinkDirNode.Lookup: cache miss, calling API",
-		"linkID", n.link.LinkID(), "name", name)
+		"linkID", n.link.LinkID())
 	child, err := n.link.Lookup(context.Background(), name)
 	if err != nil {
 		slog.Debug("LinkDirNode.Lookup: failed",
-			"linkID", n.link.LinkID(), "name", name, "error", err)
+			"linkID", n.link.LinkID(), "error", err)
 		return nil, apiErrno(err)
 	}
 	if child == nil {
@@ -232,7 +232,7 @@ func (n *LinkDirNode) Create(_ context.Context, name string, _ uint32, _ uint32)
 		if errors.Is(err, drive.ErrFileNameExist) {
 			return nil, nil, syscall.EEXIST
 		}
-		slog.Debug("LinkDirNode.Create: failed", "linkID", n.link.LinkID(), "name", name, "error", err)
+		slog.Debug("LinkDirNode.Create: failed", "linkID", n.link.LinkID(), "error", err)
 		return nil, nil, syscall.EIO
 	}
 

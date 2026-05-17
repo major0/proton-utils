@@ -158,7 +158,7 @@ func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handler Lookup(%q): %v\n%s", name, r, debug.Stack())
+			log.Printf("panic in handler Lookup: %v\n%s", r, debug.Stack())
 			child = nil
 			errno = syscall.EIO
 		}
@@ -206,7 +206,7 @@ func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mo
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handler Create(%q): %v\n%s", name, r, debug.Stack())
+			log.Printf("panic in handler Create: %v\n%s", r, debug.Stack())
 			inode = nil
 			fh = nil
 			errno = syscall.EIO
@@ -242,7 +242,7 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *f
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handler Mkdir(%q): %v\n%s", name, r, debug.Stack())
+			log.Printf("panic in handler Mkdir: %v\n%s", r, debug.Stack())
 			inode = nil
 			errno = syscall.EIO
 		}
@@ -431,7 +431,7 @@ func (d *DispatchNode) Unlink(ctx context.Context, name string) (errno syscall.E
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handler Unlink(%q): %v\n%s", name, r, debug.Stack())
+			log.Printf("panic in handler Unlink: %v\n%s", r, debug.Stack())
 			errno = syscall.EIO
 		}
 	}()
@@ -458,7 +458,7 @@ func (d *DispatchNode) Rmdir(ctx context.Context, name string) (errno syscall.Er
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handler Rmdir(%q): %v\n%s", name, r, debug.Stack())
+			log.Printf("panic in handler Rmdir: %v\n%s", r, debug.Stack())
 			errno = syscall.EIO
 		}
 	}()
@@ -485,7 +485,7 @@ func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.Ino
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handler Rename(%q → %q): %v\n%s", name, newName, r, debug.Stack())
+			log.Printf("panic in handler Rename: %v\n%s", r, debug.Stack())
 			errno = syscall.EIO
 		}
 	}()

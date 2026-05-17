@@ -355,7 +355,7 @@ func run(cfg daemonConfig) error {
 		fmt.Fprintf(os.Stderr, "warning: sd_notify: %v\n", err)
 	}
 
-	slog.Info("proton-fuse ready", "mountpoint", cfg.mountpoint, "account", acctName)
+	slog.Info("proton-fuse ready", "mountpoint", cfg.mountpoint)
 
 	// Step 13: Start combined refresh goroutine.
 	// Initialize lastRefresh from persisted credentials.
