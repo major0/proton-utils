@@ -2,7 +2,6 @@ package drive
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -681,6 +680,23 @@ func (fd *FileDescriptor) WriteAt(p []byte, off int64) (int, error) {
 	return total, nil
 }
 
+// uploadParams returns an uploadParams populated from the FD's crypto
+// and identity fields.
+func (fd *FileDescriptor) uploadParams() uploadParams {
+	return uploadParams{
+		sessionKey: fd.sessionKey,
+		addrKR:     fd.addrKR,
+		nodeKR:     fd.nodeKR,
+		verifyCode: fd.verifyCode,
+		addressID:  fd.addressID,
+		volumeID:   fd.volumeID,
+		shareID:    fd.shareID,
+		linkID:     fd.linkID,
+		revisionID: fd.revisionID,
+		sigAddr:    fd.sigAddr,
+	}
+}
+
 // flushBlock submits a block for encrypt+upload in a background
 // goroutine. The result is collected in the tokens map.
 func (fd *FileDescriptor) flushBlock(index int, data []byte) {
@@ -688,80 +704,23 @@ func (fd *FileDescriptor) flushBlock(index int, data []byte) {
 	block := make([]byte, len(data))
 	copy(block, data)
 
+	apiIndex := index + 1 // Proton API uses 1-based block indices
+
 	fd.inflight.Add(1)
 	go func() {
 		defer fd.inflight.Done()
 
-		apiIndex := index + 1 // Proton API uses 1-based block indices
-
-		// Encrypt block with session key.
-		plain := crypto.NewPlainMessage(block)
-		encData, err := fd.sessionKey.Encrypt(plain)
-		if err != nil {
-			fd.setFirstErr(fmt.Errorf("encrypt block %d: %w", apiIndex, err))
-			return
-		}
-
-		// Encrypted signature of the plaintext block.
-		encSig, err := fd.addrKR.SignDetachedEncrypted(plain, fd.nodeKR)
-		if err != nil {
-			fd.setFirstErr(fmt.Errorf("sign block %d: %w", apiIndex, err))
-			return
-		}
-		encSigStr, err := encSig.GetArmored()
-		if err != nil {
-			fd.setFirstErr(fmt.Errorf("armor block sig %d: %w", apiIndex, err))
-			return
-		}
-
-		// SHA-256 of encrypted block for manifest.
-		h := sha256.New()
-		h.Write(encData)
-		hash := h.Sum(nil)
-
-		// Compute verification token.
-		verifyToken := computeVerificationToken(fd.verifyCode, encData)
-
-		// Request upload URL.
-		req := proton.BlockUploadReq{
-			AddressID:  fd.addressID,
-			VolumeID:   fd.volumeID,
-			LinkID:     fd.linkID,
-			RevisionID: fd.revisionID,
-			BlockList: []proton.BlockUploadInfo{{
-				Index:        apiIndex,
-				EncSignature: encSigStr,
-				Verifier:     &proton.BlockVerifier{Token: base64.StdEncoding.EncodeToString(verifyToken)},
-			}},
-			ThumbnailList: []interface{}{},
-		}
-
 		ctx, cancel := context.WithTimeout(fd.ctx, 60*time.Second)
 		defer cancel()
 
-		links, err := fd.store.RequestUpload(ctx, req)
+		ub, err := encryptAndUploadBlock(ctx, fd.uploadParams(), fd.store, apiIndex, block)
 		if err != nil {
-			fd.setFirstErr(fmt.Errorf("request upload block %d: %w", apiIndex, err))
-			return
-		}
-		if len(links) == 0 {
-			fd.setFirstErr(fmt.Errorf("no upload link for block %d", apiIndex))
+			fd.setFirstErr(err)
 			return
 		}
 
-		// Upload encrypted block.
-		if err := fd.store.UploadBlock(ctx, fd.linkID, apiIndex, links[0].BareURL, links[0].Token, encData); err != nil {
-			fd.setFirstErr(fmt.Errorf("upload block %d: %w", apiIndex, err))
-			return
-		}
-
-		// Record result.
 		fd.tokensMu.Lock()
-		fd.tokens[index] = uploadedBlock{
-			token:   links[0].Token,
-			encHash: hash,
-			rawSize: int64(len(block)),
-		}
+		fd.tokens[index] = ub
 		fd.tokensMu.Unlock()
 	}()
 }
@@ -868,8 +827,9 @@ func (fd *FileDescriptor) Truncate(size int64) error {
 	return nil
 }
 
-// commitRevision builds the manifest, signs it, and calls
-// UpdateRevision to commit the current revision as active.
+// commitRevision copies the collected tokens and delegates to
+// commitRevisionFromTokens to build the manifest, sign it, encrypt
+// XAttr, and call UpdateRevision.
 func (fd *FileDescriptor) commitRevision() error {
 	fd.tokensMu.Lock()
 	nBlocks := len(fd.tokens)
@@ -884,58 +844,5 @@ func (fd *FileDescriptor) commitRevision() error {
 		return nil
 	}
 
-	// Build ordered block token list and manifest hash.
-	blockTokens := make([]proton.BlockToken, nBlocks)
-	blockSizes := make([]int64, nBlocks)
-	var manifestData []byte
-	var totalSize int64
-	for i := 0; i < nBlocks; i++ {
-		ub, ok := tokensCopy[i]
-		if !ok {
-			return fmt.Errorf("fd.commitRevision: missing block %d in upload results", i)
-		}
-		blockTokens[i] = proton.BlockToken{
-			Index: i + 1, // 1-based
-			Token: ub.token,
-		}
-		blockSizes[i] = ub.rawSize
-		manifestData = append(manifestData, ub.encHash...)
-		totalSize += ub.rawSize
-	}
-
-	// Sign the manifest (concatenated SHA-256 hashes of encrypted blocks).
-	manifestSig, err := fd.addrKR.SignDetached(crypto.NewPlainMessage(manifestData))
-	if err != nil {
-		return fmt.Errorf("fd.commitRevision: sign manifest: %w", err)
-	}
-	manifestSigStr, err := manifestSig.GetArmored()
-	if err != nil {
-		return fmt.Errorf("fd.commitRevision: armor manifest sig: %w", err)
-	}
-
-	// Build XAttr with file metadata.
-	xAttrCommon := &proton.RevisionXAttrCommon{
-		ModificationTime: time.Now().UTC().Format("2006-01-02T15:04:05-0700"),
-		Size:             totalSize,
-		BlockSizes:       blockSizes,
-	}
-
-	req := proton.UpdateRevisionReq{
-		State:             proton.RevisionStateActive,
-		BlockList:         blockTokens,
-		ManifestSignature: manifestSigStr,
-		SignatureAddress:  fd.sigAddr,
-	}
-	if err := req.SetEncXAttrString(fd.addrKR, fd.nodeKR, xAttrCommon); err != nil {
-		return fmt.Errorf("fd.commitRevision: encrypt xattr: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(fd.ctx, 30*time.Second)
-	defer cancel()
-
-	if err := fd.session.Client.UpdateRevision(ctx, fd.shareID, fd.linkID, fd.revisionID, req); err != nil {
-		return fmt.Errorf("fd.commitRevision: %w", err)
-	}
-
-	return nil
+	return commitRevisionFromTokens(fd.ctx, fd.session, fd.uploadParams(), tokensCopy)
 }
