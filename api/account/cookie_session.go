@@ -410,63 +410,10 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 // is sent. Returns an *api.Error on non-2xx HTTP status.
 func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.ReadCloser, error) {
 	reqURL := cs.buildURL(path)
-
-	var bodyReader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("cookieSession.DoSSE: marshal body: %w", err)
-		}
-		bodyReader = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("cookieSession.DoSSE: new request: %w", err)
-	}
-
-	req.Header.Set("x-pm-uid", cs.UID)
-	// No Authorization: Bearer header — cookie auth only.
 	appVer := cs.resolveAppVersion(reqURL)
-	if appVer != "" {
-		req.Header.Set("x-pm-appversion", appVer)
-	}
-	if cs.UserAgent != "" {
-		req.Header.Set("User-Agent", cs.UserAgent)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Accept", "text/event-stream")
+	client := &http.Client{Jar: cs.cookieJar}
 
-	slog.Debug("cookieSession.DoSSE.request", "url", reqURL, "appversion", appVer)
-
-	httpClient := &http.Client{Jar: cs.cookieJar}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("cookieSession.DoSSE: POST %s: %w", path, err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer func() { _ = resp.Body.Close() }()
-		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, api.MaxJSONResponseSize))
-		if readErr != nil {
-			return nil, &api.Error{Status: resp.StatusCode}
-		}
-		var envelope api.Envelope
-		if json.Unmarshal(respBody, &envelope) == nil && envelope.Code != 0 {
-			slog.Debug("cookieSession.DoSSE.error", "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
-			return nil, &api.Error{
-				Status:  resp.StatusCode,
-				Code:    envelope.Code,
-				Message: envelope.Error,
-				Details: envelope.Details,
-			}
-		}
-		return nil, &api.Error{Status: resp.StatusCode}
-	}
-
-	return resp.Body, nil
+	return api.ExecuteSSE(ctx, client, reqURL, cs.UID, appVer, cs.UserAgent, body, nil)
 }
 
 // TransitionToCookies calls POST /core/v4/auth/cookies to transition from

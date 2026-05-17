@@ -1,12 +1,8 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -27,63 +23,12 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 		}
 		reqURL = base + path
 	}
-
-	var bodyReader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("doSSE: marshal body: %w", err)
-		}
-		bodyReader = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("doSSE: new request: %w", err)
-	}
-
-	req.Header.Set("x-pm-uid", s.Auth.UID)
-	if s.Auth.AccessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
-	}
 	appVer := s.resolveAppVersion(reqURL)
-	if appVer != "" {
-		req.Header.Set("x-pm-appversion", appVer)
-	}
-	if s.UserAgent != "" {
-		req.Header.Set("User-Agent", s.UserAgent)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Accept", "text/event-stream")
+	client := s.initHTTPClient()
 
-	slog.Debug("doSSE.request", "url", reqURL, "appversion", appVer)
-
-	httpClient := s.initHTTPClient()
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("doSSE: POST %s: %w", path, err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer func() { _ = resp.Body.Close() }()
-		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, MaxJSONResponseSize))
-		if readErr != nil {
-			return nil, &Error{Status: resp.StatusCode}
+	return ExecuteSSE(ctx, client, reqURL, s.Auth.UID, appVer, s.UserAgent, body, func(req *http.Request) {
+		if s.Auth.AccessToken != "" {
+			req.Header.Set("Authorization", "Bearer "+s.Auth.AccessToken)
 		}
-		// Try to extract an API error message from the response body.
-		var envelope Envelope
-		if json.Unmarshal(respBody, &envelope) == nil && envelope.Code != 0 {
-			slog.Debug("doSSE.error", "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
-			return nil, &Error{
-				Status:  resp.StatusCode,
-				Code:    envelope.Code,
-				Message: envelope.Error,
-			}
-		}
-		return nil, &Error{Status: resp.StatusCode}
-	}
-
-	return resp.Body, nil
+	})
 }
