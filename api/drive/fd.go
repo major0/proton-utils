@@ -501,6 +501,13 @@ func (fd *FileDescriptor) Stat() FileInfo {
 	return fd.link.Stat()
 }
 
+// Link returns the Link associated with this FD. For write-mode FDs
+// created via CreateFD, this is the newly created file's link. For
+// read-mode FDs, this is the opened file's link.
+func (fd *FileDescriptor) Link() *Link {
+	return fd.link
+}
+
 // hasTokens reports whether any uploaded block tokens have been collected.
 func (fd *FileDescriptor) hasTokens() bool {
 	fd.tokensMu.Lock()
@@ -531,15 +538,26 @@ func newWriteFD(ctx context.Context, fh *FileHandle, store blockStore, session *
 }
 
 // CreateFD creates a new file in Proton Drive and returns a write-mode
-// FileDescriptor. It wraps Client.CreateFile to obtain the FileHandle.
+// FileDescriptor. It wraps Client.CreateFile to obtain the FileHandle,
+// then fetches the new file's Link so the FD carries a valid *Link for
+// consumers (e.g. FUSE FileNode construction).
 func (c *Client) CreateFD(ctx context.Context, share *Share, parent *Link, name string) (*FileDescriptor, error) {
 	fh, err := c.CreateFile(ctx, share, parent, name)
 	if err != nil {
 		return nil, fmt.Errorf("CreateFD: %w", err)
 	}
 
+	// Fetch the newly created file's link from the API so the FD
+	// carries a valid *Link for consumers (FUSE FileNode construction).
+	newLink, err := c.StatLink(ctx, share, parent, fh.LinkID)
+	if err != nil {
+		return nil, fmt.Errorf("CreateFD: stat new link: %w", err)
+	}
+
 	store := c.blockStore
-	return newWriteFD(ctx, fh, store, c.Session), nil
+	fd := newWriteFD(ctx, fh, store, c.Session)
+	fd.link = newLink
+	return fd, nil
 }
 
 // OverwriteFD creates a new revision on an existing file and returns a
