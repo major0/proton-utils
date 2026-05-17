@@ -186,6 +186,17 @@ func (c *Client) ResolveShare(ctx context.Context, nameOrID string, all bool) (*
 		return nil, err
 	}
 
+	// Fast path: exact ShareID match — no need to scan all shares.
+	for _, meta := range metas {
+		if meta.ShareID == nameOrID {
+			share, err := c.GetShare(ctx, meta.ShareID)
+			if err != nil {
+				return nil, err
+			}
+			return share, nil
+		}
+	}
+
 	var nameMatch *Share
 	var nameMatchCount int
 	var idMatch *Share
