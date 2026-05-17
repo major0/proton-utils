@@ -287,6 +287,54 @@ func (n *LinkDirNode) resolveChild(name string) (*drive.Link, syscall.Errno) {
 	return child, 0
 }
 
+// Unlink removes a file from this directory (moves to trash).
+func (n *LinkDirNode) Unlink(_ context.Context, name string) syscall.Errno {
+	child, errno := n.resolveChild(name)
+	if errno != 0 {
+		return errno
+	}
+	if child.IsDir() {
+		return syscall.EISDIR
+	}
+
+	share := n.link.Share()
+	if err := n.client.Remove(context.Background(), share, child, drive.RemoveOpts{}); err != nil {
+		if errors.Is(err, drive.ErrNotEmpty) {
+			return syscall.ENOTEMPTY
+		}
+		slog.Debug("LinkDirNode.Unlink: failed",
+			"linkID", n.link.LinkID(), "error", err)
+		return syscall.EIO
+	}
+
+	n.children = nil
+	return 0
+}
+
+// Rmdir removes an empty directory from this directory (moves to trash).
+func (n *LinkDirNode) Rmdir(_ context.Context, name string) syscall.Errno {
+	child, errno := n.resolveChild(name)
+	if errno != 0 {
+		return errno
+	}
+	if !child.IsDir() {
+		return syscall.ENOTDIR
+	}
+
+	share := n.link.Share()
+	if err := n.client.Remove(context.Background(), share, child, drive.RemoveOpts{}); err != nil {
+		if errors.Is(err, drive.ErrNotEmpty) {
+			return syscall.ENOTEMPTY
+		}
+		slog.Debug("LinkDirNode.Rmdir: failed",
+			"linkID", n.link.LinkID(), "error", err)
+		return syscall.EIO
+	}
+
+	n.children = nil
+	return 0
+}
+
 // Create creates a new file in this directory.
 func (n *LinkDirNode) Create(_ context.Context, name string, _ uint32, _ uint32) (fusemount.Node, fusemount.FileHandle, syscall.Errno) {
 	share := n.link.Share()
