@@ -127,6 +127,7 @@ type LinkDirNode struct {
 // Compile-time interface assertions.
 var _ fusemount.Node = (*LinkDirNode)(nil)
 var _ fusemount.DirNode = (*LinkDirNode)(nil)
+var _ fusemount.NodeCreator = (*LinkDirNode)(nil)
 
 // Getattr returns directory attributes for the folder.
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -200,6 +201,29 @@ func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, sy
 		return nil, syscall.ENOENT
 	}
 	return linkNode(child, n.client), 0
+}
+
+// Create creates a new file in this directory.
+func (n *LinkDirNode) Create(_ context.Context, name string, _ uint32, _ uint32) (fusemount.Node, fusemount.FileHandle, syscall.Errno) {
+	share := n.link.Share()
+	fd, err := n.client.CreateFD(context.Background(), share, n.link, name)
+	if err != nil {
+		if errors.Is(err, drive.ErrFileNameExist) {
+			return nil, nil, syscall.EEXIST
+		}
+		slog.Debug("LinkDirNode.Create: failed", "linkID", n.link.LinkID(), "name", name, "error", err)
+		return nil, nil, syscall.EIO
+	}
+
+	// Invalidate children cache — directory listing is now stale.
+	n.children = nil
+
+	// Get the *Link for the new file from the FD. CreateFD fetches and
+	// stores the new file's link after creation (see api/drive/ changes).
+	newLink := fd.Link()
+	fileNode := &FileNode{link: newLink, client: n.client}
+
+	return fileNode, &fdHandle{fd: fd}, 0
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
