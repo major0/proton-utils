@@ -89,7 +89,7 @@ func TestMkDirAll_FileBlocksPath(t *testing.T) {
 	// so MkDirAll("readme/subdir") hits the "not a folder" check.
 	resolver := &mockResolverWithChildren{
 		children: []proton.Link{
-			{LinkID: "file-1", Type: proton.LinkTypeFile},
+			{LinkID: "file-1", Type: proton.LinkTypeFile, State: proton.LinkStateActive},
 		},
 	}
 

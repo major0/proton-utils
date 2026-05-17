@@ -75,13 +75,16 @@ func (c *Client) Move(ctx context.Context, share *Share, link *Link, newParent *
 		return err
 	}
 
-	// Invalidate affected Link Table entries. The moved link, old
-	// parent, and new parent all have stale children/metadata.
+	// Invalidate affected Link Table entries and cached children.
+	// The moved link, old parent, and new parent all have stale
+	// children/metadata.
 	c.deleteLink(link.ProtonLink().LinkID)
 	if link.ParentLink() != nil {
 		c.deleteLink(link.ParentLink().ProtonLink().LinkID)
+		link.ParentLink().InvalidateChildren()
 	}
 	c.deleteLink(newParent.ProtonLink().LinkID)
+	newParent.InvalidateChildren()
 
 	return nil
 }

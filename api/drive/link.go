@@ -275,6 +275,15 @@ func (l *Link) Parent() *Link {
 	return l.parentLink
 }
 
+// InvalidateChildren clears the cached child IDs, forcing the next
+// Readdir or Lookup to re-fetch children from the API. Call this after
+// any mutation that changes the parent's children (mkdir, create, remove, rename).
+func (l *Link) InvalidateChildren() {
+	l.cacheMu.Lock()
+	l.cachedChildIDs = nil
+	l.cacheMu.Unlock()
+}
+
 // ParentLink returns the parent Link, or nil for share roots.
 func (l *Link) ParentLink() *Link { return l.parentLink }
 

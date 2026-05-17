@@ -69,9 +69,11 @@ func (c *Client) MkDir(ctx context.Context, share *Share, parent *Link, name str
 		return nil, fmt.Errorf("mkdir %s: %w", name, err)
 	}
 
-	// Invalidate the parent from the Link Table — its children list
-	// is now stale.
+	// Invalidate the parent's cached children — its children list
+	// is now stale. Both the link table entry and the in-memory
+	// cachedChildIDs must be cleared so Readdir/Lookup re-fetch.
 	c.deleteLink(parent.ProtonLink().LinkID)
+	parent.InvalidateChildren()
 
 	return c.StatLink(ctx, share, parent, res.ID)
 }

@@ -89,6 +89,10 @@ type FileDescriptor struct {
 
 	// Link reference for Stat
 	link *Link
+
+	// client is set for write-mode FDs created via CreateFD/OverwriteFD.
+	// Used to invalidate the link table after revision commit.
+	client *Client
 }
 
 // Compile-time interface checks.
@@ -490,7 +494,22 @@ func (fd *FileDescriptor) Close() error {
 			return err
 		}
 
-		return fd.commitRevision()
+		if err := fd.commitRevision(); err != nil {
+			return err
+		}
+
+		// Revision committed — the file transitioned from Draft to Active
+		// on the server. Delete the stale link from the table and
+		// invalidate the parent's cached children so the next access
+		// re-fetches fresh state (Active, with FileProperties) from the API.
+		if fd.client != nil {
+			fd.client.deleteLink(fd.linkID)
+		}
+		if fd.link != nil && fd.link.ParentLink() != nil {
+			fd.link.ParentLink().InvalidateChildren()
+		}
+
+		return nil
 	}
 
 	return nil
@@ -547,6 +566,10 @@ func (c *Client) CreateFD(ctx context.Context, share *Share, parent *Link, name 
 		return nil, fmt.Errorf("CreateFD: %w", err)
 	}
 
+	// Invalidate the parent's cached children — a new child exists.
+	c.deleteLink(parent.ProtonLink().LinkID)
+	parent.InvalidateChildren()
+
 	// Fetch the newly created file's link from the API so the FD
 	// carries a valid *Link for consumers (FUSE FileNode construction).
 	newLink, err := c.StatLink(ctx, share, parent, fh.LinkID)
@@ -557,6 +580,7 @@ func (c *Client) CreateFD(ctx context.Context, share *Share, parent *Link, name 
 	store := c.blockStore
 	fd := newWriteFD(ctx, fh, store, c.Session)
 	fd.link = newLink
+	fd.client = c
 	return fd, nil
 }
 
@@ -578,7 +602,10 @@ func (c *Client) OverwriteFD(ctx context.Context, share *Share, link *Link) (*Fi
 		store.Invalidate(link.LinkID(), oldBlockCount)
 	}
 
-	return newWriteFD(ctx, fh, store, c.Session), nil
+	fd := newWriteFD(ctx, fh, store, c.Session)
+	fd.link = link
+	fd.client = c
+	return fd, nil
 }
 
 // Write implements io.Writer. It buffers data into the current block

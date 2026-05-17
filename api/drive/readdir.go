@@ -202,6 +202,10 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 			if child == nil {
 				continue // link evicted from table — fall through below
 			}
+			// Skip trashed links — they are logically removed.
+			if child.IsTrashed() {
+				continue
+			}
 			childName, err := child.Name()
 			if err != nil {
 				continue
@@ -221,6 +225,10 @@ func (l *Link) Lookup(ctx context.Context, name string) (*Link, error) {
 	for entry := range l.Readdir(ctx) {
 		if entry.Err != nil {
 			return nil, entry.Err
+		}
+		// Skip trashed links — they are logically removed.
+		if entry.Link.IsTrashed() {
+			continue
 		}
 		entryName, err := entry.EntryName()
 		if err != nil {

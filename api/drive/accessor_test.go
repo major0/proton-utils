@@ -233,8 +233,8 @@ func TestShare_VolumeID(t *testing.T) {
 // TestLink_Lookup verifies Lookup for ".", "..", and child names.
 func TestLink_Lookup(t *testing.T) {
 	children := []proton.Link{
-		{LinkID: "child-a", Type: proton.LinkTypeFile},
-		{LinkID: "child-b", Type: proton.LinkTypeFolder},
+		{LinkID: "child-a", Type: proton.LinkTypeFile, State: proton.LinkStateActive},
+		{LinkID: "child-b", Type: proton.LinkTypeFolder, State: proton.LinkStateActive},
 	}
 	resolver := &readdirResolver{children: children}
 

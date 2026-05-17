@@ -79,6 +79,11 @@ func (c *Client) ListLinkChildren(ctx context.Context, shareID, linkID string, a
 // Uses a load-or-store pattern under a single write lock to prevent
 // races where two goroutines both miss the table and both insert,
 // which would break the pointer-identity invariant.
+// NewChildLink constructs a child Link from a raw proton.Link, inserting
+// it into the link table. If the link is already in the table, the
+// existing pointer is returned to maintain pointer identity.
+// Callers that need fresh state should delete the link from the table
+// first (via deleteLink) so the next access re-fetches from the API.
 func (c *Client) NewChildLink(_ context.Context, parent *Link, pLink *proton.Link) *Link {
 	c.tableMu.Lock()
 	if existing := c.linkTable[pLink.LinkID]; existing != nil {
