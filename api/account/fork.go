@@ -156,7 +156,7 @@ func forkPull(ctx context.Context, parent *api.Session, host, selector, appVersi
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	var envelope apiEnvelope
+	var envelope api.Envelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("unmarshal envelope: %w", err)
 	}
@@ -320,7 +320,7 @@ func CookieFork(ctx context.Context, acctSession *api.Session, acctConfig *api.S
 		return nil, nil, fmt.Errorf("%w: read push response: %w", ErrForkFailed, err)
 	}
 
-	var envelope apiEnvelope
+	var envelope api.Envelope
 	if err := json.Unmarshal(respBody, &envelope); err != nil {
 		return nil, nil, fmt.Errorf("%w: unmarshal push envelope: %w", ErrForkFailed, err)
 	}

@@ -8,13 +8,6 @@ import (
 	"github.com/major0/proton-utils/api"
 )
 
-// sanitizeKey strips '=' padding from a Proton ID for use as a cache key.
-// Proton IDs are base64-encoded and may contain '=' padding which can
-// cause issues with filesystem path construction.
-func sanitizeKey(id string) string {
-	return strings.TrimRight(id, "=")
-}
-
 // SanitizeLinkID strips '=' padding from a LinkID for use as a directory
 // entry name. Proton LinkIDs are base64-encoded and may contain trailing
 // '=' which is problematic in filesystem paths.

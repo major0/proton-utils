@@ -73,7 +73,7 @@ func (s *Session) DoSSE(ctx context.Context, path string, body any) (io.ReadClos
 			return nil, &Error{Status: resp.StatusCode}
 		}
 		// Try to extract an API error message from the response body.
-		var envelope apiEnvelope
+		var envelope Envelope
 		if json.Unmarshal(respBody, &envelope) == nil && envelope.Code != 0 {
 			slog.Debug("doSSE.error", "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 			return nil, &Error{

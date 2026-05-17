@@ -288,8 +288,8 @@ func (s *Session) resolveAppVersion(reqURL string) string {
 	return ResolveAppVersion(reqURL, s.AppVersion)
 }
 
-// apiEnvelope is the standard Proton API response wrapper.
-type apiEnvelope struct {
+// Envelope is the standard Proton API response wrapper.
+type Envelope struct {
 	Code    int             `json:"Code"`
 	Error   string          `json:"Error,omitempty"`
 	Details json.RawMessage `json:"Details,omitempty"`
@@ -397,7 +397,7 @@ func (s *Session) doRequest(ctx context.Context, method, path string, body, resu
 	}
 
 	// Parse the envelope to check the API-level error code.
-	var envelope apiEnvelope
+	var envelope Envelope
 	if err := json.Unmarshal(respBody, &envelope); err != nil {
 		return fmt.Errorf("%s: unmarshal envelope: %w", label, err)
 	}

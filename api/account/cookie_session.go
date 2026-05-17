@@ -275,7 +275,7 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 		return fmt.Errorf("cookieSession.DoJSON: read response: %w", err)
 	}
 
-	var envelope apiEnvelope
+	var envelope api.Envelope
 	if err := json.Unmarshal(respBody, &envelope); err != nil {
 		return fmt.Errorf("cookieSession.DoJSON: unmarshal envelope: %w", err)
 	}
@@ -297,13 +297,6 @@ func (cs *CookieSession) doJSONOnce(ctx context.Context, method, reqURL string, 
 	}
 
 	return nil
-}
-
-// apiEnvelope is the standard Proton API response wrapper.
-type apiEnvelope struct {
-	Code    int             `json:"Code"`
-	Error   string          `json:"Error,omitempty"`
-	Details json.RawMessage `json:"Details,omitempty"`
 }
 
 // extractRefreshCookie finds the REFRESH-<uid> cookie in the jar for the
@@ -373,7 +366,7 @@ func (cs *CookieSession) RefreshCookies(ctx context.Context) error {
 		return fmt.Errorf("RefreshCookies: read response: %w", err)
 	}
 
-	var envelope apiEnvelope
+	var envelope api.Envelope
 	if err := json.Unmarshal(respBody, &envelope); err != nil {
 		return fmt.Errorf("RefreshCookies: unmarshal envelope: %w", err)
 	}
@@ -460,7 +453,7 @@ func (cs *CookieSession) DoSSE(ctx context.Context, path string, body any) (io.R
 		if readErr != nil {
 			return nil, &api.Error{Status: resp.StatusCode}
 		}
-		var envelope apiEnvelope
+		var envelope api.Envelope
 		if json.Unmarshal(respBody, &envelope) == nil && envelope.Code != 0 {
 			slog.Debug("cookieSession.DoSSE.error", "url", reqURL, "status", resp.StatusCode, "code", envelope.Code, "message", envelope.Error)
 			return nil, &api.Error{

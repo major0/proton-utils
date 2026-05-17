@@ -96,7 +96,7 @@ func (c *Client) NewChildLink(_ context.Context, parent *Link, pLink *proton.Lin
 	if parent.Share() != nil && parent.Share().DiskCacheLevel >= api.DiskCacheObjectStore {
 		var buf bytes.Buffer
 		if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-			if err := c.objectCache.Write(sanitizeKey(pLink.LinkID), buf.Bytes()); err != nil {
+			if err := c.objectCache.Write(SanitizeLinkID(pLink.LinkID), buf.Bytes()); err != nil {
 				slog.Debug("objectCache.Write", "key", pLink.LinkID, "error", err)
 			}
 		}
@@ -168,7 +168,7 @@ func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (pro
 
 	// ObjectCache hit — return without API call.
 	if diskAllowed {
-		if data, _ := c.objectCache.Read(sanitizeKey(linkID)); data != nil {
+		if data, _ := c.objectCache.Read(SanitizeLinkID(linkID)); data != nil {
 			var pLink proton.Link
 			if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&pLink); err == nil {
 				return pLink, nil
@@ -187,7 +187,7 @@ func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (pro
 	if diskAllowed {
 		var buf bytes.Buffer
 		if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-			if err := c.objectCache.Write(sanitizeKey(linkID), buf.Bytes()); err != nil {
+			if err := c.objectCache.Write(SanitizeLinkID(linkID), buf.Bytes()); err != nil {
 				slog.Debug("objectCache.Write", "key", linkID, "error", err)
 			}
 		}
