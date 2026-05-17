@@ -18,6 +18,7 @@ var _ = (fs.NodeSetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeLookuper)((*DispatchNode)(nil))
 var _ = (fs.NodeReaddirer)((*DispatchNode)(nil))
 var _ = (fs.NodeReleaser)((*DispatchNode)(nil))
+var _ = (fs.NodeFsyncer)((*DispatchNode)(nil))
 
 // DispatchNode bridges a namespace handler's Node to go-fuse's InodeEmbedder.
 // It operates in two modes:
@@ -316,6 +317,35 @@ func (d *DispatchNode) Release(ctx context.Context, f fs.FileHandle) (errno sysc
 		handle = dfh.handle
 	}
 	return releaser.Release(ctx, handle)
+}
+
+// Fsync delegates to NodeFsyncer if the node supports it.
+func (d *DispatchNode) Fsync(ctx context.Context, f fs.FileHandle, flags uint32) (errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler Fsync: %v\n%s", r, debug.Stack())
+			errno = syscall.EIO
+		}
+	}()
+
+	if d.isRoot || d.node == nil {
+		return 0 // no-op for directories
+	}
+
+	fsyncer, ok := d.node.(NodeFsyncer)
+	if !ok {
+		return 0 // no-op if not supported
+	}
+
+	var handle FileHandle
+	if dfh, ok := f.(*dispatchFileHandle); ok {
+		handle = dfh.handle
+	}
+
+	return fsyncer.Fsync(ctx, handle, flags)
 }
 
 // Read delegates to NodeReader if the node supports it.

@@ -90,6 +90,11 @@ type NodeReader interface {
 	Read(ctx context.Context, fh FileHandle, dest []byte, off int64) (int, syscall.Errno)
 }
 
+// NodeFsyncer indicates the node supports fsync (flush to durable storage).
+type NodeFsyncer interface {
+	Fsync(ctx context.Context, fh FileHandle, flags uint32) syscall.Errno
+}
+
 // NodeRemover indicates the handler supports unlink/rmdir.
 type NodeRemover interface {
 	Unlink(ctx context.Context, name string) syscall.Errno
