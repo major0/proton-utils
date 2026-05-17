@@ -75,6 +75,21 @@ func LookupServiceByHost(host string) (ServiceConfig, error) {
 	return svc, nil
 }
 
+// ResolveAppVersion determines the x-pm-appversion value for a request URL.
+// If the URL targets a known service host, returns that service's app version.
+// Otherwise returns the fallback value.
+func ResolveAppVersion(reqURL, fallback string) string {
+	u, err := url.Parse(reqURL)
+	if err != nil || u.Host == "" {
+		return fallback
+	}
+	svc, err := LookupServiceByHost(u.Hostname())
+	if err != nil {
+		return fallback
+	}
+	return svc.AppVersion("")
+}
+
 // AccountHost returns the account service's API base URL from the registry.
 // Use this instead of hardcoding the account host URL.
 func AccountHost() string {

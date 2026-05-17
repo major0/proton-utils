@@ -408,7 +408,7 @@ func TestPrefetchBlocks_NotPersistedWhenDefault(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test-controlled path
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestBlockCacheMode_NotPersistedWhenDefault(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test-controlled path
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
