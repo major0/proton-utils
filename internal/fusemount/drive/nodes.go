@@ -38,6 +38,7 @@ type ShareDirNode struct {
 var _ fusemount.Node = (*ShareDirNode)(nil)
 var _ fusemount.DirNode = (*ShareDirNode)(nil)
 var _ fusemount.NodeCreator = (*ShareDirNode)(nil)
+var _ fusemount.NodeMkdirer = (*ShareDirNode)(nil)
 
 // Getattr returns directory attributes for the share root.
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -109,6 +110,24 @@ func (n *ShareDirNode) Create(_ context.Context, name string, _ uint32, _ uint32
 	return fileNode, &fdHandle{fd: fd}, 0
 }
 
+// Mkdir creates a new subdirectory at the share root.
+func (n *ShareDirNode) Mkdir(_ context.Context, name string, _ uint32) (fusemount.Node, syscall.Errno) {
+	newLink, err := n.client.MkDir(context.Background(), n.share, n.share.Link, name)
+	if err != nil {
+		if errors.Is(err, proton.ErrFolderNameExist) {
+			return nil, syscall.EEXIST
+		}
+		slog.Debug("ShareDirNode.Mkdir: failed",
+			"shareID", n.share.Metadata().ShareID, "error", err)
+		return nil, syscall.EIO
+	}
+
+	// Invalidate children cache.
+	n.children = nil
+
+	return &LinkDirNode{link: newLink, client: n.client}, 0
+}
+
 // Lookup finds a child by name. Uses the retained children map from the
 // last Readdir to avoid a redundant ListLinkChildren API call.
 func (n *ShareDirNode) Lookup(_ context.Context, name string) (fusemount.Node, syscall.Errno) {
@@ -149,6 +168,7 @@ type LinkDirNode struct {
 var _ fusemount.Node = (*LinkDirNode)(nil)
 var _ fusemount.DirNode = (*LinkDirNode)(nil)
 var _ fusemount.NodeCreator = (*LinkDirNode)(nil)
+var _ fusemount.NodeMkdirer = (*LinkDirNode)(nil)
 
 // Getattr returns directory attributes for the folder.
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -245,6 +265,28 @@ func (n *LinkDirNode) Create(_ context.Context, name string, _ uint32, _ uint32)
 	fileNode := &FileNode{link: newLink, client: n.client}
 
 	return fileNode, &fdHandle{fd: fd}, 0
+}
+
+// Mkdir creates a new subdirectory in this folder.
+func (n *LinkDirNode) Mkdir(_ context.Context, name string, _ uint32) (fusemount.Node, syscall.Errno) {
+	share := n.link.Share()
+	newLink, err := n.client.MkDir(context.Background(), share, n.link, name)
+	if err != nil {
+		if errors.Is(err, proton.ErrFolderNameExist) {
+			return nil, syscall.EEXIST
+		}
+		if errors.Is(err, drive.ErrNotAFolder) {
+			return nil, syscall.ENOTDIR
+		}
+		slog.Debug("LinkDirNode.Mkdir: failed",
+			"linkID", n.link.LinkID(), "error", err)
+		return nil, syscall.EIO
+	}
+
+	// Invalidate children cache — directory listing is now stale.
+	n.children = nil
+
+	return &LinkDirNode{link: newLink, client: n.client}, 0
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
