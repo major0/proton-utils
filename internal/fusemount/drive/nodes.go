@@ -155,6 +155,26 @@ func (n *ShareDirNode) Lookup(_ context.Context, name string) (fusemount.Node, s
 	return linkNode(child, n.client), 0
 }
 
+// resolveShareChild looks up a child by name in the share root.
+func (n *ShareDirNode) resolveShareChild(name string) (*drive.Link, syscall.Errno) {
+	if n.children != nil {
+		if child, ok := n.children[name]; ok {
+			return child, 0
+		}
+	}
+
+	child, err := n.share.Link.Lookup(context.Background(), name)
+	if err != nil {
+		slog.Debug("resolveShareChild: lookup failed",
+			"shareID", n.share.Metadata().ShareID, "error", err)
+		return nil, syscall.EIO
+	}
+	if child == nil {
+		return nil, syscall.ENOENT
+	}
+	return child, 0
+}
+
 // LinkDirNode wraps a *drive.Link (folder) and implements fusemount.DirNode.
 // It exposes the link's children as directory entries.
 // Retains children from the last Readdir so Lookup can resolve locally.
@@ -242,6 +262,29 @@ func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, sy
 		return nil, syscall.ENOENT
 	}
 	return linkNode(child, n.client), 0
+}
+
+// resolveChild looks up a child by name using the cached children map
+// or falling back to the API. Returns the child Link or an errno.
+func (n *LinkDirNode) resolveChild(name string) (*drive.Link, syscall.Errno) {
+	// Fast path: use cached children from last Readdir.
+	if n.children != nil {
+		if child, ok := n.children[name]; ok {
+			return child, 0
+		}
+	}
+
+	// Slow path: API lookup (cache miss or cache not populated).
+	child, err := n.link.Lookup(context.Background(), name)
+	if err != nil {
+		slog.Debug("resolveChild: lookup failed",
+			"linkID", n.link.LinkID(), "error", err)
+		return nil, syscall.EIO
+	}
+	if child == nil {
+		return nil, syscall.ENOENT
+	}
+	return child, 0
 }
 
 // Create creates a new file in this directory.
