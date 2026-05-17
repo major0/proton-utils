@@ -39,6 +39,7 @@ var _ fusemount.Node = (*ShareDirNode)(nil)
 var _ fusemount.DirNode = (*ShareDirNode)(nil)
 var _ fusemount.NodeCreator = (*ShareDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*ShareDirNode)(nil)
+var _ fusemount.NodeRemover = (*ShareDirNode)(nil)
 
 // Getattr returns directory attributes for the share root.
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -235,6 +236,7 @@ var _ fusemount.Node = (*LinkDirNode)(nil)
 var _ fusemount.DirNode = (*LinkDirNode)(nil)
 var _ fusemount.NodeCreator = (*LinkDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*LinkDirNode)(nil)
+var _ fusemount.NodeRemover = (*LinkDirNode)(nil)
 
 // Getattr returns directory attributes for the folder.
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
