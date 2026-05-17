@@ -156,15 +156,7 @@ func NewCookieSessionForRefresh(uid, baseURL, appVersion string, jar http.Cookie
 // URL. If the URL targets a known service host, returns that service's app
 // version. Otherwise falls back to cs.AppVersion.
 func (cs *CookieSession) resolveAppVersion(reqURL string) string {
-	u, err := url.Parse(reqURL)
-	if err != nil || u.Host == "" {
-		return cs.AppVersion
-	}
-	svc, err := api.LookupServiceByHost(u.Hostname())
-	if err != nil {
-		return cs.AppVersion
-	}
-	return svc.AppVersion("")
+	return api.ResolveAppVersion(reqURL, cs.AppVersion)
 }
 
 // buildURL resolves a path against BaseURL. If path is already an absolute

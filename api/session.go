@@ -285,15 +285,7 @@ func InitSessionWithJar(ctx context.Context, jar http.CookieJar, managerOpts []p
 // URL. If the URL targets a known service host, returns that service's app
 // version. Otherwise falls back to s.AppVersion.
 func (s *Session) resolveAppVersion(reqURL string) string {
-	u, err := url.Parse(reqURL)
-	if err != nil || u.Host == "" {
-		return s.AppVersion
-	}
-	svc, err := LookupServiceByHost(u.Hostname())
-	if err != nil {
-		return s.AppVersion
-	}
-	return svc.AppVersion("")
+	return ResolveAppVersion(reqURL, s.AppVersion)
 }
 
 // apiEnvelope is the standard Proton API response wrapper.
