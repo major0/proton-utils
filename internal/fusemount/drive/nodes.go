@@ -232,6 +232,8 @@ type FileNode struct {
 var _ fusemount.Node = (*FileNode)(nil)
 var _ fusemount.NodeOpener = (*FileNode)(nil)
 var _ fusemount.NodeReader = (*FileNode)(nil)
+var _ fusemount.NodeWriter = (*FileNode)(nil)
+var _ fusemount.NodeFsyncer = (*FileNode)(nil)
 var _ fusemount.NodeReleaser = (*FileNode)(nil)
 
 // fdHandle wraps a *drive.FileDescriptor as a fusemount.FileHandle.
@@ -254,12 +256,34 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 	}, 0
 }
 
-// Open creates a FileDescriptor for reading. The context passed to OpenFD
-// is context.Background() — the FD context must outlive the FUSE request.
-func (n *FileNode) Open(_ context.Context, _ uint32) (fusemount.FileHandle, syscall.Errno) {
+// Open creates a FileDescriptor for reading or writing depending on flags.
+// The context passed to OpenFD/OverwriteFD is context.Background() — the FD
+// context must outlive the FUSE request.
+func (n *FileNode) Open(_ context.Context, flags uint32) (fusemount.FileHandle, syscall.Errno) {
+	// Determine mode from flags.
+	isWrite := flags&(syscall.O_WRONLY|syscall.O_RDWR) != 0
+
+	if isWrite {
+		share := n.link.Share()
+		fd, err := n.client.OverwriteFD(context.Background(), share, n.link)
+		if err != nil {
+			if errors.Is(err, drive.ErrDraftExist) {
+				return nil, syscall.EBUSY
+			}
+			slog.Debug("FileNode.Open: write failed", "linkID", n.link.LinkID(), "error", err)
+			return nil, syscall.EIO
+		}
+		// Handle O_TRUNC: reset file size to 0.
+		if flags&syscall.O_TRUNC != 0 {
+			_ = fd.Truncate(0)
+		}
+		return &fdHandle{fd: fd}, 0
+	}
+
+	// Read mode — existing behavior.
 	fd, err := n.client.OpenFD(context.Background(), n.link)
 	if err != nil {
-		slog.Debug("FileNode.Open: failed", "linkID", n.link.LinkID(), "error", err)
+		slog.Debug("FileNode.Open: read failed", "linkID", n.link.LinkID(), "error", err)
 		return nil, syscall.EIO
 	}
 	return &fdHandle{fd: fd}, 0
@@ -286,6 +310,42 @@ func (n *FileNode) Read(_ context.Context, fh fusemount.FileHandle, dest []byte,
 		return 0, syscall.EIO
 	}
 	return bytesRead, 0
+}
+
+// Write delegates to fd.WriteAt and maps errors to FUSE errnos.
+func (n *FileNode) Write(_ context.Context, fh fusemount.FileHandle, data []byte, off int64) (uint32, syscall.Errno) {
+	h, ok := fh.(*fdHandle)
+	if !ok || h == nil {
+		return 0, syscall.EBADF
+	}
+	written, err := h.fd.WriteAt(data, off)
+	if err != nil {
+		if errors.Is(err, os.ErrClosed) {
+			return 0, syscall.EBADF
+		}
+		if errors.Is(err, syscall.EBADF) {
+			return 0, syscall.EBADF
+		}
+		slog.Debug("FileNode.Write: EIO", "linkID", n.link.LinkID(), "offset", off, "error", err)
+		return 0, syscall.EIO
+	}
+	return uint32(written), 0 //nolint:gosec // written is bounded by len(data) which fits uint32
+}
+
+// Fsync flushes pending writes to the server by calling fd.Sync().
+func (n *FileNode) Fsync(_ context.Context, fh fusemount.FileHandle, _ uint32) syscall.Errno {
+	h, ok := fh.(*fdHandle)
+	if !ok || h == nil {
+		return 0 // no-op for nil/read handles
+	}
+	if err := h.fd.Sync(); err != nil {
+		if errors.Is(err, syscall.EBADF) || errors.Is(err, os.ErrClosed) {
+			return 0 // read-only or already-closed FD — no-op
+		}
+		slog.Debug("FileNode.Fsync: EIO", "linkID", n.link.LinkID(), "error", err)
+		return syscall.EIO
+	}
+	return 0
 }
 
 // Release closes the FileDescriptor. Errors are logged but not returned
