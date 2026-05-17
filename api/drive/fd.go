@@ -552,6 +552,15 @@ func (c *Client) OverwriteFD(ctx context.Context, share *Share, link *Link) (*Fi
 	}
 
 	store := c.blockStore
+
+	// Invalidate stale cached blocks from the previous revision before
+	// uploading new blocks. Use ceiling division to cover partial tail.
+	oldSize := link.Size()
+	if oldSize > 0 {
+		oldBlockCount := int((oldSize + BlockSize - 1) / BlockSize)
+		store.Invalidate(link.LinkID(), oldBlockCount)
+	}
+
 	return newWriteFD(ctx, fh, store, c.Session), nil
 }
 
