@@ -2,11 +2,8 @@ package drive
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -160,73 +157,35 @@ func computeVerificationToken(verifyCode, encData []byte) []byte {
 	return token
 }
 
+// uploadParams returns an uploadParams populated from the writer's
+// crypto and identity fields.
+func (w *ProtonWriter) uploadParams() uploadParams {
+	return uploadParams{
+		sessionKey: w.sessionKey,
+		addrKR:     w.addrKR,
+		nodeKR:     w.nodeKR,
+		verifyCode: w.verifyCode,
+		addressID:  w.addressID,
+		volumeID:   w.volumeID,
+		shareID:    w.shareID,
+		linkID:     w.linkID,
+		revisionID: w.revisionID,
+		sigAddr:    w.sigAddr,
+	}
+}
+
 // WriteBlock encrypts a plaintext block, requests an upload URL, and
 // uploads the encrypted data. Called concurrently by pipeline workers.
 // Block index is 0-based from the pipeline; the Proton API uses 1-based.
 func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) error {
-	apiIndex := index + 1 // Proton API block indices are 1-based
-
-	// Encrypt block with session key.
-	plain := crypto.NewPlainMessage(data)
-	encData, err := w.sessionKey.Encrypt(plain)
+	ub, err := encryptAndUploadBlock(ctx, w.uploadParams(), w.store, index+1, data)
 	if err != nil {
-		return fmt.Errorf("encrypt block %d: %w", apiIndex, err)
+		return err
 	}
-
-	// Encrypted signature of the plaintext block.
-	encSig, err := w.addrKR.SignDetachedEncrypted(plain, w.nodeKR)
-	if err != nil {
-		return fmt.Errorf("sign block %d: %w", apiIndex, err)
-	}
-	encSigStr, err := encSig.GetArmored()
-	if err != nil {
-		return fmt.Errorf("armor block sig %d: %w", apiIndex, err)
-	}
-
-	// SHA-256 of encrypted block for manifest + upload request.
-	h := sha256.New()
-	h.Write(encData)
-	hash := h.Sum(nil)
-
-	// Compute verification token: XOR(verifyCode, encData[0:len(verifyCode)]).
-	verifyToken := computeVerificationToken(w.verifyCode, encData)
-
-	// Request upload URL for this single block.
-	req := proton.BlockUploadReq{
-		AddressID:  w.addressID,
-		VolumeID:   w.volumeID,
-		LinkID:     w.linkID,
-		RevisionID: w.revisionID,
-		BlockList: []proton.BlockUploadInfo{{
-			Index:        apiIndex,
-			EncSignature: encSigStr,
-			Verifier:     &proton.BlockVerifier{Token: base64.StdEncoding.EncodeToString(verifyToken)},
-		}},
-		ThumbnailList: []interface{}{},
-	}
-	links, err := w.store.RequestUpload(ctx, req)
-	if err != nil {
-		return fmt.Errorf("request upload block %d: %w", apiIndex, err)
-	}
-	if len(links) == 0 {
-		return fmt.Errorf("no upload link for block %d", apiIndex)
-	}
-
-	// Upload encrypted block.
-	if err := w.store.UploadBlock(ctx, w.linkID, apiIndex, links[0].BareURL, links[0].Token, encData); err != nil {
-		return fmt.Errorf("upload block %d: %w", apiIndex, err)
-	}
-
-	// Record result for Close.
 	w.mu.Lock()
-	w.uploaded[index] = uploadedBlock{
-		token:   links[0].Token,
-		encHash: hash,
-		rawSize: int64(len(data)),
-	}
-	w.totalSize += int64(len(data))
+	w.uploaded[index] = ub
+	w.totalSize += ub.rawSize
 	w.mu.Unlock()
-
 	return nil
 }
 
@@ -242,64 +201,9 @@ func (w *ProtonWriter) Close() error {
 		return nil
 	}
 	w.closed = true
-	nBlocks := len(w.uploaded)
-	totalSize := w.totalSize
 	w.mu.Unlock()
 
-	if nBlocks == 0 {
-		return nil
-	}
-
-	// Build block token list and manifest hash (ordered by index).
-	blockTokens := make([]proton.BlockToken, nBlocks)
-	blockSizes := make([]int64, nBlocks)
-	var manifestData []byte
-	for i := 0; i < nBlocks; i++ {
-		ub, ok := w.uploaded[i]
-		if !ok {
-			return fmt.Errorf("missing block %d in upload results", i)
-		}
-		blockTokens[i] = proton.BlockToken{
-			Index: i + 1, // 1-based
-			Token: ub.token,
-		}
-		blockSizes[i] = ub.rawSize
-		manifestData = append(manifestData, ub.encHash...)
-	}
-
-	// Sign the manifest (concatenated SHA-256 hashes of encrypted blocks).
-	manifestSig, err := w.addrKR.SignDetached(crypto.NewPlainMessage(manifestData))
-	if err != nil {
-		return fmt.Errorf("sign manifest: %w", err)
-	}
-	manifestSigStr, err := manifestSig.GetArmored()
-	if err != nil {
-		return fmt.Errorf("armor manifest sig: %w", err)
-	}
-
-	// Build XAttr with file metadata.
-	xAttrCommon := &proton.RevisionXAttrCommon{
-		ModificationTime: time.Now().UTC().Format("2006-01-02T15:04:05-0700"),
-		Size:             totalSize,
-		BlockSizes:       blockSizes,
-	}
-
-	req := proton.UpdateRevisionReq{
-		State:             proton.RevisionStateActive,
-		BlockList:         blockTokens,
-		ManifestSignature: manifestSigStr,
-		SignatureAddress:  w.sigAddr,
-	}
-	if err := req.SetEncXAttrString(w.addrKR, w.nodeKR, xAttrCommon); err != nil {
-		return fmt.Errorf("encrypt xattr: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := w.session.Client.UpdateRevision(ctx, w.shareID, w.linkID, w.revisionID, req); err != nil {
-		return fmt.Errorf("commit revision: %w", err)
-	}
-
-	return nil
+	// Use context.Background() to ensure commit completes even after
+	// pipeline context cancellation.
+	return commitRevisionFromTokens(context.Background(), w.session, w.uploadParams(), w.uploaded)
 }
