@@ -132,7 +132,9 @@ func TestPropertyDispatchCorrectness(t *testing.T) {
 
 // Feature: proton-service, Property 3: Capability gating
 // For any NamespaceHandler that does not implement an optional capability
-// interface, the corresponding FUSE operation SHALL return ENOSYS.
+// interface, the corresponding FUSE operation SHALL return EPERM.
+// Note: ENOSYS is avoided because go-fuse caches it per-connection,
+// disabling the operation for the entire filesystem.
 // **Validates: Requirements 3.5**
 func TestPropertyCapabilityGating(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
@@ -163,8 +165,8 @@ func TestPropertyCapabilityGating(t *testing.T) {
 		_, _, _, createErr := d.Create(context.Background(), "f", 0, 0644, &fuse.EntryOut{})
 		if !hasCreate {
 			if _, ok := handler.(NodeCreator); !ok {
-				if createErr != syscall.ENOSYS {
-					t.Errorf("Create without NodeCreator: got errno %d, want ENOSYS", createErr)
+				if createErr != syscall.EPERM {
+					t.Errorf("Create without NodeCreator: got errno %d, want EPERM", createErr)
 				}
 			}
 		}
@@ -173,8 +175,8 @@ func TestPropertyCapabilityGating(t *testing.T) {
 		_, mkdirErr := d.Mkdir(context.Background(), "d", 0755, &fuse.EntryOut{})
 		if !hasMkdir {
 			if _, ok := handler.(NodeMkdirer); !ok {
-				if mkdirErr != syscall.ENOSYS {
-					t.Errorf("Mkdir without NodeMkdirer: got errno %d, want ENOSYS", mkdirErr)
+				if mkdirErr != syscall.EPERM {
+					t.Errorf("Mkdir without NodeMkdirer: got errno %d, want EPERM", mkdirErr)
 				}
 			}
 		}
@@ -183,8 +185,8 @@ func TestPropertyCapabilityGating(t *testing.T) {
 		unlinkErr := d.Unlink(context.Background(), "f")
 		if !hasRemove {
 			if _, ok := handler.(NodeRemover); !ok {
-				if unlinkErr != syscall.ENOSYS {
-					t.Errorf("Unlink without NodeRemover: got errno %d, want ENOSYS", unlinkErr)
+				if unlinkErr != syscall.EPERM {
+					t.Errorf("Unlink without NodeRemover: got errno %d, want EPERM", unlinkErr)
 				}
 			}
 		}
@@ -193,8 +195,8 @@ func TestPropertyCapabilityGating(t *testing.T) {
 		rmdirErr := d.Rmdir(context.Background(), "d")
 		if !hasRemove {
 			if _, ok := handler.(NodeRemover); !ok {
-				if rmdirErr != syscall.ENOSYS {
-					t.Errorf("Rmdir without NodeRemover: got errno %d, want ENOSYS", rmdirErr)
+				if rmdirErr != syscall.EPERM {
+					t.Errorf("Rmdir without NodeRemover: got errno %d, want EPERM", rmdirErr)
 				}
 			}
 		}
@@ -203,8 +205,8 @@ func TestPropertyCapabilityGating(t *testing.T) {
 		renameErr := d.Rename(context.Background(), "old", nil, "new", 0)
 		if !hasRename {
 			if _, ok := handler.(NodeRenamer); !ok {
-				if renameErr != syscall.ENOSYS {
-					t.Errorf("Rename without NodeRenamer: got errno %d, want ENOSYS", renameErr)
+				if renameErr != syscall.EPERM {
+					t.Errorf("Rename without NodeRenamer: got errno %d, want EPERM", renameErr)
 				}
 			}
 		}

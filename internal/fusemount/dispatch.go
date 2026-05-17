@@ -17,8 +17,16 @@ var _ = (fs.NodeGetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeSetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeLookuper)((*DispatchNode)(nil))
 var _ = (fs.NodeReaddirer)((*DispatchNode)(nil))
+var _ = (fs.NodeCreater)((*DispatchNode)(nil))
+var _ = (fs.NodeMkdirer)((*DispatchNode)(nil))
+var _ = (fs.NodeOpener)((*DispatchNode)(nil))
+var _ = (fs.NodeReader)((*DispatchNode)(nil))
+var _ = (fs.NodeWriter)((*DispatchNode)(nil))
 var _ = (fs.NodeReleaser)((*DispatchNode)(nil))
 var _ = (fs.NodeFsyncer)((*DispatchNode)(nil))
+var _ = (fs.NodeUnlinker)((*DispatchNode)(nil))
+var _ = (fs.NodeRmdirer)((*DispatchNode)(nil))
+var _ = (fs.NodeRenamer)((*DispatchNode)(nil))
 
 // DispatchNode bridges a namespace handler's Node to go-fuse's InodeEmbedder.
 // It operates in two modes:
@@ -93,12 +101,16 @@ func (d *DispatchNode) Getattr(ctx context.Context, _ fs.FileHandle, out *fuse.A
 
 // Setattr rejects all attribute changes on namespace root directories.
 // Namespace roots have fixed permissions (0500) that cannot be modified.
-// For non-root nodes, returns ENOSYS (not supported).
+// For non-root nodes, returns success (no-op) — attribute changes like
+// chmod/chown are silently ignored since Proton Drive manages metadata
+// server-side. Truncation via O_TRUNC is handled in Open/Create, not here.
+// Note: ENOSYS is avoided because go-fuse caches it per-connection,
+// which would disable setattr for the entire filesystem.
 func (d *DispatchNode) Setattr(_ context.Context, _ fs.FileHandle, _ *fuse.SetAttrIn, _ *fuse.AttrOut) syscall.Errno {
 	if d.isRoot {
 		return syscall.EPERM
 	}
-	return syscall.ENOSYS
+	return 0
 }
 
 // Readdir returns directory entries, delegating to the handler or DirNode.
@@ -120,7 +132,7 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 	} else {
 		dir, ok := d.node.(DirNode)
 		if !ok {
-			return fs.NewListDirStream(nil), syscall.ENOSYS
+			return fs.NewListDirStream(nil), syscall.ENOTDIR
 		}
 		entries, errno = dir.Readdir(ctx)
 	}
@@ -158,7 +170,7 @@ func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 	} else {
 		dir, ok := d.node.(DirNode)
 		if !ok {
-			return nil, syscall.ENOSYS
+			return nil, syscall.ENOTDIR
 		}
 		n, errno = dir.Lookup(ctx, name)
 	}
@@ -210,7 +222,7 @@ func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mo
 
 	creator, ok := target.(NodeCreator)
 	if !ok {
-		return nil, nil, 0, syscall.ENOSYS
+		return nil, nil, 0, syscall.EPERM
 	}
 
 	n, handle, errno := creator.Create(ctx, name, flags, mode)
@@ -245,7 +257,7 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *f
 
 	mkdirer, ok := target.(NodeMkdirer)
 	if !ok {
-		return nil, syscall.ENOSYS
+		return nil, syscall.EPERM
 	}
 
 	n, errno := mkdirer.Mkdir(ctx, name, mode)
@@ -272,7 +284,7 @@ func (d *DispatchNode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle
 	}()
 
 	if d.isRoot || d.node == nil {
-		return nil, 0, syscall.ENOSYS
+		return nil, 0, syscall.EPERM
 	}
 
 	// If node supports NodeOpener, call it to get a handle with per-open state.
@@ -292,7 +304,7 @@ func (d *DispatchNode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle
 		return &dispatchFileHandle{}, 0, 0
 	}
 
-	return nil, 0, syscall.ENOSYS
+	return nil, 0, syscall.EPERM
 }
 
 // Release delegates to NodeReleaser if the node supports it.
@@ -362,12 +374,12 @@ func (d *DispatchNode) Read(ctx context.Context, f fs.FileHandle, dest []byte, o
 	}()
 
 	if d.isRoot || d.node == nil {
-		return nil, syscall.ENOSYS
+		return nil, syscall.EPERM
 	}
 
 	reader, ok := d.node.(NodeReader)
 	if !ok {
-		return nil, syscall.ENOSYS
+		return nil, syscall.EBADF
 	}
 
 	var handle FileHandle
@@ -396,12 +408,12 @@ func (d *DispatchNode) Write(ctx context.Context, f fs.FileHandle, data []byte, 
 	}()
 
 	if d.isRoot || d.node == nil {
-		return 0, syscall.ENOSYS
+		return 0, syscall.EPERM
 	}
 
 	writer, ok := d.node.(NodeWriter)
 	if !ok {
-		return 0, syscall.ENOSYS
+		return 0, syscall.EBADF
 	}
 
 	var handle FileHandle
@@ -433,7 +445,7 @@ func (d *DispatchNode) Unlink(ctx context.Context, name string) (errno syscall.E
 
 	remover, ok := target.(NodeRemover)
 	if !ok {
-		return syscall.ENOSYS
+		return syscall.EPERM
 	}
 
 	return remover.Unlink(ctx, name)
@@ -460,7 +472,7 @@ func (d *DispatchNode) Rmdir(ctx context.Context, name string) (errno syscall.Er
 
 	remover, ok := target.(NodeRemover)
 	if !ok {
-		return syscall.ENOSYS
+		return syscall.EPERM
 	}
 
 	return remover.Rmdir(ctx, name)
@@ -487,7 +499,7 @@ func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.Ino
 
 	renamer, ok := target.(NodeRenamer)
 	if !ok {
-		return syscall.ENOSYS
+		return syscall.EPERM
 	}
 
 	// Extract the Node from the new parent DispatchNode if possible.

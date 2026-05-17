@@ -256,29 +256,29 @@ func TestDispatchNodeReaddir_ChildDirNode(t *testing.T) {
 	}
 }
 
-func TestDispatchNodeReaddir_NonDirNode_ReturnsENOSYS(t *testing.T) {
+func TestDispatchNodeReaddir_NonDirNode_ReturnsENOTDIR(t *testing.T) {
 	h := &mockHandler{}
 	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
 	d := &DispatchNode{handler: h, node: n, isRoot: false}
 
 	_, errno := d.Readdir(context.Background())
-	if errno != syscall.ENOSYS {
-		t.Errorf("Readdir on non-dir node returned errno %d, want ENOSYS (%d)", errno, syscall.ENOSYS)
+	if errno != syscall.ENOTDIR {
+		t.Errorf("Readdir on non-dir node returned errno %d, want ENOTDIR (%d)", errno, syscall.ENOTDIR)
 	}
 }
 
 func TestDispatchNodeCreate_Supported(t *testing.T) {
 	// Create requires a mounted FUSE tree for NewInode. We verify the
-	// capability is detected (not ENOSYS) by checking the handler is
+	// capability is detected (not EPERM) by checking the handler is
 	// type-asserted correctly. The panic recovery catches the nil bridge.
 	h := &mockCreatorHandler{}
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	_, _, _, errno := d.Create(context.Background(), "newfile", 0, 0644, &fuse.EntryOut{})
 	// Without a FUSE bridge, NewInode panics and we recover with EIO.
-	// This confirms the capability IS detected (not ENOSYS).
-	if errno == syscall.ENOSYS {
-		t.Fatal("Create should detect NodeCreator capability, got ENOSYS")
+	// This confirms the capability IS detected (not EPERM).
+	if errno == syscall.EPERM {
+		t.Fatal("Create should detect NodeCreator capability, got EPERM")
 	}
 }
 
@@ -287,23 +287,23 @@ func TestDispatchNodeCreate_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	_, _, _, errno := d.Create(context.Background(), "newfile", 0, 0644, &fuse.EntryOut{})
-	if errno != syscall.ENOSYS {
-		t.Errorf("Create on handler without NodeCreator returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EPERM {
+		t.Errorf("Create on handler without NodeCreator returned errno %d, want EPERM", errno)
 	}
 }
 
 func TestDispatchNodeMkdir_Supported(t *testing.T) {
 	// Mkdir requires a mounted FUSE tree for NewInode. We verify the
-	// capability is detected (not ENOSYS) by checking the handler is
+	// capability is detected (not EPERM) by checking the handler is
 	// type-asserted correctly. The panic recovery catches the nil bridge.
 	h := &mockMkdirerHandler{}
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	_, errno := d.Mkdir(context.Background(), "newdir", 0755, &fuse.EntryOut{})
 	// Without a FUSE bridge, NewInode panics and we recover with EIO.
-	// This confirms the capability IS detected (not ENOSYS).
-	if errno == syscall.ENOSYS {
-		t.Fatal("Mkdir should detect NodeMkdirer capability, got ENOSYS")
+	// This confirms the capability IS detected (not EPERM).
+	if errno == syscall.EPERM {
+		t.Fatal("Mkdir should detect NodeMkdirer capability, got EPERM")
 	}
 }
 
@@ -312,8 +312,8 @@ func TestDispatchNodeMkdir_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	_, errno := d.Mkdir(context.Background(), "newdir", 0755, &fuse.EntryOut{})
-	if errno != syscall.ENOSYS {
-		t.Errorf("Mkdir on handler without NodeMkdirer returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EPERM {
+		t.Errorf("Mkdir on handler without NodeMkdirer returned errno %d, want EPERM", errno)
 	}
 }
 
@@ -332,8 +332,8 @@ func TestDispatchNodeUnlink_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	errno := d.Unlink(context.Background(), "file.txt")
-	if errno != syscall.ENOSYS {
-		t.Errorf("Unlink on handler without NodeRemover returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EPERM {
+		t.Errorf("Unlink on handler without NodeRemover returned errno %d, want EPERM", errno)
 	}
 }
 
@@ -342,8 +342,8 @@ func TestDispatchNodeRmdir_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	errno := d.Rmdir(context.Background(), "dir")
-	if errno != syscall.ENOSYS {
-		t.Errorf("Rmdir on handler without NodeRemover returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EPERM {
+		t.Errorf("Rmdir on handler without NodeRemover returned errno %d, want EPERM", errno)
 	}
 }
 
@@ -352,8 +352,8 @@ func TestDispatchNodeRename_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, isRoot: true}
 
 	errno := d.Rename(context.Background(), "old", nil, "new", 0)
-	if errno != syscall.ENOSYS {
-		t.Errorf("Rename on handler without NodeRenamer returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EPERM {
+		t.Errorf("Rename on handler without NodeRenamer returned errno %d, want EPERM", errno)
 	}
 }
 
@@ -394,8 +394,8 @@ func TestDispatchNodeWrite_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, node: n, isRoot: false}
 
 	_, errno := d.Write(context.Background(), nil, []byte("data"), 0)
-	if errno != syscall.ENOSYS {
-		t.Errorf("Write on node without NodeWriter returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EBADF {
+		t.Errorf("Write on node without NodeWriter returned errno %d, want EBADF", errno)
 	}
 }
 
@@ -405,8 +405,8 @@ func TestDispatchNodeRead_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, node: n, isRoot: false}
 
 	_, errno := d.Read(context.Background(), nil, make([]byte, 10), 0)
-	if errno != syscall.ENOSYS {
-		t.Errorf("Read on node without NodeReader returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EBADF {
+		t.Errorf("Read on node without NodeReader returned errno %d, want EBADF", errno)
 	}
 }
 
@@ -416,8 +416,8 @@ func TestDispatchNodeOpen_Unsupported(t *testing.T) {
 	d := &DispatchNode{handler: h, node: n, isRoot: false}
 
 	_, _, errno := d.Open(context.Background(), 0)
-	if errno != syscall.ENOSYS {
-		t.Errorf("Open on node without NodeReader/NodeWriter returned errno %d, want ENOSYS", errno)
+	if errno != syscall.EPERM {
+		t.Errorf("Open on node without NodeReader/NodeWriter returned errno %d, want EPERM", errno)
 	}
 }
 
@@ -433,7 +433,7 @@ func TestDispatchNodeSetattr_NamespaceRoot_ReturnsEPERM(t *testing.T) {
 	}
 }
 
-func TestDispatchNodeSetattr_ChildNode_ReturnsENOSYS(t *testing.T) {
+func TestDispatchNodeSetattr_ChildNode_ReturnsSuccess(t *testing.T) {
 	h := &mockHandler{}
 	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
 	d := &DispatchNode{handler: h, node: n, isRoot: false}
@@ -441,8 +441,8 @@ func TestDispatchNodeSetattr_ChildNode_ReturnsENOSYS(t *testing.T) {
 	var out fuse.AttrOut
 	in := fuse.SetAttrIn{}
 	errno := d.Setattr(context.Background(), nil, &in, &out)
-	if errno != syscall.ENOSYS {
-		t.Errorf("Setattr on child node returned errno %d, want ENOSYS (%d)", errno, syscall.ENOSYS)
+	if errno != 0 {
+		t.Errorf("Setattr on child node returned errno %d, want 0 (no-op success)", errno)
 	}
 }
 

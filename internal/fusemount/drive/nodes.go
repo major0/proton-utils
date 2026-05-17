@@ -37,6 +37,7 @@ type ShareDirNode struct {
 // Compile-time interface assertions.
 var _ fusemount.Node = (*ShareDirNode)(nil)
 var _ fusemount.DirNode = (*ShareDirNode)(nil)
+var _ fusemount.NodeCreator = (*ShareDirNode)(nil)
 
 // Getattr returns directory attributes for the share root.
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -86,6 +87,26 @@ func (n *ShareDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall
 	}
 	n.children = children
 	return entries, 0
+}
+
+// Create creates a new file in the share's root directory.
+func (n *ShareDirNode) Create(_ context.Context, name string, _ uint32, _ uint32) (fusemount.Node, fusemount.FileHandle, syscall.Errno) {
+	fd, err := n.client.CreateFD(context.Background(), n.share, n.share.Link, name)
+	if err != nil {
+		if errors.Is(err, drive.ErrFileNameExist) {
+			return nil, nil, syscall.EEXIST
+		}
+		slog.Debug("ShareDirNode.Create: failed", "shareID", n.share.Metadata().ShareID, "name", name, "error", err)
+		return nil, nil, syscall.EIO
+	}
+
+	// Invalidate children cache — directory listing is now stale.
+	n.children = nil
+
+	newLink := fd.Link()
+	fileNode := &FileNode{link: newLink, client: n.client}
+
+	return fileNode, &fdHandle{fd: fd}, 0
 }
 
 // Lookup finds a child by name. Uses the retained children map from the
