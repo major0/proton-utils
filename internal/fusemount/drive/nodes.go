@@ -175,6 +175,52 @@ func (n *ShareDirNode) resolveShareChild(name string) (*drive.Link, syscall.Errn
 	return child, 0
 }
 
+// Unlink removes a file from the share root (moves to trash).
+func (n *ShareDirNode) Unlink(_ context.Context, name string) syscall.Errno {
+	child, errno := n.resolveShareChild(name)
+	if errno != 0 {
+		return errno
+	}
+	if child.IsDir() {
+		return syscall.EISDIR
+	}
+
+	if err := n.client.Remove(context.Background(), n.share, child, drive.RemoveOpts{}); err != nil {
+		if errors.Is(err, drive.ErrNotEmpty) {
+			return syscall.ENOTEMPTY
+		}
+		slog.Debug("ShareDirNode.Unlink: failed",
+			"shareID", n.share.Metadata().ShareID, "error", err)
+		return syscall.EIO
+	}
+
+	n.children = nil
+	return 0
+}
+
+// Rmdir removes an empty directory from the share root (moves to trash).
+func (n *ShareDirNode) Rmdir(_ context.Context, name string) syscall.Errno {
+	child, errno := n.resolveShareChild(name)
+	if errno != 0 {
+		return errno
+	}
+	if !child.IsDir() {
+		return syscall.ENOTDIR
+	}
+
+	if err := n.client.Remove(context.Background(), n.share, child, drive.RemoveOpts{}); err != nil {
+		if errors.Is(err, drive.ErrNotEmpty) {
+			return syscall.ENOTEMPTY
+		}
+		slog.Debug("ShareDirNode.Rmdir: failed",
+			"shareID", n.share.Metadata().ShareID, "error", err)
+		return syscall.EIO
+	}
+
+	n.children = nil
+	return 0
+}
+
 // LinkDirNode wraps a *drive.Link (folder) and implements fusemount.DirNode.
 // It exposes the link's children as directory entries.
 // Retains children from the last Readdir so Lookup can resolve locally.
