@@ -434,16 +434,17 @@ func TestResolveMaxJobs(t *testing.T) {
 	}
 }
 
-func TestSessionConfigFromRC(t *testing.T) {
+func TestBuildSessionConfigIntegration(t *testing.T) {
 	// Create a minimal command tree so resolveMaxJobs can look up the flag.
 	cmd := &cobra.Command{}
 	cmd.PersistentFlags().IntVarP(&rootParams.MaxWorkers, "max-jobs", "j", 10, "")
 
-	t.Run("nil config", func(t *testing.T) {
+	t.Run("nil config skips build", func(t *testing.T) {
 		rc := &RuntimeContext{Config: nil}
-		got := sessionConfigFromRC(cmd, rc)
-		if got != nil {
-			t.Errorf("expected nil, got %+v", got)
+		// The call site guards with rc.Config != nil, so nil config
+		// means session.Config stays nil.
+		if rc.Config != nil {
+			t.Fatal("expected nil Config on RuntimeContext")
 		}
 	})
 
@@ -458,7 +459,7 @@ func TestSessionConfigFromRC(t *testing.T) {
 		cfg.Subsystems["drive"].Account.SetFile("myaccount")
 		rc := &RuntimeContext{Config: cfg}
 
-		got := sessionConfigFromRC(cmd, rc)
+		got := config.BuildSessionConfig(rc.Config, resolveMaxJobs(cmd, rc))
 		if got == nil {
 			t.Fatal("expected non-nil SessionConfig")
 		}

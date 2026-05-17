@@ -312,7 +312,7 @@ func mustUserHomeDir(t *testing.T) string {
 
 func TestBuildSessionConfig_EmptyConfig(t *testing.T) {
 	cfg := config.DefaultConfig()
-	sessionCfg := buildSessionConfig(cfg)
+	sessionCfg := config.BuildSessionConfig(cfg, cfg.MaxJobs.Value())
 
 	if len(sessionCfg.Shares) != 0 {
 		t.Errorf("Shares = %v, want empty map", sessionCfg.Shares)
@@ -345,7 +345,7 @@ func TestBuildSessionConfig_NoSubsystems(t *testing.T) {
 		AppVersion: config.NewParam(""),
 	}
 
-	sessionCfg := buildSessionConfig(cfg)
+	sessionCfg := config.BuildSessionConfig(cfg, cfg.MaxJobs.Value())
 
 	if len(sessionCfg.Defaults) != 0 {
 		t.Errorf("Defaults = %v, want empty (no subsystems have Account.IsSet())", sessionCfg.Defaults)
@@ -413,8 +413,8 @@ func TestPropertyConfigToSessionConfig(t *testing.T) {
 		cfg.MaxJobs.SetFile(maxJobs)
 		cfg.MemoryCacheWatermark.SetFile([2]int64{wmMin, wmMax})
 
-		// Call buildSessionConfig.
-		sessionCfg := buildSessionConfig(cfg)
+		// Call config.BuildSessionConfig.
+		sessionCfg := config.BuildSessionConfig(cfg, cfg.MaxJobs.Value())
 
 		// Verify Shares matches.
 		if len(sessionCfg.Shares) != len(cfg.Shares) {

@@ -222,7 +222,9 @@ func SetupSession(ctx context.Context, cmd *cobra.Command) (*common.Session, err
 			return nil, err
 		}
 		session.UserAgent = UserAgent
-		session.Config = sessionConfigFromRC(cmd, rc)
+		if rc.Config != nil {
+			session.Config = config.BuildSessionConfig(rc.Config, resolveMaxJobs(cmd, rc))
+		}
 		return session, nil
 	}
 
@@ -232,31 +234,10 @@ func SetupSession(ctx context.Context, cmd *cobra.Command) (*common.Session, err
 	}
 	session.AppVersion = AppVersion
 	session.UserAgent = UserAgent
-	session.Config = sessionConfigFromRC(cmd, rc)
+	if rc.Config != nil {
+		session.Config = config.BuildSessionConfig(rc.Config, resolveMaxJobs(cmd, rc))
+	}
 	return session, nil
-}
-
-// sessionConfigFromRC builds a SessionConfig from the RuntimeContext's
-// loaded application config. The cmd is used for flag override detection.
-// Returns nil when no config is available.
-func sessionConfigFromRC(cmd *cobra.Command, rc *RuntimeContext) *common.SessionConfig {
-	if rc.Config == nil {
-		return nil
-	}
-	defaults := make(map[string]string)
-	for name, sub := range rc.Config.Subsystems {
-		if sub.Account.IsSet() {
-			defaults[name] = sub.Account.Value()
-		}
-	}
-	wm := rc.Config.MemoryCacheWatermark.Value()
-	return &common.SessionConfig{
-		Shares:                  rc.Config.Shares,
-		Defaults:                defaults,
-		MaxJobs:                 resolveMaxJobs(cmd, rc),
-		MemoryCacheMinWatermark: wm[0],
-		MemoryCacheMaxWatermark: wm[1],
-	}
 }
 
 // requestTimeoutHook sets a per-request timeout on the proton.Manager's

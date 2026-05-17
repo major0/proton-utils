@@ -213,24 +213,6 @@ func requestTimeoutHook(_ *proton.Manager) {
 	}
 }
 
-// buildSessionConfig constructs a *api.SessionConfig from the loaded config.
-func buildSessionConfig(cfg *config.Config) *api.SessionConfig {
-	defaults := make(map[string]string)
-	for name, sub := range cfg.Subsystems {
-		if sub.Account.IsSet() {
-			defaults[name] = sub.Account.Value()
-		}
-	}
-	wm := cfg.MemoryCacheWatermark.Value()
-	return &api.SessionConfig{
-		Shares:                  cfg.Shares,
-		Defaults:                defaults,
-		MaxJobs:                 cfg.MaxJobs.Value(),
-		MemoryCacheMinWatermark: wm[0],
-		MemoryCacheMaxWatermark: wm[1],
-	}
-}
-
 func main() {
 	cfg, err := parseFlags(os.Args[1:])
 	if err != nil {
@@ -269,7 +251,7 @@ func run(cfg daemonConfig) error {
 	}
 
 	// Step 2: Build SessionConfig from loaded config.
-	sessionCfg := buildSessionConfig(appCfg)
+	sessionCfg := config.BuildSessionConfig(appCfg, appCfg.MaxJobs.Value())
 
 	// Resolve account name: --account flag → config default for "protonfs".
 	acctName := cfg.account
