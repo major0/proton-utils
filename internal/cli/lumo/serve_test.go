@@ -85,6 +85,35 @@ func TestResolveAPIKey_Provided(t *testing.T) {
 	}
 }
 
+// TestResolveAPIKey_EnvOverride verifies that LUMO_API_KEY env is used
+// when no --api-key flag is provided. The env is read at init time and
+// becomes the flag default, so we simulate this by setting apiKey directly.
+func TestResolveAPIKey_EnvOverride(t *testing.T) {
+	// Simulate: LUMO_API_KEY=env-key-123 was set at init, becoming the flag default.
+	f := serveFlags{apiKey: "env-key-123"} //nolint:gosec // test value, not a real credential
+	key, err := resolveAPIKey(f)
+	if err != nil {
+		t.Fatalf("resolveAPIKey: %v", err)
+	}
+	if key != "env-key-123" {
+		t.Errorf("key = %q, want env-key-123", key)
+	}
+}
+
+// TestResolveAPIKey_FlagOverridesEnv verifies that --api-key flag takes
+// precedence over LUMO_API_KEY env (both flow through the same field).
+func TestResolveAPIKey_FlagOverridesEnv(t *testing.T) {
+	// CLI flag always wins — it overwrites the flag default (which was env).
+	f := serveFlags{apiKey: "flag-key-456"}
+	key, err := resolveAPIKey(f)
+	if err != nil {
+		t.Fatalf("resolveAPIKey: %v", err)
+	}
+	if key != "flag-key-456" {
+		t.Errorf("key = %q, want flag-key-456", key)
+	}
+}
+
 // TestResolveTLS_NoTLS verifies that --no-tls returns empty paths.
 func TestResolveTLS_NoTLS(t *testing.T) {
 	f := serveFlags{noTLS: true}

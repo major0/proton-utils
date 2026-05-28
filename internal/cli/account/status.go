@@ -177,7 +177,9 @@ func runAccountStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Human-readable output.
-	fmt.Fprintf(os.Stderr, "Account: %s\n\n", rc.Account)
+	fmt.Fprintf(os.Stderr, "Account: %s\n", rc.Account)
+	fmt.Fprintf(os.Stderr, "Credential store: OS keyring (%s)\n", sessionFile)
+	fmt.Fprintln(os.Stderr)
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "%-12s  %-8s  %-14s  %-14s  %-40s  %-15s  %s\n",

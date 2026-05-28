@@ -35,8 +35,20 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	AddCommand(serveCmd)
-	serveCmd.Flags().StringVar(&sFlags.addr, "addr", "127.0.0.1:8443", "Listen address and port")
-	serveCmd.Flags().StringVar(&sFlags.apiKey, "api-key", "", "Use this API key (not persisted)")
+
+	// Flag defaults are sourced from env when set, falling back to
+	// hardcoded defaults. CLI flags override both.
+	addrDefault := "127.0.0.1:8443"
+	if v := os.Getenv("LUMO_ENDPOINT"); v != "" {
+		addrDefault = v
+	}
+	apiKeyDefault := ""
+	if v := os.Getenv("LUMO_API_KEY"); v != "" {
+		apiKeyDefault = v
+	}
+
+	serveCmd.Flags().StringVar(&sFlags.addr, "addr", addrDefault, "Listen address and port [$LUMO_ENDPOINT]")
+	serveCmd.Flags().StringVar(&sFlags.apiKey, "api-key", apiKeyDefault, "Use this API key (not persisted) [$LUMO_API_KEY]")
 	serveCmd.Flags().BoolVar(&sFlags.newAPIKey, "new-api-key", false, "Generate and persist a new API key")
 	serveCmd.Flags().StringVar(&sFlags.tlsCert, "tls-cert", "", "Custom TLS certificate path")
 	serveCmd.Flags().StringVar(&sFlags.tlsKey, "tls-key", "", "Custom TLS key path")
@@ -98,7 +110,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	return err
 }
 
-// resolveAPIKey determines the API key based on flags.
+// resolveAPIKey determines the API key to use.
+// Priority is handled by flag defaults: CLI > LUMO_API_KEY env > persisted/generated key.
 func resolveAPIKey(f serveFlags) (string, error) {
 	if f.apiKey != "" {
 		return f.apiKey, nil
