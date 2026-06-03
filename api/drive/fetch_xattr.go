@@ -19,8 +19,8 @@ func (c *Client) FetchRevisionXAttr(ctx context.Context, link *Link) {
 	if pLink.Type != proton.LinkTypeFile {
 		return
 	}
-	if pLink.State != proton.LinkStateActive {
-		return // skip trashed/draft links
+	if pLink.State == proton.LinkStateDraft {
+		return // drafts cannot be fetched
 	}
 	if pLink.FileProperties == nil {
 		return
@@ -42,7 +42,7 @@ func (c *Client) FetchRevisionXAttr(ctx context.Context, link *Link) {
 	}
 
 	// Populate the XAttr on the in-memory proton.Link so that
-	// Link.Mode() and Link.decryptMode() can decrypt it.
+	// Link.Mode() and decryptXAttr() can decrypt it.
 	rev.XAttr = fullRev.XAttr
 
 	// Also update Size from the revision (the listing Size may be stale).

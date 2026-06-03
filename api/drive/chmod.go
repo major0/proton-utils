@@ -67,8 +67,8 @@ func (c *Client) Chmod(ctx context.Context, share *Share, link *Link, mode uint3
 		return fmt.Errorf("drive.Chmod %s: commit: %w", link.LinkID(), err)
 	}
 
-	// Update the in-memory cached mode.
-	link.SetCachedMode(mode & 0o7777)
+	// Invalidate cached metadata so the next accessor re-resolves from XAttr.
+	link.InvalidateMeta()
 
 	// Invalidate stale link from the link table and on-disk cache so
 	// subsequent operations re-fetch fresh state from the API.
