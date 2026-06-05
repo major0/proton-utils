@@ -122,6 +122,7 @@ func (n *ShareDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall
 		entries = append(entries, fusemount.DirEntry{
 			Name: name,
 			Mode: linkMode(de.Link),
+			Link: de.Link,
 		})
 	}
 	n.children = children
@@ -352,6 +353,7 @@ func (n *LinkDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.
 		entries = append(entries, fusemount.DirEntry{
 			Name: name,
 			Mode: linkMode(de.Link),
+			Link: de.Link,
 		})
 	}
 	n.children = children

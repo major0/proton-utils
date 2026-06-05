@@ -198,6 +198,38 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 	return fs.NewListDirStream(fuseEntries), 0
 }
 
+// wrapChild wraps a child Node in a DispatchNode, populates EntryOut
+// attributes, and returns the go-fuse Inode. Both Lookup and
+// READDIRPLUS call this to ensure consistent StableAttr and attribute
+// population.
+func wrapChild(ctx context.Context, parent *DispatchNode, n Node, out *fuse.EntryOut) (
+	*fs.Inode, syscall.Errno) {
+
+	attr, attrErr := n.Getattr(ctx)
+	mode := uint32(syscall.S_IFREG)
+	if attrErr == 0 {
+		mode = attr.Mode & syscall.S_IFMT
+		out.Mode = attr.Mode
+		out.Size = attr.Size
+		out.Nlink = attr.Nlink
+		out.Mtime = attr.Mtime
+		out.Ctime = attr.Ctime
+		out.Atime = attr.Atime
+		out.Uid = parent.uid
+		out.Gid = parent.gid
+	}
+
+	childNode := &DispatchNode{
+		handler: parent.handler,
+		node:    n,
+		isRoot:  false,
+		uid:     parent.uid,
+		gid:     parent.gid,
+	}
+	inode := parent.NewInode(ctx, childNode, fs.StableAttr{Mode: mode})
+	return inode, 0
+}
+
 // Lookup finds a child node by name, delegating to the handler or DirNode.
 func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (child *fs.Inode, errno syscall.Errno) {
 	if err := d.checkAccess(ctx); err != 0 {
@@ -225,25 +257,7 @@ func (d *DispatchNode) Lookup(ctx context.Context, name string, out *fuse.EntryO
 		return nil, errno
 	}
 
-	// Get child attributes and populate EntryOut so the kernel caches
-	// correct mode, uid, gid from the first Lookup response.
-	attr, attrErr := n.Getattr(ctx)
-	mode := uint32(syscall.S_IFREG)
-	if attrErr == 0 {
-		mode = attr.Mode & syscall.S_IFMT
-		out.Mode = attr.Mode
-		out.Size = attr.Size
-		out.Nlink = attr.Nlink
-		out.Mtime = attr.Mtime
-		out.Ctime = attr.Ctime
-		out.Atime = attr.Atime
-		out.Uid = d.uid
-		out.Gid = d.gid
-	}
-
-	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
-	inode := d.NewInode(ctx, childNode, fs.StableAttr{Mode: mode})
-	return inode, 0
+	return wrapChild(ctx, d, n, out)
 }
 
 // Create delegates to NodeCreator if the handler supports it.

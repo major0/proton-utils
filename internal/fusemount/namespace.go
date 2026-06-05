@@ -22,9 +22,12 @@ type Attr struct {
 
 // DirEntry represents a single directory entry returned by Readdir.
 // Mode should be one of syscall.S_IFDIR, syscall.S_IFREG, or syscall.S_IFLNK.
+// Link is an optional opaque reference for attribute access by the dispatch
+// layer (type-asserted downstream; avoids importing api/drive/ here).
 type DirEntry struct {
 	Name string
 	Mode uint32
+	Link interface{} // optional: opaque link reference for attr access
 }
 
 // Node represents a filesystem object returned by handlers.
