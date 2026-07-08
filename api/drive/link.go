@@ -506,6 +506,13 @@ func (l *Link) ensureXAttr() {
 	l.fetchMu.Unlock()
 }
 
+// EnsureXAttrPrefetch triggers the XAttr fetch gate for file-type links.
+// Called by the FUSE dispatch layer during READDIRPLUS prefetch.
+// No-op for folders, drafts, links without an active revision.
+func (l *Link) EnsureXAttrPrefetch() {
+	l.ensureXAttr()
+}
+
 // decryptXAttr decrypts the XAttr blob and returns the common fields.
 // Returns nil on any error (non-fatal — callers use fallback values).
 // Works for both file-type links (reads ActiveRevision.XAttr) and

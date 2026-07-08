@@ -17,6 +17,7 @@ var _ = (fs.NodeGetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeSetattrer)((*DispatchNode)(nil))
 var _ = (fs.NodeLookuper)((*DispatchNode)(nil))
 var _ = (fs.NodeReaddirer)((*DispatchNode)(nil))
+var _ = (fs.NodeOpendirHandler)((*DispatchNode)(nil))
 var _ = (fs.NodeCreater)((*DispatchNode)(nil))
 var _ = (fs.NodeMkdirer)((*DispatchNode)(nil))
 var _ = (fs.NodeOpener)((*DispatchNode)(nil))
@@ -196,6 +197,42 @@ func (d *DispatchNode) Readdir(ctx context.Context) (stream fs.DirStream, errno 
 		fuseEntries = append(fuseEntries, fuse.DirEntry{Name: e.Name, Mode: e.Mode})
 	}
 	return fs.NewListDirStream(fuseEntries), 0
+}
+
+// OpendirHandle opens a directory handle for READDIRPLUS responses.
+// It implements fs.NodeOpendirHandler — go-fuse prefers this over the
+// NodeReaddirer path when present. The handle prefetches XAttr for
+// file-type children so subsequent per-entry Lookups return full attrs
+// without additional round-trips.
+func (d *DispatchNode) OpendirHandle(ctx context.Context, _ uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, 0, err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler OpendirHandle: %v\n%s", r, debug.Stack())
+			fh = nil
+			errno = syscall.EIO
+		}
+	}()
+
+	var entries []DirEntry
+	if d.isRoot {
+		entries, errno = d.handler.Readdir(ctx)
+	} else {
+		dir, ok := d.node.(DirNode)
+		if !ok {
+			return nil, 0, syscall.ENOTDIR
+		}
+		entries, errno = dir.Readdir(ctx)
+	}
+	if errno != 0 {
+		return nil, 0, errno
+	}
+
+	handle := buildReaddirHandle(d, entries)
+	prefetchFileAttrs(ctx, handle)
+	return handle, 0, 0
 }
 
 // wrapChild wraps a child Node in a DispatchNode, populates EntryOut
