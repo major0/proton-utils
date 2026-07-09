@@ -24,6 +24,7 @@ type MountConfig struct {
 	EntryTimeout   time.Duration // default 1s; zero = kernel default
 	AttrTimeout    time.Duration // default 1s; zero = kernel default
 	PrefetchBlocks int           // kernel read-ahead in blocks (0 = kernel default, max 64)
+	Quota          QuotaFunc     // account quota source for statfs; nil disables live quota
 }
 
 // EnsureMountDir creates the mountpoint and its parent directory with mode 0700
@@ -166,7 +167,10 @@ func Mount(cfg MountConfig, registry *NamespaceRegistry) (*fuse.Server, error) {
 
 	opts := buildFSOptions(cfg)
 
-	server, err := fs.Mount(cfg.Mountpoint, NewRoot(registry, mountInfo), opts)
+	root := NewRoot(registry, mountInfo)
+	root.quota = cfg.Quota
+
+	server, err := fs.Mount(cfg.Mountpoint, root, opts)
 	if err != nil {
 		return nil, fmt.Errorf("mounting FUSE filesystem: %w", err)
 	}

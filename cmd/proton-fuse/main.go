@@ -339,11 +339,20 @@ func run(cfg daemonConfig) error {
 	registry.Register("drive", handler)
 
 	// Step 11: Mount FUSE filesystem.
+	// Account quota source for statfs (df). Cached 60s inside RootNode.
+	acctClient := account.NewClient(session)
 	mountCfg := fusemount.MountConfig{
 		Mountpoint:     cfg.mountpoint,
 		EntryTimeout:   fuseCacheTimeout,
 		AttrTimeout:    fuseCacheTimeout,
 		PrefetchBlocks: prefetchBlocks,
+		Quota: func(ctx context.Context) (int64, int64, error) {
+			u, err := acctClient.GetUser(ctx)
+			if err != nil {
+				return 0, 0, err
+			}
+			return u.MaxSpace(), u.UsedSpace(), nil
+		},
 	}
 	server, err := fusemount.Mount(mountCfg, registry)
 	if err != nil {
