@@ -14,6 +14,17 @@ import (
 	"github.com/major0/proton-utils/api"
 )
 
+// driveEventFetcher abstracts the Drive event API calls needed by the
+// event poller. The production implementation is *proton.Client; tests
+// substitute a mock to exercise the poll path without a live session.
+// This seam is shared with the protonfs-event-invalidation daemon.
+type driveEventFetcher interface {
+	GetVolumeEvent(ctx context.Context, volumeID, eventID string) (proton.DriveEvent, error)
+	GetShareEvent(ctx context.Context, shareID, eventID string) (proton.DriveEvent, error)
+	GetLatestVolumeEventID(ctx context.Context, volumeID string) (string, error)
+	GetLatestShareEventID(ctx context.Context, shareID string) (string, error)
+}
+
 // Client wraps an api.Session with Drive-specific state and operations.
 // Implements LinkResolver.
 type Client struct {
@@ -39,6 +50,10 @@ type Client struct {
 	// blockStore is the shared block store for all block I/O. Created
 	// lazily after InitObjectCache so the disk cache is wired up.
 	blockStore blockStore
+
+	// eventFetcher abstracts Drive event API calls for the poller,
+	// allowing tests to substitute a mock without network access.
+	eventFetcher driveEventFetcher
 }
 
 // Verify Client implements LinkResolver at compile time.
@@ -62,6 +77,7 @@ func NewClient(ctx context.Context, session *api.Session) (*Client, error) {
 		addressKeyRings: session.AddressKeyRings(),
 		linkTable:       make(map[string]*Link),
 		blockStore:      newBlockStore(session, nil, nil),
+		eventFetcher:    session.Client,
 	}, nil
 }
 
