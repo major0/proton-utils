@@ -88,7 +88,7 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 			rt.Fatalf("objectCache miss after API insert: err=%v", err)
 		}
 
-		// --- Phase 2: Clear table, keep objectCache → cache hit ---
+		// --- Phase 2: clearLinks erases both table AND objectCache ---
 		c.clearLinks()
 
 		// Table should be empty now.
@@ -96,35 +96,30 @@ func TestPropertyLookupInsertOnMiss(t *testing.T) {
 			rt.Fatalf("expected table miss after clearLinks")
 		}
 
-		// ObjectCache should still have the data.
+		// ObjectCache should also be empty (clearLinks calls EraseAll).
 		cachedData, err = c.objectCache.Read(linkID)
-		if err != nil || cachedData == nil {
-			rt.Fatalf("objectCache miss after clearLinks: err=%v", err)
+		if err != nil || cachedData != nil {
+			rt.Fatalf("expected objectCache miss after clearLinks, got data=%v err=%v", cachedData, err)
 		}
 
-		// Simulate what StatLink does on a cache hit:
-		// unmarshal, construct *Link, insert into table.
-		var pLink proton.Link
-		if err := json.Unmarshal(cachedData, &pLink); err != nil {
-			rt.Fatalf("json.Unmarshal from cache: %v", err)
-		}
-		link2 := NewLink(&pLink, root, share, resolver)
+		// --- Phase 3: Re-insert via simulated API fetch ---
+		// After a full clear, a fresh API fetch re-populates both stores.
+		link2 := NewLink(&apiLink, root, share, resolver)
 		c.putLink(linkID, link2)
-
-		// Verify: the unmarshalled link has the correct LinkID.
-		if pLink.LinkID != linkID {
-			rt.Fatalf("unmarshalled LinkID = %q, want %q", pLink.LinkID, linkID)
+		marshaledData2, err := json.Marshal(apiLink)
+		if err != nil {
+			rt.Fatalf("json.Marshal: %v", err)
 		}
-		if pLink.Type != linkType {
-			rt.Fatalf("unmarshalled Type = %v, want %v", pLink.Type, linkType)
+		if err := c.objectCache.Write(linkID, marshaledData2); err != nil {
+			rt.Fatalf("ObjectCache.Write: %v", err)
 		}
 
-		// Verify: table hit returns the new pointer (link2, not link1 — link1 was cleared).
+		// Verify: table hit returns the new pointer (link2, not link1).
 		if got := c.getLink(linkID); got != link2 {
-			rt.Fatalf("table hit after cache re-insert: got different pointer")
+			rt.Fatalf("table hit after re-insert: got different pointer")
 		}
 
-		// --- Phase 3: Subsequent lookup returns same pointer ---
+		// --- Phase 4: Subsequent lookup returns same pointer ---
 		// A second getLink must return the exact same pointer as link2.
 		if got := c.getLink(linkID); got != link2 {
 			rt.Fatalf("subsequent getLink: pointer identity violated")

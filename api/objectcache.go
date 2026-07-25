@@ -16,7 +16,10 @@ import (
 // JSON marshal/unmarshal themselves. diskv remains an unexported
 // implementation detail — it does not appear in the exported API surface.
 type ObjectCache struct {
-	dv *diskv.Diskv
+	// BasePath is the root directory of the cache. Exported so subsystems
+	// can stat individual entries for eviction (mtime ordering).
+	BasePath string
+	dv       *diskv.Diskv
 }
 
 // NewObjectCache constructs an ObjectCache rooted at basePath.
@@ -40,7 +43,7 @@ func NewObjectCache(basePath string) *ObjectCache {
 		PathPerm:     0700, // owner-only directories — cache contains sensitive encrypted data
 		FilePerm:     0600, // owner-only files — no group/other access
 	})
-	return &ObjectCache{dv: dv}
+	return &ObjectCache{BasePath: basePath, dv: dv}
 }
 
 // prefixTransform splits keys into a 2-character prefix subdirectory.
@@ -110,4 +113,16 @@ func (c *ObjectCache) Keys(cancel <-chan struct{}) <-chan string {
 		return ch
 	}
 	return c.dv.Keys(cancel)
+}
+
+// PathFor returns the absolute filesystem path for the given key. This
+// replicates the diskv transform logic (2-char prefix subdirectory) so
+// callers can stat individual entries without going through diskv's
+// unexported pathFor. Returns "" on nil receiver or keys shorter than 2
+// characters.
+func (c *ObjectCache) PathFor(key string) string {
+	if c == nil || len(key) < 2 {
+		return ""
+	}
+	return filepath.Join(c.BasePath, key[:2], key)
 }

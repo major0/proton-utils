@@ -8,11 +8,22 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/major0/proton-utils/api"
+	"golang.org/x/sync/singleflight"
 )
+
+// linkFetcher abstracts the API calls needed to fetch a link and its
+// revision metadata. The production implementation is *proton.Client;
+// tests substitute a mock to exercise the fetch path without network.
+type linkFetcher interface {
+	GetLink(ctx context.Context, shareID, linkID string) (proton.Link, error)
+	GetRevisionAllBlocks(ctx context.Context, shareID, linkID, revisionID string) (proton.Revision, error)
+}
 
 // driveEventFetcher abstracts the Drive event API calls needed by the
 // event poller. The production implementation is *proton.Client; tests
@@ -24,6 +35,14 @@ type driveEventFetcher interface {
 	GetLatestVolumeEventID(ctx context.Context, volumeID string) (string, error)
 	GetLatestShareEventID(ctx context.Context, shareID string) (string, error)
 }
+
+// Cache capacity and fetch-path constants.
+const (
+	maxCacheEntries = 10000            // trigger eviction above this many link entries
+	evictionTarget  = 9000             // evict down to this count (90% of max)
+	maxXAttrRetries = 3                // consecutive XAttr failures before giving up
+	maxFetchTimeout = 30 * time.Second // deadline for combined Link+XAttr fetch
+)
 
 // Client wraps an api.Session with Drive-specific state and operations.
 // Implements LinkResolver.
@@ -51,6 +70,30 @@ type Client struct {
 	// lazily after InitObjectCache so the disk cache is wired up.
 	blockStore blockStore
 
+	// linkFlight deduplicates concurrent GetCachedLink cache misses
+	// on the same shareID/linkID pair via singleflight.
+	linkFlight singleflight.Group
+
+	// xattrFailCount tracks consecutive XAttr fetch failures per LinkID.
+	// Protected by tableMu.
+	xattrFailCount map[string]int
+
+	// hydratedLinks is the startup hydration staging map. Stores raw
+	// proton.Link structs keyed by LinkID, populated during
+	// hydrateFromCache. Protected by tableMu.
+	hydratedLinks map[string]proton.Link
+
+	// cacheCount is the current number of link entries in the
+	// ObjectCache (excludes block entries).
+	cacheCount atomic.Int64
+
+	// evicting prevents concurrent eviction goroutines.
+	evicting atomic.Bool
+
+	// fetcher abstracts API calls for link and revision fetches,
+	// allowing tests to substitute a mock without network access.
+	fetcher linkFetcher
+
 	// eventFetcher abstracts Drive event API calls for the poller,
 	// allowing tests to substitute a mock without network access.
 	eventFetcher driveEventFetcher
@@ -76,7 +119,10 @@ func NewClient(ctx context.Context, session *api.Session) (*Client, error) {
 		addresses:       addrMap,
 		addressKeyRings: session.AddressKeyRings(),
 		linkTable:       make(map[string]*Link),
+		xattrFailCount:  make(map[string]int),
+		hydratedLinks:   make(map[string]proton.Link),
 		blockStore:      newBlockStore(session, nil, nil),
+		fetcher:         session.Client,
 		eventFetcher:    session.Client,
 	}, nil
 }
@@ -111,16 +157,17 @@ func (c *Client) NewChildLink(_ context.Context, parent *Link, pLink *proton.Lin
 		c.linkTable = make(map[string]*Link)
 	}
 	c.linkTable[pLink.LinkID] = link
+
+	// Remove any hydrated staging entry — the link is now in the table.
+	delete(c.hydratedLinks, pLink.LinkID)
 	c.tableMu.Unlock()
 
-	// Write to objectCache only when the share permits disk caching.
-	if parent.Share() != nil && parent.Share().DiskCacheLevel >= api.DiskCacheObjectStore {
-		var buf bytes.Buffer
-		if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-			if err := c.objectCache.Write(SanitizeLinkID(pLink.LinkID), buf.Bytes()); err != nil {
-				slog.Debug("objectCache.Write", "key", pLink.LinkID, "error", err)
-			}
-		}
+	// Write folder-type links to objectCache only when the share permits
+	// disk caching. File-type links are written exclusively by
+	// GetCachedLink's fetch path after the complete entry (Link + XAttr)
+	// is assembled (Requirement 3.5).
+	if pLink.Type == proton.LinkTypeFolder && parent.Share() != nil && parent.Share().DiskCacheLevel >= api.DiskCacheObjectStore {
+		c.writeCacheEntry(pLink.LinkID, *pLink)
 	}
 
 	return link
@@ -176,45 +223,68 @@ func (c *Client) getLink(linkID string) *Link {
 // needs a proton.Link should call this instead of
 // c.Session.Client.GetLink.
 //
-// GetCachedLink fetches a raw proton.Link by ID, checking the object
-// cache first and populating it on a miss. Uses gob encoding for
-// faithful struct round-trip. When the cache is nil (disabled or
-// XDG_RUNTIME_DIR unset), falls straight through to the API.
+// On a cache hit, returns the complete entry directly (file-type links
+// include XAttr). On a miss, dispatches a singleflight sequential fetch
+// (GetLink → GetRevisionAllBlocks) and writes the complete entry to the
+// ObjectCache on success.
 //
 // Note: GetShare bypasses this and calls the API directly — share root
 // links have a cache interaction issue that needs further investigation.
 func (c *Client) GetCachedLink(ctx context.Context, shareID, linkID string) (proton.Link, error) {
-	// Only use the object cache if the share permits disk caching.
 	diskAllowed := c.sharePermitsDiskCache(shareID)
 
-	// ObjectCache hit — return without API call.
+	// 1. Complete-entry hit (staging map, then ObjectCache).
 	if diskAllowed {
-		if data, _ := c.objectCache.Read(SanitizeLinkID(linkID)); data != nil {
-			var pLink proton.Link
-			if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&pLink); err == nil {
-				return pLink, nil
-			}
-			// Decode failed — fall through to API fetch.
+		if pLink, ok := c.tryObjectCacheHit(linkID); ok {
+			return pLink, nil
 		}
 	}
 
-	// API fetch.
-	pLink, err := c.Session.Client.GetLink(ctx, shareID, linkID)
+	// 2. Check for staged incomplete entry to seed the fetch.
+	var staged *proton.Link
+	if diskAllowed {
+		staged = c.takeStagedIncomplete(linkID)
+	}
+
+	// 3. Singleflight fetch.
+	key := shareID + "/" + linkID
+	result, err, _ := c.linkFlight.Do(key, func() (interface{}, error) {
+		return c.fetchLinkWithXAttr(ctx, shareID, linkID, diskAllowed, staged)
+	})
 	if err != nil {
 		return proton.Link{}, err
 	}
+	return result.(proton.Link), nil
+}
 
-	// Populate objectCache only when the share permits disk caching.
-	if diskAllowed {
-		var buf bytes.Buffer
-		if err := gob.NewEncoder(&buf).Encode(pLink); err == nil {
-			if err := c.objectCache.Write(SanitizeLinkID(linkID), buf.Bytes()); err != nil {
-				slog.Debug("objectCache.Write", "key", linkID, "error", err)
-			}
-		}
+// writeCacheEntry gob-encodes pLink and writes it to the ObjectCache.
+// Increments cacheCount on success and calls triggerEviction. All disk
+// errors are logged at slog.Debug and swallowed (Req 9).
+func (c *Client) writeCacheEntry(linkID string, pLink proton.Link) {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(pLink); err != nil {
+		slog.Debug("objectCache.encode", "key", linkID, "error", err)
+		return
 	}
+	if err := c.objectCache.Write(SanitizeLinkID(linkID), buf.Bytes()); err != nil {
+		slog.Debug("objectCache.Write", "key", linkID, "error", err)
+		return
+	}
+	c.cacheCount.Add(1)
+	c.triggerEviction()
+}
 
-	return pLink, nil
+// triggerEviction spawns a background goroutine to evict oldest entries
+// when cacheCount exceeds maxCacheEntries. At most one goroutine runs at
+// a time (guarded by evicting CAS).
+func (c *Client) triggerEviction() {
+	if c.cacheCount.Load() <= int64(maxCacheEntries) {
+		return
+	}
+	if !c.evicting.CompareAndSwap(false, true) {
+		return
+	}
+	go c.runEviction()
 }
 
 // sharePermitsDiskCache checks whether the share identified by shareID
@@ -250,9 +320,29 @@ func (c *Client) deleteLink(linkID string) {
 	delete(c.linkTable, linkID)
 }
 
-// clearLinks removes all entries from the table. Takes an exclusive write lock.
+// eraseCacheEntry removes a link entry from the ObjectCache, decrements
+// cacheCount on success, and clears the xattrFailCount for the link.
+// Errors are logged at debug level and swallowed.
+func (c *Client) eraseCacheEntry(linkID string) {
+	if err := c.objectCache.Erase(SanitizeLinkID(linkID)); err == nil {
+		if c.cacheCount.Load() > 0 {
+			c.cacheCount.Add(-1)
+		}
+	}
+	c.tableMu.Lock()
+	delete(c.xattrFailCount, linkID)
+	c.tableMu.Unlock()
+}
+
+// clearLinks removes all entries from the table, clears xattrFailCount
+// and hydratedLinks, erases all ObjectCache entries, and resets
+// cacheCount to 0. Takes an exclusive write lock.
 func (c *Client) clearLinks() {
 	c.tableMu.Lock()
-	defer c.tableMu.Unlock()
 	c.linkTable = make(map[string]*Link)
+	c.xattrFailCount = make(map[string]int)
+	c.hydratedLinks = make(map[string]proton.Link)
+	c.tableMu.Unlock()
+	_ = c.objectCache.EraseAll()
+	c.cacheCount.Store(0)
 }

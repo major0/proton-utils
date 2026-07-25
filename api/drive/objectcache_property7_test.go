@@ -2,131 +2,191 @@ package drive
 
 import (
 	"bytes"
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"context"
+	"encoding/gob"
 	"testing"
 
+	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-utils/api"
 	"pgregory.net/rapid"
 )
 
-// TestPropertyNoPlaintextMetadataOnDisk verifies that no file in the
-// ObjectCache store for Drive contains plaintext metadata. The store
-// contains only raw encrypted API response bytes keyed by LinkID.
+// Feature: object-cache-disk, Property 7: Hydration correctness
 //
-// The test writes opaque byte slices (simulating encrypted API responses) to
-// the object cache via ObjectCache.Write, then reads every on-disk file and
-// asserts:
-//  1. Each file's content is byte-identical to what was written.
-//  2. No file contains recognizable plaintext metadata — specifically, no
-//     file is valid JSON with known plaintext fields (Name, MIMEType, Hash,
-//     etc.) that would indicate decrypted link metadata leaked to disk.
+// For any set of ObjectCache entries (mix of link entries, block entries,
+// corrupt entries, and incomplete file-type entries), hydrateFromCache SHALL
+// populate the hydratedLinks staging map (NOT the Link_Table) with exactly
+// the valid link entries — skipping keys containing .block., erasing entries
+// that fail gob-decode, erasing file-type entries lacking FileProperties or
+// empty ActiveRevision.ID, and staging all remaining entries. File-type entries
+// with empty XAttr but valid revision SHALL be erased from the cache but still
+// staged (for later XAttr-only completion via takeStagedIncomplete). cacheCount
+// SHALL be initialized to the number of complete entries remaining on disk
+// (staged-but-erased incomplete entries are not counted).
 //
-// **Validates: Requirements 7.1, 7.2**
-func TestPropertyNoPlaintextMetadataOnDisk(t *testing.T) {
+// **Validates: Requirements 4.1, 4.2, 4.3, 4.6, 4.7, 5.3**
+func TestPropertyHydrationCorrectness(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
-		dir := t.TempDir()
-		cache := api.NewObjectCache(dir)
+		// Generate distinct IDs for each entry type.
+		completeFileID := rapid.StringMatching(`[a-zA-Z0-9]{5,15}`).Draw(rt, "completeFileID")
+		folderID := rapid.StringMatching(`[a-zA-Z0-9]{5,15}`).Draw(rt, "folderID")
+		incompleteFileID := rapid.StringMatching(`[a-zA-Z0-9]{5,15}`).Draw(rt, "incompleteFileID")
+		corruptID := rapid.StringMatching(`[a-zA-Z0-9]{5,15}`).Draw(rt, "corruptID")
+		invalidFileID := rapid.StringMatching(`[a-zA-Z0-9]{5,15}`).Draw(rt, "invalidFileID")
+		blockKey := completeFileID + ".block.0"
 
-		// Generate 1–10 link entries with opaque encrypted bytes.
-		numLinks := rapid.IntRange(1, 10).Draw(rt, "numLinks")
-		written := make(map[string][]byte, numLinks)
-		for len(written) < numLinks {
-			linkID := rapid.StringMatching(`[a-zA-Z0-9_\-]{4,32}`).Draw(rt, "linkID")
-			if _, exists := written[linkID]; exists {
-				continue
-			}
-			// Simulate encrypted API response bytes — opaque, not
-			// valid JSON with plaintext fields.
-			data := rapid.SliceOfN(rapid.Byte(), 1, 1024).Draw(rt, "encryptedData")
-			written[linkID] = data
+		cacheDir := t.TempDir()
+		oc := api.NewObjectCache(cacheDir)
+
+		// 1. Complete file entry (valid XAttr).
+		completeFile := proton.Link{
+			LinkID: completeFileID,
+			Type:   proton.LinkTypeFile,
+			FileProperties: &proton.FileProperties{
+				ActiveRevision: proton.RevisionMetadata{
+					ID:    "rev-complete",
+					XAttr: "encrypted-xattr-data",
+				},
+			},
+		}
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(completeFile); err != nil {
+			rt.Fatalf("encode completeFile: %v", err)
+		}
+		_ = oc.Write(SanitizeLinkID(completeFileID), buf.Bytes())
+
+		// 2. Folder entry.
+		folder := proton.Link{
+			LinkID: folderID,
+			Type:   proton.LinkTypeFolder,
+			FolderProperties: &proton.FolderProperties{
+				NodeHashKey: "hash-key-value",
+			},
+		}
+		buf.Reset()
+		if err := gob.NewEncoder(&buf).Encode(folder); err != nil {
+			rt.Fatalf("encode folder: %v", err)
+		}
+		_ = oc.Write(SanitizeLinkID(folderID), buf.Bytes())
+
+		// 3. Block entry (key contains .block. — should be skipped entirely).
+		_ = oc.Write(blockKey, []byte("block-data-bytes"))
+
+		// 4. Corrupt entry (invalid gob — should be erased, not staged).
+		_ = oc.Write(SanitizeLinkID(corruptID), []byte("not-valid-gob-data"))
+
+		// 5. Incomplete file entry (valid revision, empty XAttr).
+		// Should be erased from disk but still staged for XAttr completion.
+		incompleteFile := proton.Link{
+			LinkID: incompleteFileID,
+			Type:   proton.LinkTypeFile,
+			FileProperties: &proton.FileProperties{
+				ActiveRevision: proton.RevisionMetadata{
+					ID:    "rev-incomplete",
+					XAttr: "",
+				},
+			},
+		}
+		buf.Reset()
+		if err := gob.NewEncoder(&buf).Encode(incompleteFile); err != nil {
+			rt.Fatalf("encode incompleteFile: %v", err)
+		}
+		_ = oc.Write(SanitizeLinkID(incompleteFileID), buf.Bytes())
+
+		// 6. Invalid file entry (nil FileProperties — should be erased, not staged).
+		invalidFile := proton.Link{
+			LinkID: invalidFileID,
+			Type:   proton.LinkTypeFile,
+		}
+		buf.Reset()
+		if err := gob.NewEncoder(&buf).Encode(invalidFile); err != nil {
+			rt.Fatalf("encode invalidFile: %v", err)
+		}
+		_ = oc.Write(SanitizeLinkID(invalidFileID), buf.Bytes())
+
+		// Create a Client with the pre-populated ObjectCache and call hydrateFromCache.
+		client := &Client{
+			objectCache:    oc,
+			linkTable:      make(map[string]*Link),
+			xattrFailCount: make(map[string]int),
+			hydratedLinks:  make(map[string]proton.Link),
+			fetcher: &mockFetcher{
+				getLinkFn: func(_ context.Context, _, _ string) (proton.Link, error) {
+					return proton.Link{}, nil
+				},
+				getRevisionFn: func(_ context.Context, _, _, _ string) (proton.Revision, error) {
+					return proton.Revision{}, nil
+				},
+			},
+		}
+		client.hydrateFromCache()
+
+		// --- Assertions ---
+
+		// Verify staging map population.
+		client.tableMu.RLock()
+		_, hasComplete := client.hydratedLinks[completeFileID]
+		_, hasFolder := client.hydratedLinks[folderID]
+		_, hasIncomplete := client.hydratedLinks[incompleteFileID]
+		_, hasCorrupt := client.hydratedLinks[corruptID]
+		_, hasInvalid := client.hydratedLinks[invalidFileID]
+		tableLen := len(client.linkTable)
+		client.tableMu.RUnlock()
+
+		if !hasComplete {
+			rt.Fatal("complete file should be staged in hydratedLinks")
+		}
+		if !hasFolder {
+			rt.Fatal("folder should be staged in hydratedLinks")
+		}
+		if !hasIncomplete {
+			rt.Fatal("incomplete file should be staged in hydratedLinks (for XAttr completion)")
+		}
+		if hasCorrupt {
+			rt.Fatal("corrupt entry should NOT be staged in hydratedLinks")
+		}
+		if hasInvalid {
+			rt.Fatal("invalid file entry should NOT be staged in hydratedLinks")
 		}
 
-		// Write all entries via ObjectCache.Write (same path used by
-		// the Drive client's GetLink flow).
-		for linkID, data := range written {
-			if err := cache.Write(linkID, data); err != nil {
-				rt.Fatalf("ObjectCache.Write(%q): %v", linkID, err)
-			}
+		// linkTable must be empty — hydration goes to staging map, not the Link_Table.
+		if tableLen != 0 {
+			rt.Fatalf("linkTable should be empty after hydration, has %d entries", tableLen)
 		}
 
-		// Walk every file in the cache directory and verify contents.
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			rt.Fatalf("os.ReadDir(%q): %v", dir, err)
+		// cacheCount = number of complete entries remaining on disk = 2
+		// (complete file + folder). Incomplete file was erased from disk.
+		if count := client.cacheCount.Load(); count != 2 {
+			rt.Fatalf("expected cacheCount == 2, got %d", count)
 		}
 
-		for _, entry := range entries {
-			if entry.IsDir() {
-				// Skip the .tmp directory used by diskv for atomic writes.
-				continue
-			}
+		// Block entry should still exist on disk (not erased, not counted).
+		blockData, _ := oc.Read(blockKey)
+		if blockData == nil {
+			rt.Fatal("block entry should still exist on disk")
+		}
 
-			name := entry.Name()
-			path := filepath.Join(dir, name)
-			ondisk, err := os.ReadFile(path) //nolint:gosec // test reads from t.TempDir()
-			if err != nil {
-				rt.Fatalf("os.ReadFile(%q): %v", path, err)
-			}
+		// Corrupt entry should be erased from disk.
+		if d, _ := oc.Read(SanitizeLinkID(corruptID)); d != nil {
+			rt.Fatal("corrupt entry should be erased from disk")
+		}
 
-			// 1. The file must correspond to a key we wrote.
-			expected, ok := written[name]
-			if !ok {
-				rt.Fatalf("unexpected file %q in cache directory — not a key we wrote", name)
-			}
+		// Invalid file entry should be erased from disk.
+		if d, _ := oc.Read(SanitizeLinkID(invalidFileID)); d != nil {
+			rt.Fatal("invalid file entry should be erased from disk")
+		}
 
-			// 2. On-disk content must be byte-identical to what was written.
-			if !bytes.Equal(ondisk, expected) {
-				rt.Fatalf("file %q: on-disk content (%d bytes) differs from written data (%d bytes)",
-					name, len(ondisk), len(expected))
-			}
+		// Incomplete file entry should be erased from disk (but still staged).
+		if d, _ := oc.Read(SanitizeLinkID(incompleteFileID)); d != nil {
+			rt.Fatal("incomplete file entry should be erased from disk (staged for XAttr completion)")
+		}
 
-			// 3. The file must NOT contain recognizable plaintext metadata.
-			//    If the content happens to be valid JSON, check for known
-			//    plaintext fields that would indicate a decrypted Link
-			//    object leaked to disk.
-			assertNoPlaintextMetadata(rt, name, ondisk)
+		// Complete file and folder entries should remain on disk.
+		if d, _ := oc.Read(SanitizeLinkID(completeFileID)); d == nil {
+			rt.Fatal("complete file entry should remain on disk")
+		}
+		if d, _ := oc.Read(SanitizeLinkID(folderID)); d == nil {
+			rt.Fatal("folder entry should remain on disk")
 		}
 	})
-}
-
-// assertNoPlaintextMetadata checks that raw bytes do not contain
-// recognizable plaintext link metadata fields. If the bytes happen to
-// parse as JSON, we inspect for known decrypted-only fields.
-func assertNoPlaintextMetadata(rt *rapid.T, key string, data []byte) {
-	rt.Helper()
-
-	var obj map[string]interface{}
-	if err := json.Unmarshal(data, &obj); err != nil {
-		// Not valid JSON — cannot be plaintext metadata. This is the
-		// expected case for encrypted API response bytes.
-		return
-	}
-
-	// If it IS valid JSON, check for fields that only appear in
-	// decrypted/plaintext link metadata. The encrypted proton.Link
-	// envelope uses fields like "LinkID", "ParentLinkID", "Type",
-	// "State" — those are fine (they're part of the encrypted API
-	// response). But decrypted names, MIME types, and hashes should
-	// never appear.
-	plaintextFields := []string{
-		"DecryptedName",
-		"PlaintextName",
-		"ClearName",
-		"MIMEType",
-		"Hash",
-		"ModifyTime",
-		"CreateTime",
-		"Size",
-		"BlockSizes",
-		"DigestValue",
-	}
-
-	for _, field := range plaintextFields {
-		if _, found := obj[field]; found {
-			rt.Fatalf("file %q contains plaintext metadata field %q — "+
-				"decrypted link data must never be written to disk", key, field)
-		}
-	}
 }

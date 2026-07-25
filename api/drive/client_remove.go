@@ -72,7 +72,7 @@ func (c *Client) Remove(ctx context.Context, share *Share, link *Link, opts Remo
 	c.deleteLink(linkID)
 	c.deleteLink(link.ParentLink().ProtonLink().LinkID)
 	link.ParentLink().InvalidateChildren()
-	_ = c.objectCache.Erase(SanitizeLinkID(linkID))
+	c.eraseCacheEntry(linkID)
 
 	return nil
 }

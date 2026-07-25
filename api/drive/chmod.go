@@ -73,10 +73,10 @@ func (c *Client) Chmod(ctx context.Context, share *Share, link *Link, mode uint3
 	// Invalidate stale link from the link table and on-disk cache so
 	// subsequent operations re-fetch fresh state from the API.
 	c.deleteLink(link.LinkID())
-	_ = c.objectCache.Erase(SanitizeLinkID(link.LinkID()))
+	c.eraseCacheEntry(link.LinkID())
 	if link.ParentLink() != nil {
 		c.deleteLink(link.ParentLink().LinkID())
-		_ = c.objectCache.Erase(SanitizeLinkID(link.ParentLink().LinkID()))
+		c.eraseCacheEntry(link.ParentLink().LinkID())
 		link.ParentLink().InvalidateChildren()
 	}
 
