@@ -3,6 +3,7 @@ package drive
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -211,6 +212,46 @@ func TestWatchDriveEventsDeliversPollError(t *testing.T) {
 	// Cursor stays at the initialized latest (e5) since the poll failed.
 	if b.Target.Cursor != eventSeqID(5) {
 		t.Fatalf("cursor after failed poll = %q, want %q (unchanged)", b.Target.Cursor, eventSeqID(5))
+	}
+}
+
+// TestWatchDriveEventsStaleCursorReinits verifies that a stale-cursor error
+// (HTTP 422) is treated as a refresh: the cursor is re-anchored to latest and
+// a synthetic refresh batch is delivered, rather than looping on the dead
+// cursor.
+func TestWatchDriveEventsStaleCursorReinits(t *testing.T) {
+	staleErr := &proton.APIError{Status: http.StatusUnprocessableEntity, Message: "event not found"}
+	var latestCalls int
+	mock := &mockEventFetcher{
+		getLatestVolumeEventID: func(_ context.Context, _ string) (string, error) {
+			latestCalls++
+			if latestCalls == 1 {
+				return eventSeqID(0), nil // initial cursor
+			}
+			return eventSeqID(50), nil // re-init after stale
+		},
+		getVolumeEvent: func(_ context.Context, _, eventID string) (proton.DriveEvent, error) {
+			if eventID == eventSeqID(0) {
+				return proton.DriveEvent{}, fmt.Errorf("poll: %w", staleErr)
+			}
+			return proton.DriveEvent{EventID: eventSeqID(eventSeqNum(eventID) + 1)}, nil
+		},
+	}
+	client := &Client{eventFetcher: mock}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := client.WatchDriveEvents(ctx, []WatchTarget{{VolumeID: "vol1"}}, time.Millisecond)
+
+	first := <-ch
+	if first.Err != nil {
+		t.Fatalf("stale cursor should not surface as Err, got %v", first.Err)
+	}
+	if !bool(first.Event.Refresh) {
+		t.Fatal("stale cursor should surface a synthetic refresh batch")
+	}
+	if first.Target.Cursor != eventSeqID(50) {
+		t.Fatalf("cursor after stale = %q, want re-init to %q", first.Target.Cursor, eventSeqID(50))
 	}
 }
 

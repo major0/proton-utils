@@ -2,7 +2,9 @@ package drive
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -135,6 +137,21 @@ func (c *Client) pollWatchTarget(ctx context.Context, t *WatchTarget, ch chan<- 
 
 	event, err := c.pollTargetOnce(ctx, *t, t.Cursor)
 	if err != nil {
+		// A stale cursor (server rejects the event ID) is not a transient
+		// failure: re-anchor to latest and surface a synthetic refresh so
+		// the consumer performs a full resync rather than looping on the
+		// dead cursor. Other errors are delivered as-is with the cursor
+		// left unchanged so no events are skipped.
+		if isStaleCursorErr(err) {
+			if cursor, rerr := c.latestCursor(ctx, *t); rerr == nil {
+				t.Cursor = cursor
+			}
+			deliverBatch(ctx, ch, EventBatch{
+				Target: *t,
+				Event:  proton.DriveEvent{EventID: t.Cursor, Refresh: proton.Bool(true)},
+			})
+			return
+		}
 		deliverBatch(ctx, ch, EventBatch{Target: *t, Err: err})
 		return
 	}
@@ -149,6 +166,17 @@ func (c *Client) pollWatchTarget(ctx context.Context, t *WatchTarget, ch chan<- 
 			t.Cursor = cursor
 		}
 	}
+}
+
+// isStaleCursorErr reports whether err indicates the polled event cursor is
+// no longer valid (the server can no longer provide a delta from it). Proton
+// returns HTTP 422 Unprocessable Entity for a rejected event ID.
+func isStaleCursorErr(err error) bool {
+	var apiErr *proton.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Status == http.StatusUnprocessableEntity
+	}
+	return false
 }
 
 // latestCursor resolves the latest event ID for a target, dispatching to the
