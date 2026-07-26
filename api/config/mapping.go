@@ -167,6 +167,15 @@ func List(cfg *Config) []Entry {
 		})
 	}
 
+	// Core-only: event_poll_interval.
+	if cfg.EventPollInterval.Source() == File {
+		entries = append(entries, Entry{
+			Selector: "protonfs.event_poll_interval",
+			Value:    formatInt(cfg.EventPollInterval.Value()),
+			Source:   File,
+		})
+	}
+
 	// Subsystem overrides.
 	for _, svc := range sortedKeys(cfg.Subsystems) {
 		sub := cfg.Subsystems[svc]
@@ -244,6 +253,14 @@ func Show(cfg *Config) []Entry {
 		Selector: "protonfs.block_cache_mode",
 		Value:    bcmInfo.Value,
 		Source:   bcmInfo.Source,
+	})
+
+	// Core-only: event_poll_interval.
+	epiInfo := cfg.EventPollInterval.Info(formatInt)
+	entries = append(entries, Entry{
+		Selector: "protonfs.event_poll_interval",
+		Value:    epiInfo.Value,
+		Source:   epiInfo.Source,
 	})
 
 	// Subsystem overrides.
@@ -534,6 +551,8 @@ func getProtonFSField(cfg *Config, sel Selector) (string, error) {
 		return formatInt(cfg.PrefetchBlocks.Value()), nil
 	case "block_cache_mode":
 		return cfg.BlockCacheMode.Value(), nil
+	case "event_poll_interval":
+		return formatInt(cfg.EventPollInterval.Value()), nil
 	default:
 		return "", unknownFieldError("protonfs", fieldName)
 	}
@@ -555,6 +574,13 @@ func setProtonFSField(cfg *Config, sel Selector, value string) error {
 		}
 		cfg.BlockCacheMode.SetFile(value)
 		return nil
+	case "event_poll_interval":
+		v, err := parsePositiveInt(value)
+		if err != nil {
+			return fmt.Errorf("config: event_poll_interval must be a positive integer (seconds), got %q", value)
+		}
+		cfg.EventPollInterval.SetFile(v.(int))
+		return nil
 	default:
 		return unknownFieldError("protonfs", fieldName)
 	}
@@ -568,6 +594,9 @@ func unsetProtonFSField(cfg *Config, sel Selector) error {
 		return nil
 	case "block_cache_mode":
 		cfg.BlockCacheMode.Reset()
+		return nil
+	case "event_poll_interval":
+		cfg.EventPollInterval.Reset()
 		return nil
 	default:
 		return unknownFieldError("protonfs", fieldName)

@@ -39,6 +39,10 @@ type Config struct {
 	// or decrypted block data. Default: "encrypted".
 	BlockCacheMode Param[string]
 
+	// EventPollInterval is the Drive event polling interval in seconds for
+	// the proton-fuse daemon's cache-invalidation loop. Default: 15.
+	EventPollInterval Param[int]
+
 	// Shares is keyed by Proton share ID.
 	Shares map[string]api.ShareConfig
 
@@ -71,6 +75,7 @@ type configYAML struct {
 	MemoryCacheWatermark *string                    `yaml:"memory_cache_watermark,omitempty"`
 	PrefetchBlocks       *int                       `yaml:"prefetch_blocks,omitempty"`
 	BlockCacheMode       *string                    `yaml:"block_cache_mode,omitempty"`
+	EventPollInterval    *int                       `yaml:"event_poll_interval,omitempty"`
 	Shares               map[string]api.ShareConfig `yaml:"shares,omitempty"`
 	Subsystems           map[string]coreConfigYAML  `yaml:"subsystems,omitempty"`
 }
@@ -94,6 +99,10 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 	if c.BlockCacheMode.Source() == File {
 		v := c.BlockCacheMode.Value()
 		y.BlockCacheMode = &v
+	}
+	if c.EventPollInterval.Source() == File {
+		v := c.EventPollInterval.Value()
+		y.EventPollInterval = &v
 	}
 	for id, sc := range c.Shares {
 		y.Shares[id] = sc
@@ -133,6 +142,9 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	}
 	if y.BlockCacheMode != nil {
 		c.BlockCacheMode.SetFile(*y.BlockCacheMode)
+	}
+	if y.EventPollInterval != nil {
+		c.EventPollInterval.SetFile(*y.EventPollInterval)
 	}
 	if y.Shares != nil {
 		c.Shares = y.Shares
@@ -215,6 +227,7 @@ func DefaultConfig() *Config {
 		MemoryCacheWatermark: NewParam([2]int64{0, 0}),
 		PrefetchBlocks:       NewParam(1),
 		BlockCacheMode:       NewParam("encrypted"),
+		EventPollInterval:    NewParam(15),
 		Shares:               make(map[string]api.ShareConfig),
 		Subsystems:           make(map[string]*CoreConfig),
 	}

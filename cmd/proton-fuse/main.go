@@ -381,6 +381,17 @@ func run(cfg daemonConfig) error {
 		startRefreshLoop(refreshCtx, handler, session, lastRefresh)
 	}()
 
+	// Step 13b: Start the Drive event-invalidation goroutine. It runs
+	// independently of the refresh loop and shares the shutdown sequence.
+	eventCtx, eventCancel := context.WithCancel(context.Background())
+	eventDone := make(chan struct{})
+	go func() {
+		defer close(eventDone)
+		startEventLoop(eventCtx, driveClient, handler, eventConfig{
+			Interval: time.Duration(appCfg.EventPollInterval.Value()) * time.Second,
+		})
+	}()
+
 	// Step 14: Signal wait — SIGTERM/SIGINT triggers graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -388,9 +399,12 @@ func run(cfg daemonConfig) error {
 
 	slog.Info("shutdown signal received, stopping")
 
-	// Cancel refresh goroutine first.
+	// Cancel background goroutines first (refresh + event invalidation).
+	// The event loop persists its cursors before returning.
 	refreshCancel()
 	<-refreshDone
+	eventCancel()
+	<-eventDone
 
 	// Unmount and wait for in-flight FUSE operations.
 	if err := server.Unmount(); err != nil {
