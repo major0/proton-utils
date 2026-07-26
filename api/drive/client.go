@@ -97,6 +97,13 @@ type Client struct {
 	// eventFetcher abstracts Drive event API calls for the poller,
 	// allowing tests to substitute a mock without network access.
 	eventFetcher driveEventFetcher
+
+	// invalidationHook, when set, is invoked with a parent LinkID whenever
+	// a child link is created or removed, so consumers (the FUSE
+	// DriveHandler) can refresh their own per-directory caches. Guarded by
+	// hookMu.
+	invalidationHook func(parentLinkID string)
+	hookMu           sync.RWMutex
 }
 
 // Verify Client implements LinkResolver at compile time.
