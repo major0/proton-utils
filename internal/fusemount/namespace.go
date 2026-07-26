@@ -137,6 +137,14 @@ type NodeSetattrer interface {
 	Setattr(ctx context.Context, fh FileHandle, in *SetattrIn) syscall.Errno
 }
 
+// NodeForgetter indicates the node wants notification when the kernel forgets
+// its inode (it becomes unreachable), so it can release associated state such
+// as a live-node registry entry. The dispatch layer invokes Forget from
+// go-fuse's OnForget.
+type NodeForgetter interface {
+	Forget()
+}
+
 // NamespaceRegistry holds registered namespace handlers.
 // Populated at startup, immutable after mount.
 type NamespaceRegistry struct {

@@ -29,6 +29,7 @@ var _ = (fs.NodeFsyncer)((*DispatchNode)(nil))
 var _ = (fs.NodeUnlinker)((*DispatchNode)(nil))
 var _ = (fs.NodeRmdirer)((*DispatchNode)(nil))
 var _ = (fs.NodeRenamer)((*DispatchNode)(nil))
+var _ = (fs.NodeOnForgetter)((*DispatchNode)(nil))
 
 // DispatchNode bridges a namespace handler's Node to go-fuse's InodeEmbedder.
 // It operates in two modes:
@@ -638,6 +639,19 @@ func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.Ino
 	}
 
 	return renamer.Rename(ctx, name, newParentNode, newName)
+}
+
+// OnForget is invoked by go-fuse when the kernel forgets this node's inode.
+// It delegates to the wrapped Node when that node implements NodeForgetter,
+// letting handlers prune per-node state (e.g. the Drive live-directory
+// registry). Root nodes and nodes without Forget support are ignored.
+func (d *DispatchNode) OnForget() {
+	if d.node == nil {
+		return
+	}
+	if f, ok := d.node.(NodeForgetter); ok {
+		f.Forget()
+	}
 }
 
 // dispatchFileHandle wraps a handler's FileHandle for go-fuse.

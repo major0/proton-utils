@@ -8,12 +8,51 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/major0/proton-utils/api/drive"
 	"github.com/major0/proton-utils/internal/fusemount"
 )
+
+// dirInvalidator is implemented by live directory nodes (*LinkDirNode and
+// *ShareDirNode). The DriveHandler registry holds these so a remote change
+// event can clear the affected directory's cached children.
+type dirInvalidator interface {
+	invalidateChildren()
+}
+
+// Compile-time assertions that the directory nodes satisfy dirInvalidator
+// and expose Forget for the go-fuse OnForget registry pruning.
+var (
+	_ dirInvalidator          = (*LinkDirNode)(nil)
+	_ dirInvalidator          = (*ShareDirNode)(nil)
+	_ fusemount.NodeForgetter = (*LinkDirNode)(nil)
+	_ fusemount.NodeForgetter = (*ShareDirNode)(nil)
+)
+
+// newLinkDirNode constructs a folder node and registers it in the handler's
+// live-node registry (keyed by LinkID) so event-driven invalidation can find
+// it. handler may be nil (e.g. in tests), in which case registration is
+// skipped.
+func newLinkDirNode(link *drive.Link, client *drive.Client, handler *DriveHandler) *LinkDirNode {
+	n := &LinkDirNode{link: link, client: client, handler: handler}
+	if handler != nil {
+		handler.registerDir(link.LinkID(), n)
+	}
+	return n
+}
+
+// newShareDirNode constructs a share-root node and registers it in the
+// handler's live-node registry (keyed by the share root LinkID).
+func newShareDirNode(share *drive.Share, client *drive.Client, handler *DriveHandler) *ShareDirNode {
+	n := &ShareDirNode{share: share, client: client, handler: handler}
+	if handler != nil {
+		handler.registerDir(share.Link.LinkID(), n)
+	}
+	return n
+}
 
 // apiErrno maps an API or context error to the appropriate FUSE errno.
 // Context cancellation and deadline exceeded map to EINTR; all other
@@ -65,9 +104,46 @@ func renameErrno(err error) syscall.Errno {
 // It exposes the share's root link children as directory entries.
 // Retains children from the last Readdir so Lookup can resolve locally.
 type ShareDirNode struct {
-	share    *drive.Share
-	client   *drive.Client
-	children map[string]*drive.Link // name → Link, populated by Readdir
+	share   *drive.Share
+	client  *drive.Client
+	handler *DriveHandler // back-reference for the live-node registry (may be nil in tests)
+
+	childMu  sync.RWMutex
+	children map[string]*drive.Link // name → Link, populated by Readdir; guarded by childMu
+}
+
+// setChildren replaces the cached children map under the lock.
+func (n *ShareDirNode) setChildren(m map[string]*drive.Link) {
+	n.childMu.Lock()
+	n.children = m
+	n.childMu.Unlock()
+}
+
+// childByName returns the cached child Link for name, if present.
+func (n *ShareDirNode) childByName(name string) (*drive.Link, bool) {
+	n.childMu.RLock()
+	defer n.childMu.RUnlock()
+	if n.children == nil {
+		return nil, false
+	}
+	l, ok := n.children[name]
+	return l, ok
+}
+
+// invalidateChildren clears the cached children so the next access re-lists
+// from the API. Safe to call from the event-invalidation goroutine.
+func (n *ShareDirNode) invalidateChildren() {
+	n.childMu.Lock()
+	n.children = nil
+	n.childMu.Unlock()
+}
+
+// Forget unregisters this node from the handler's live-node registry when
+// the kernel forgets the inode.
+func (n *ShareDirNode) Forget() {
+	if n.handler != nil {
+		n.handler.unregisterDir(n.share.Link.LinkID())
+	}
 }
 
 // Compile-time interface assertions.
@@ -125,7 +201,7 @@ func (n *ShareDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall
 			Link: de.Link,
 		})
 	}
-	n.children = children
+	n.setChildren(children)
 	return entries, 0
 }
 
@@ -141,7 +217,7 @@ func (n *ShareDirNode) Create(_ context.Context, name string, _ uint32, _ uint32
 	}
 
 	// Invalidate children cache — directory listing is now stale.
-	n.children = nil
+	n.invalidateChildren()
 
 	newLink := fd.Link()
 	fileNode := &FileNode{link: newLink, client: n.client}
@@ -162,21 +238,19 @@ func (n *ShareDirNode) Mkdir(_ context.Context, name string, _ uint32) (fusemoun
 	}
 
 	// Invalidate children cache.
-	n.children = nil
+	n.invalidateChildren()
 
-	return &LinkDirNode{link: newLink, client: n.client}, 0
+	return newLinkDirNode(newLink, n.client, n.handler), 0
 }
 
 // Lookup finds a child by name. Uses the retained children map from the
 // last Readdir to avoid a redundant ListLinkChildren API call.
 func (n *ShareDirNode) Lookup(_ context.Context, name string) (fusemount.Node, syscall.Errno) {
 	// Fast path: child retained from last Readdir.
-	if n.children != nil {
-		if child, ok := n.children[name]; ok {
-			slog.Debug("ShareDirNode.Lookup: cache hit",
-				"shareID", n.share.Metadata().ShareID)
-			return linkNode(child, n.client), 0
-		}
+	if child, ok := n.childByName(name); ok {
+		slog.Debug("ShareDirNode.Lookup: cache hit",
+			"shareID", n.share.Metadata().ShareID)
+		return linkNode(child, n.client, n.handler), 0
 	}
 
 	// Slow path: no retained children (first Lookup before Readdir).
@@ -191,15 +265,13 @@ func (n *ShareDirNode) Lookup(_ context.Context, name string) (fusemount.Node, s
 	if child == nil {
 		return nil, syscall.ENOENT
 	}
-	return linkNode(child, n.client), 0
+	return linkNode(child, n.client, n.handler), 0
 }
 
 // resolveShareChild looks up a child by name in the share root.
 func (n *ShareDirNode) resolveShareChild(name string) (*drive.Link, syscall.Errno) {
-	if n.children != nil {
-		if child, ok := n.children[name]; ok {
-			return child, 0
-		}
+	if child, ok := n.childByName(name); ok {
+		return child, 0
 	}
 
 	child, err := n.share.Link.Lookup(context.Background(), name)
@@ -233,7 +305,7 @@ func (n *ShareDirNode) Unlink(_ context.Context, name string) syscall.Errno {
 		return syscall.EIO
 	}
 
-	n.children = nil
+	n.invalidateChildren()
 	return 0
 }
 
@@ -256,7 +328,7 @@ func (n *ShareDirNode) Rmdir(_ context.Context, name string) syscall.Errno {
 		return syscall.EIO
 	}
 
-	n.children = nil
+	n.invalidateChildren()
 	return 0
 }
 
@@ -284,12 +356,12 @@ func (n *ShareDirNode) Rename(_ context.Context, oldName string, newParent fusem
 		}
 	}
 
-	n.children = nil
+	n.invalidateChildren()
 	if dn, ok := newParent.(*LinkDirNode); ok {
-		dn.children = nil
+		dn.invalidateChildren()
 	}
 	if sn, ok := newParent.(*ShareDirNode); ok && sn != n {
-		sn.children = nil
+		sn.invalidateChildren()
 	}
 
 	return 0
@@ -299,9 +371,46 @@ func (n *ShareDirNode) Rename(_ context.Context, oldName string, newParent fusem
 // It exposes the link's children as directory entries.
 // Retains children from the last Readdir so Lookup can resolve locally.
 type LinkDirNode struct {
-	link     *drive.Link
-	client   *drive.Client
-	children map[string]*drive.Link // name → Link, populated by Readdir
+	link    *drive.Link
+	client  *drive.Client
+	handler *DriveHandler // back-reference for the live-node registry (may be nil in tests)
+
+	childMu  sync.RWMutex
+	children map[string]*drive.Link // name → Link, populated by Readdir; guarded by childMu
+}
+
+// setChildren replaces the cached children map under the lock.
+func (n *LinkDirNode) setChildren(m map[string]*drive.Link) {
+	n.childMu.Lock()
+	n.children = m
+	n.childMu.Unlock()
+}
+
+// childByName returns the cached child Link for name, if present.
+func (n *LinkDirNode) childByName(name string) (*drive.Link, bool) {
+	n.childMu.RLock()
+	defer n.childMu.RUnlock()
+	if n.children == nil {
+		return nil, false
+	}
+	l, ok := n.children[name]
+	return l, ok
+}
+
+// invalidateChildren clears the cached children so the next access re-lists
+// from the API. Safe to call from the event-invalidation goroutine.
+func (n *LinkDirNode) invalidateChildren() {
+	n.childMu.Lock()
+	n.children = nil
+	n.childMu.Unlock()
+}
+
+// Forget unregisters this node from the handler's live-node registry when
+// the kernel forgets the inode.
+func (n *LinkDirNode) Forget() {
+	if n.handler != nil {
+		n.handler.unregisterDir(n.link.LinkID())
+	}
 }
 
 // Compile-time interface assertions.
@@ -356,7 +465,7 @@ func (n *LinkDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.
 			Link: de.Link,
 		})
 	}
-	n.children = children
+	n.setChildren(children)
 	return entries, 0
 }
 
@@ -364,12 +473,10 @@ func (n *LinkDirNode) Readdir(_ context.Context) ([]fusemount.DirEntry, syscall.
 // last Readdir to avoid a redundant ListLinkChildren API call.
 func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, syscall.Errno) {
 	// Fast path: child retained from last Readdir.
-	if n.children != nil {
-		if child, ok := n.children[name]; ok {
-			slog.Debug("LinkDirNode.Lookup: cache hit",
-				"linkID", n.link.LinkID())
-			return linkNode(child, n.client), 0
-		}
+	if child, ok := n.childByName(name); ok {
+		slog.Debug("LinkDirNode.Lookup: cache hit",
+			"linkID", n.link.LinkID())
+		return linkNode(child, n.client, n.handler), 0
 	}
 
 	// Slow path: no retained children (first Lookup before Readdir).
@@ -384,17 +491,15 @@ func (n *LinkDirNode) Lookup(_ context.Context, name string) (fusemount.Node, sy
 	if child == nil {
 		return nil, syscall.ENOENT
 	}
-	return linkNode(child, n.client), 0
+	return linkNode(child, n.client, n.handler), 0
 }
 
 // resolveChild looks up a child by name using the cached children map
 // or falling back to the API. Returns the child Link or an errno.
 func (n *LinkDirNode) resolveChild(name string) (*drive.Link, syscall.Errno) {
 	// Fast path: use cached children from last Readdir.
-	if n.children != nil {
-		if child, ok := n.children[name]; ok {
-			return child, 0
-		}
+	if child, ok := n.childByName(name); ok {
+		return child, 0
 	}
 
 	// Slow path: API lookup (cache miss or cache not populated).
@@ -430,7 +535,7 @@ func (n *LinkDirNode) Unlink(_ context.Context, name string) syscall.Errno {
 		return syscall.EIO
 	}
 
-	n.children = nil
+	n.invalidateChildren()
 	return 0
 }
 
@@ -454,7 +559,7 @@ func (n *LinkDirNode) Rmdir(_ context.Context, name string) syscall.Errno {
 		return syscall.EIO
 	}
 
-	n.children = nil
+	n.invalidateChildren()
 	return 0
 }
 
@@ -487,12 +592,12 @@ func (n *LinkDirNode) Rename(_ context.Context, oldName string, newParent fusemo
 	}
 
 	// Invalidate children caches on both source and destination.
-	n.children = nil
+	n.invalidateChildren()
 	if dn, ok := newParent.(*LinkDirNode); ok && dn != n {
-		dn.children = nil
+		dn.invalidateChildren()
 	}
 	if sn, ok := newParent.(*ShareDirNode); ok {
-		sn.children = nil
+		sn.invalidateChildren()
 	}
 
 	return 0
@@ -511,7 +616,7 @@ func (n *LinkDirNode) Create(_ context.Context, name string, _ uint32, _ uint32)
 	}
 
 	// Invalidate children cache — directory listing is now stale.
-	n.children = nil
+	n.invalidateChildren()
 
 	// Get the *Link for the new file from the FD. CreateFD fetches and
 	// stores the new file's link after creation (see api/drive/ changes).
@@ -538,9 +643,9 @@ func (n *LinkDirNode) Mkdir(_ context.Context, name string, _ uint32) (fusemount
 	}
 
 	// Invalidate children cache — directory listing is now stale.
-	n.children = nil
+	n.invalidateChildren()
 
-	return &LinkDirNode{link: newLink, client: n.client}, 0
+	return newLinkDirNode(newLink, n.client, n.handler), 0
 }
 
 // linkMode returns the FUSE mode for a link based on its type.
@@ -554,10 +659,11 @@ func linkMode(l *drive.Link) uint32 {
 	return syscall.S_IFREG | 0600
 }
 
-// linkNode returns the appropriate fusemount.Node for a link based on its type.
-func linkNode(l *drive.Link, client *drive.Client) fusemount.Node {
+// linkNode returns the appropriate fusemount.Node for a link based on its
+// type. Folder nodes are registered in the handler's live-node registry.
+func linkNode(l *drive.Link, client *drive.Client, handler *DriveHandler) fusemount.Node {
 	if l.Type() == proton.LinkTypeFolder {
-		return &LinkDirNode{link: l, client: client}
+		return newLinkDirNode(l, client, handler)
 	}
 	return &FileNode{link: l, client: client}
 }
@@ -759,10 +865,11 @@ func (n *FileNode) Release(_ context.Context, fh fusemount.FileHandle) syscall.E
 // Readdir lists share root links by their sanitized LinkID (no decryption
 // needed). Lookup resolves any LinkID to a node from the client's link table.
 type LinkIDDir struct {
-	client *drive.Client
-	shares func() map[string]*drive.Share // returns current share map snapshot
-	mtime  uint64                         // copied from main volume at startup
-	ctime  uint64                         // copied from main volume at startup
+	client  *drive.Client
+	handler *DriveHandler                  // back-reference for the live-node registry (may be nil)
+	shares  func() map[string]*drive.Share // returns current share map snapshot
+	mtime   uint64                         // copied from main volume at startup
+	ctime   uint64                         // copied from main volume at startup
 }
 
 // Compile-time interface assertions.
@@ -803,14 +910,14 @@ func (n *LinkIDDir) Lookup(_ context.Context, name string) (fusemount.Node, sysc
 	// Check the client's link table (O(1) by ID).
 	link := n.client.GetLink(name)
 	if link != nil {
-		return linkNode(link, n.client), 0
+		return linkNode(link, n.client, n.handler), 0
 	}
 
 	// Check share root links — these may not be in the link table.
 	shares := n.shares()
 	for _, share := range shares {
 		if drive.SanitizeLinkID(share.Link.LinkID()) == name {
-			return &ShareDirNode{share: share, client: n.client}, 0
+			return newShareDirNode(share, n.client, n.handler), 0
 		}
 	}
 

@@ -24,11 +24,22 @@ type DriveHandler struct { //nolint:revive // name specified by design doc
 	shares   map[string]*drive.Share // keyed by ShareID
 	sharesMu sync.RWMutex
 
+	// dirNodes is the live-directory-node registry keyed by LinkID, used by
+	// event-driven invalidation to clear a directory's cached children.
+	// Bounded by maxDirNodes; entries are pruned on the go-fuse Forget
+	// lifecycle. Guarded by dirNodesMu.
+	dirNodes   map[string]dirInvalidator
+	dirNodesMu sync.Mutex
+
 	// startTime is captured at construction. Used as mtime/ctime for the
 	// namespace directory and .linkid — avoids leaking internal Proton
 	// metadata (volume creation date) outside the encrypted boundary.
 	startTime uint64
 }
+
+// maxDirNodes bounds the live-node registry so a missed Forget cannot grow it
+// without limit. A dropped entry only costs a redundant re-list on next access.
+const maxDirNodes = 4096
 
 // Compile-time interface assertion.
 var _ fusemount.NamespaceHandler = (*DriveHandler)(nil)
@@ -41,7 +52,64 @@ func NewDriveHandler(client *drive.Client) *DriveHandler {
 	return &DriveHandler{
 		client:    client,
 		shares:    make(map[string]*drive.Share),
+		dirNodes:  make(map[string]dirInvalidator),
 		startTime: now,
+	}
+}
+
+// registerDir records a live directory node under its LinkID so event-driven
+// invalidation can find it. The newest node for a LinkID wins. The registry
+// is size-capped: when full, one arbitrary entry is evicted (a dropped live
+// node only costs a redundant re-list).
+func (h *DriveHandler) registerDir(linkID string, node dirInvalidator) {
+	h.dirNodesMu.Lock()
+	defer h.dirNodesMu.Unlock()
+	if h.dirNodes == nil {
+		h.dirNodes = make(map[string]dirInvalidator)
+	}
+	if _, exists := h.dirNodes[linkID]; !exists && len(h.dirNodes) >= maxDirNodes {
+		for k := range h.dirNodes {
+			delete(h.dirNodes, k)
+			break
+		}
+	}
+	h.dirNodes[linkID] = node
+}
+
+// unregisterDir removes a directory node from the registry (on go-fuse Forget).
+func (h *DriveHandler) unregisterDir(linkID string) {
+	h.dirNodesMu.Lock()
+	delete(h.dirNodes, linkID)
+	h.dirNodesMu.Unlock()
+}
+
+// OnInvalidateParent clears the cached children of the live directory node for
+// parentLinkID, if one is registered; otherwise it is a no-op. This is wired
+// to the Drive client via SetInvalidationHook so a remote child create/delete
+// refreshes the parent listing.
+func (h *DriveHandler) OnInvalidateParent(parentLinkID string) {
+	h.dirNodesMu.Lock()
+	node := h.dirNodes[parentLinkID]
+	h.dirNodesMu.Unlock()
+	if node != nil {
+		node.invalidateChildren()
+	}
+}
+
+// InvalidateAll clears the share map and every registered directory node's
+// cached children. Used on a full resync (DriveEvent.Refresh).
+func (h *DriveHandler) InvalidateAll() {
+	h.invalidateShares()
+
+	h.dirNodesMu.Lock()
+	nodes := make([]dirInvalidator, 0, len(h.dirNodes))
+	for _, n := range h.dirNodes {
+		nodes = append(nodes, n)
+	}
+	h.dirNodesMu.Unlock()
+
+	for _, n := range nodes {
+		n.invalidateChildren()
 	}
 }
 
@@ -121,7 +189,7 @@ func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node,
 	case "Home":
 		for _, share := range h.shares {
 			if share.ProtonShare().Type == proton.ShareTypeMain {
-				return &ShareDirNode{share: share, client: h.client}, 0
+				return newShareDirNode(share, h.client, h), 0
 			}
 		}
 		return nil, syscall.ENOENT
@@ -129,17 +197,18 @@ func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node,
 	case "Photos":
 		for _, share := range h.shares {
 			if share.ProtonShare().Type == drive.ShareTypePhotos {
-				return &ShareDirNode{share: share, client: h.client}, 0
+				return newShareDirNode(share, h.client, h), 0
 			}
 		}
 		return nil, syscall.ENOENT
 
 	case ".linkid":
 		return &LinkIDDir{
-			client: h.client,
-			shares: h.snapshotShares,
-			mtime:  h.startTime,
-			ctime:  h.startTime,
+			client:  h.client,
+			handler: h,
+			shares:  h.snapshotShares,
+			mtime:   h.startTime,
+			ctime:   h.startTime,
 		}, 0
 	}
 
@@ -153,7 +222,7 @@ func (h *DriveHandler) Lookup(ctx context.Context, name string) (fusemount.Node,
 			continue
 		}
 		if shareName == name {
-			return &ShareDirNode{share: share, client: h.client}, 0
+			return newShareDirNode(share, h.client, h), 0
 		}
 	}
 
