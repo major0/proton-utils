@@ -97,6 +97,17 @@ type FileDescriptor struct {
 	// unixMode holds Unix permission bits (lower 12: 0o7777) to store
 	// in the revision XAttr on commit. Zero means "don't store" (omitempty).
 	unixMode uint32
+
+	// isNew is true for FDs from CreateFD (a brand-new file whose initial
+	// draft revision must be committed even when empty, so `touch` produces
+	// a committed zero-byte file rather than a dangling draft). It is false
+	// for OverwriteFD, where opening and closing without writing must leave
+	// the existing content untouched.
+	isNew bool
+
+	// committed records whether this FD has committed a revision. Guards
+	// the empty first-commit so repeat Flush/Close calls are no-ops.
+	committed bool
 }
 
 // Compile-time interface checks.
@@ -517,15 +528,21 @@ func (fd *FileDescriptor) Flush() error {
 	fd.tokensMu.Lock()
 	err := fd.firstErr
 	nTokens := len(fd.tokens)
+	alreadyCommitted := fd.committed
 	fd.tokensMu.Unlock()
 
 	if err != nil {
 		return err
 	}
 
-	// Nothing to commit — either no data was written or a prior
-	// Flush/Sync already committed everything.
-	if nTokens == 0 && !hasCurBlock {
+	// Decide whether to commit. Commit when data was written (tokens
+	// collected or a partial block was just flushed), or when this is a
+	// brand-new file that has never committed: an empty `touch`ed file must
+	// still commit its initial draft revision so it becomes Active rather
+	// than a dangling draft (which would show a zero mtime and fail to
+	// delete). Repeat Flush/Close calls after the first commit are no-ops.
+	firstCommitOfNewFile := fd.isNew && !alreadyCommitted
+	if nTokens == 0 && !hasCurBlock && !firstCommitOfNewFile {
 		return nil
 	}
 
@@ -533,8 +550,9 @@ func (fd *FileDescriptor) Flush() error {
 		return err
 	}
 
-	// Clear tokens so a subsequent Flush/Close is a no-op.
+	// Mark committed and clear tokens so a subsequent Flush/Close is a no-op.
 	fd.tokensMu.Lock()
+	fd.committed = true
 	fd.tokens = make(map[int]uploadedBlock)
 	fd.tokensMu.Unlock()
 
@@ -626,6 +644,7 @@ func (c *Client) CreateFD(ctx context.Context, share *Share, parent *Link, name 
 	fd := newWriteFD(ctx, fh, store, c.Session)
 	fd.link = newLink
 	fd.client = c
+	fd.isNew = true
 	return fd, nil
 }
 
@@ -931,9 +950,8 @@ func (fd *FileDescriptor) commitRevision() error {
 	}
 	fd.tokensMu.Unlock()
 
-	if nBlocks == 0 {
-		return nil
-	}
-
-	return commitRevisionFromTokens(fd.ctx, fd.session, fd.uploadParams(), tokensCopy)
+	// allowEmpty=true: a zero-byte file commits an empty (block-less)
+	// active revision. Callers gate whether an empty commit should happen
+	// (Flush commits new files; Sync skips no-op syncs before calling here).
+	return commitRevisionFromTokens(fd.ctx, fd.session, fd.uploadParams(), tokensCopy, true)
 }

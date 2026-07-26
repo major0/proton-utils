@@ -215,5 +215,5 @@ func (w *ProtonWriter) Close() error {
 
 	// Use context.Background() to ensure commit completes even after
 	// pipeline context cancellation.
-	return commitRevisionFromTokens(context.Background(), w.session, w.uploadParams(), w.uploaded)
+	return commitRevisionFromTokens(context.Background(), w.session, w.uploadParams(), w.uploaded, false)
 }

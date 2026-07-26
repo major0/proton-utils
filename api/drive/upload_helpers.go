@@ -108,9 +108,13 @@ func encryptAndUploadBlock(ctx context.Context, p uploadParams, store blockStore
 //
 // totalSize is computed by summing rawSize from all tokens.
 // ModificationTime uses time.Now().UTC() (matching current behavior).
-func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploadParams, tokens map[int]uploadedBlock) error {
+func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploadParams, tokens map[int]uploadedBlock, allowEmpty bool) error {
+	// When allowEmpty is set, nBlocks == 0 commits an empty, block-less
+	// active revision (empty manifest, size 0) — this is how `touch`
+	// produces a committed zero-byte file. When allowEmpty is false (the
+	// copy-pipeline writer), a no-block close is a no-op.
 	nBlocks := len(tokens)
-	if nBlocks == 0 {
+	if nBlocks == 0 && !allowEmpty {
 		return nil
 	}
 
