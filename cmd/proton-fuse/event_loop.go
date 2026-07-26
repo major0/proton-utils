@@ -15,7 +15,7 @@ import (
 const (
 	// defaultEventPollInterval is used when the configured interval is
 	// non-positive.
-	defaultEventPollInterval = 15 * time.Second
+	defaultEventPollInterval = 5 * time.Second
 
 	// backoffEventPollInterval is the widened interval applied after
 	// eventBackoffThreshold consecutive poll failures.

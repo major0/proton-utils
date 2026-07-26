@@ -40,7 +40,7 @@ type Config struct {
 	BlockCacheMode Param[string]
 
 	// EventPollInterval is the Drive event polling interval in seconds for
-	// the proton-fuse daemon's cache-invalidation loop. Default: 15.
+	// the proton-fuse daemon's cache-invalidation loop. Default: 5.
 	EventPollInterval Param[int]
 
 	// Shares is keyed by Proton share ID.
@@ -227,7 +227,7 @@ func DefaultConfig() *Config {
 		MemoryCacheWatermark: NewParam([2]int64{0, 0}),
 		PrefetchBlocks:       NewParam(1),
 		BlockCacheMode:       NewParam("encrypted"),
-		EventPollInterval:    NewParam(15),
+		EventPollInterval:    NewParam(5),
 		Shares:               make(map[string]api.ShareConfig),
 		Subsystems:           make(map[string]*CoreConfig),
 	}

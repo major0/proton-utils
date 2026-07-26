@@ -52,7 +52,7 @@ func init() {
 	f.StringVar(&watchFlags.share, "share", "", "watch a single Drive share's events")
 	f.StringArrayVar(&watchFlags.types, "type", nil, "filter by event type (repeatable, OR logic)")
 	f.StringVar(&watchFlags.from, "from", "", "resume from an event ID")
-	f.DurationVar(&watchFlags.interval, "interval", 30*time.Second, "poll interval")
+	f.DurationVar(&watchFlags.interval, "interval", 5*time.Second, "poll interval")
 	f.BoolVar(&watchFlags.pretty, "pretty", false, "indent JSON output")
 }
 

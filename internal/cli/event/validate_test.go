@@ -11,7 +11,7 @@ func TestValidateWatchFlags(t *testing.T) {
 		params  watchParams
 		wantErr bool
 	}{
-		{"default ok", watchParams{interval: 30 * time.Second}, false},
+		{"default ok", watchParams{interval: 5 * time.Second}, false},
 		{"drive ok", watchParams{drive: true, interval: time.Second}, false},
 		{"share ok", watchParams{share: "s1", interval: time.Second}, false},
 		{"drive+share mutually exclusive", watchParams{drive: true, share: "s1", interval: time.Second}, true},
