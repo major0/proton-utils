@@ -9,6 +9,7 @@ import (
 	_ "github.com/major0/proton-utils/internal/cli/config"
 	_ "github.com/major0/proton-utils/internal/cli/drive"
 	_ "github.com/major0/proton-utils/internal/cli/drive/share"
+	_ "github.com/major0/proton-utils/internal/cli/event"
 	_ "github.com/major0/proton-utils/internal/cli/lumo"
 	// _ "github.com/major0/proton-utils/cmd/wallet"
 )
