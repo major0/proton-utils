@@ -90,7 +90,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		proton.WithHostURL(acctSvc.Host),
 		proton.WithAppVersion(acctSvc.AppVersion("")),
 	}
-	acctSession, err := SessionFromCredentials(ctx, acctOpts, acctConfig, managerHook)
+	acctSession, err := SessionFromCredentials(ctx, acctOpts, acctConfig, managerHook, accountStore)
 	if err != nil {
 		return nil, fmt.Errorf("restore service session %q: account credentials: %w", service, err)
 	}
@@ -101,9 +101,8 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 	// Restore cookies into account session.
 	api.LoadCookies(acctSession.CookieJar(), acctConfig.Cookies, api.CookieURL())
 
-	// Register auth handler on account session so proactive refresh persists tokens.
-	acctSession.AddAuthHandler(NewAuthHandler(accountStore, acctSession))
-	acctSession.AddDeauthHandler(NewDeauthHandler())
+	// Auth/deauth handlers were attached inside SessionFromCredentials
+	// (before its GetUser) so proactive refresh persists rotated tokens.
 
 	// Proactive refresh on account session.
 	if err := proactiveRefresh(ctx, acctSession, acctConfig); err != nil {
@@ -161,7 +160,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 // restoreExistingService restores a service session from persisted credentials.
 // Used when the service session exists and is not stale.
 func restoreExistingService(ctx context.Context, options []proton.Option, svcConfig *api.SessionCredentials, store api.SessionStore, svc api.ServiceConfig, service string, managerHook func(*proton.Manager)) (*api.Session, error) {
-	session, err := SessionFromCredentials(ctx, options, svcConfig, managerHook)
+	session, err := SessionFromCredentials(ctx, options, svcConfig, managerHook, store)
 	if err != nil {
 		return nil, fmt.Errorf("restore service session %q: credentials: %w", service, err)
 	}
@@ -185,8 +184,8 @@ func restoreExistingService(ctx context.Context, options []proton.Option, svcCon
 	session.BaseURL = svc.Host
 	session.AppVersion = svc.AppVersion("")
 
-	session.AddAuthHandler(NewAuthHandler(store, session))
-	session.AddDeauthHandler(NewDeauthHandler())
+	// Auth/deauth handlers were attached inside SessionFromCredentials
+	// (before GetUser/GetAddresses) so any token rotation is persisted.
 
 	return session, nil
 }

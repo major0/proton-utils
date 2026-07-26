@@ -14,7 +14,13 @@ import (
 // SessionFromCredentials initializes a new session from the provided config.
 // The session is not fully usable until it has been Unlock'ed using the
 // user-provided keypass.
-func SessionFromCredentials(ctx context.Context, options []proton.Option, config *api.SessionCredentials, managerHook func(*proton.Manager)) (*api.Session, error) {
+//
+// When store is non-nil, the token-persisting auth handler is attached to the
+// client BEFORE the first API call. This is essential: Proton rotates the
+// refresh token on every /auth/refresh (invalidating the old one), so a
+// refresh triggered by the GetUser below must persist the rotated token.
+// Attaching the handler afterward would drop it and de-auth the next process.
+func SessionFromCredentials(ctx context.Context, options []proton.Option, config *api.SessionCredentials, managerHook func(*proton.Manager), store api.SessionStore) (*api.Session, error) {
 	if config.UID == "" {
 		return nil, api.ErrMissingUID
 	}
@@ -36,6 +42,18 @@ func SessionFromCredentials(ctx context.Context, options []proton.Option, config
 		UID:          config.UID,
 		AccessToken:  config.AccessToken,
 		RefreshToken: config.RefreshToken,
+	}
+
+	// Load persisted cookies into the jar before attaching the handler, so
+	// that if a refresh fires during GetUser the handler re-serializes the
+	// real cookies rather than clobbering the store with an empty jar.
+	api.LoadCookies(session.CookieJar(), config.Cookies, api.CookieURL())
+
+	// Attach the token-persisting handler before any API call so a refresh
+	// triggered by GetUser (below) persists the rotated refresh token.
+	if store != nil {
+		session.AddAuthHandler(NewAuthHandler(store, session))
+		session.AddDeauthHandler(NewDeauthHandler())
 	}
 
 	slog.Debug("session.GetUser")
@@ -85,7 +103,7 @@ func SessionRestore(ctx context.Context, options []proton.Option, store api.Sess
 		}
 	}
 
-	session, err := SessionFromCredentials(ctx, options, config, managerHook)
+	session, err := SessionFromCredentials(ctx, options, config, managerHook, store)
 	if err != nil {
 		return nil, fmt.Errorf("account.SessionRestore: %w", err)
 	}
@@ -128,8 +146,10 @@ func ReadySession(ctx context.Context, options []proton.Option, store api.Sessio
 	if err != nil {
 		return nil, err
 	}
-	session.AddAuthHandler(NewAuthHandler(store, session))
-	session.AddDeauthHandler(NewDeauthHandler())
+	// Auth/deauth handlers are attached during restore before the first
+	// refreshing call: SessionFromCredentials attaches them for the bearer
+	// path, and the cookie path installs its own refresh handler on the
+	// transport. Attaching here would only duplicate them.
 	return session, nil
 }
 

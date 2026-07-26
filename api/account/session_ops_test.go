@@ -85,7 +85,7 @@ func TestSessionFromCredentials(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := SessionFromCredentials(context.Background(), nil, tt.config, nil)
+			_, err := SessionFromCredentials(context.Background(), nil, tt.config, nil, nil)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
