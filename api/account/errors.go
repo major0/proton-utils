@@ -21,4 +21,9 @@ var (
 
 	// ErrForkFailed indicates that the session fork protocol failed.
 	ErrForkFailed = errors.New("account: session fork failed")
+
+	// ErrAccountDeauthed indicates that the shared account refresh token was
+	// rejected by the server (HTTP 400/422): the account is genuinely
+	// de-authed and cannot be refreshed without re-authentication.
+	ErrAccountDeauthed = errors.New("account: refresh token rejected, re-authentication required")
 )
