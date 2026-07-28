@@ -104,8 +104,9 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 	// Auth/deauth handlers were attached inside SessionFromCredentials
 	// (before its GetUser) so proactive refresh persists rotated tokens.
 
-	// Proactive refresh on account session.
-	if err := proactiveRefresh(ctx, acctSession, acctConfig); err != nil {
+	// Proactive refresh on account session — coordinated across processes
+	// via RefreshAccountLocked (Req 3.1).
+	if err := proactiveRefresh(ctx, acctSession, acctConfig, accountStore); err != nil {
 		return nil, err
 	}
 

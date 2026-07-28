@@ -366,19 +366,14 @@ func run(cfg daemonConfig) error {
 
 	slog.Info("proton-fuse ready", "mountpoint", cfg.mountpoint)
 
-	// Step 13: Start combined refresh goroutine.
-	// Initialize lastRefresh from persisted credentials.
-	creds, err := store.Load()
-	var lastRefresh time.Time
-	if err == nil && creds != nil {
-		lastRefresh = creds.LastRefresh
-	}
-
+	// Step 13: Start combined refresh goroutine. The loop refreshes shares
+	// and periodically refreshes the shared account token (coordinated
+	// across processes) so short-lived CLI commands ride on a valid token.
 	refreshCtx, refreshCancel := context.WithCancel(context.Background())
 	refreshDone := make(chan struct{})
 	go func() {
 		defer close(refreshDone)
-		startRefreshLoop(refreshCtx, handler, session, lastRefresh)
+		startRefreshLoop(refreshCtx, handler, session.Manager(), accountStore)
 	}()
 
 	// Step 13b: Start the Drive event-invalidation goroutine. It runs
@@ -414,11 +409,19 @@ func run(cfg daemonConfig) error {
 	return nil
 }
 
-// startRefreshLoop runs the combined share refresh and proactive token
-// refresh on a periodic ticker. It blocks until ctx is cancelled.
-func startRefreshLoop(ctx context.Context, handler *fusedrv.DriveHandler, session *api.Session, lastRefresh time.Time) {
+// startRefreshLoop runs the combined share refresh and periodic shared
+// account-token refresh on a periodic ticker. It blocks until ctx is
+// cancelled. A refresh failure never crashes the daemon: transient failures
+// are logged and retried on the next tick, and a de-authed account stops
+// further token-refresh attempts while share refresh continues.
+func startRefreshLoop(ctx context.Context, handler *fusedrv.DriveHandler, mgr *proton.Manager, accountStore api.SessionStore) {
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
+
+	// accountDeauthed latches once the shared account token is rejected
+	// (ErrAccountDeauthed). Retrying a dead token is futile until the user
+	// re-authenticates, so token refresh stops while share refresh continues.
+	accountDeauthed := false
 
 	for {
 		select {
@@ -430,16 +433,51 @@ func startRefreshLoop(ctx context.Context, handler *fusedrv.DriveHandler, sessio
 				slog.Warn("share refresh failed", "error", err)
 			}
 
-			// Proactive token refresh — trigger a lightweight API call
-			// if the session's token age exceeds the threshold.
-			if account.NeedsProactiveRefresh(lastRefresh) {
-				if _, err := session.Client.GetUser(ctx); err != nil {
-					slog.Warn("proactive token refresh failed", "error", err)
-				} else {
-					slog.Debug("proactive token refresh succeeded")
-					lastRefresh = time.Now()
-				}
+			if !accountDeauthed {
+				accountDeauthed = refreshAccountToken(ctx, mgr, accountStore)
 			}
 		}
+	}
+}
+
+// refreshAccountToken performs one gated, coordinated refresh of the shared
+// account token. It reports whether the account is now de-authed (the caller
+// latches this to stop retrying a dead token). It gates on the freshness
+// check for the active auth style and dispatches through the coordinated
+// RefreshAccountLocked, which selects the style-correct refresh mechanism.
+// It never returns an error: transient failures are logged for retry on the
+// next tick.
+func refreshAccountToken(ctx context.Context, mgr *proton.Manager, accountStore api.SessionStore) (deauthed bool) {
+	creds, err := accountStore.Load()
+	if err != nil {
+		slog.Warn("account refresh: loading credentials failed", "error", err)
+		return false
+	}
+
+	// Gate by the freshness check appropriate to the active auth style
+	// (Req 2.2).
+	due := account.NeedsProactiveRefresh(creds.LastRefresh)
+	if creds.CookieAuth {
+		due = account.NeedsCookieRefresh(creds.LastRefresh)
+	}
+	if !due {
+		return false
+	}
+
+	_, err = account.RefreshAccountLocked(ctx, mgr, accountStore, account.RotatingCredential(creds))
+	switch {
+	case err == nil:
+		slog.Debug("account refresh: shared token refreshed", "uid", creds.UID)
+		return false
+	case errors.Is(err, account.ErrAccountDeauthed):
+		// Req 2.4: the rotating credential is dead. Direct the user to
+		// re-authenticate and stop retrying this token.
+		slog.Error("account refresh: shared account token rejected; re-authentication required. Run 'proton login'",
+			"uid", creds.UID)
+		return true
+	default:
+		// Req 2.3: transient failure — log and retry on the next tick.
+		slog.Warn("account refresh: transient failure, will retry", "uid", creds.UID, "error", err)
+		return false
 	}
 }

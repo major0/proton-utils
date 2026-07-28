@@ -130,6 +130,17 @@ func refreshCookieLocked(ctx context.Context, store api.SessionStore, cur *api.S
 	return cur, nil
 }
 
+// RotatingCredential returns the credential that Proton rotates on each
+// refresh for the credentials' active auth style: the Bearer RefreshToken
+// when CookieAuth is false, or the REFRESH-<uid> cookie value when CookieAuth
+// is true. Callers pass the returned value as the startedWith argument to
+// RefreshAccountLocked so a peer's concurrent rotation can be detected
+// (Req 1.3). It exposes the package-internal rotatingCredential for consumers
+// (e.g. the proton-fuse daemon) that must supply startedWith.
+func RotatingCredential(cur *api.SessionCredentials) string {
+	return rotatingCredential(cur)
+}
+
 // rotatingCredential returns the credential that Proton rotates on each
 // refresh for the credentials' active auth style: the Bearer RefreshToken
 // when CookieAuth is false, or the REFRESH-<uid> cookie value when CookieAuth

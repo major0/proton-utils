@@ -270,17 +270,22 @@ func IsStale(accountRefresh, serviceRefresh time.Time) bool {
 	return accountRefresh.After(serviceRefresh)
 }
 
-// proactiveRefresh checks the session's LastRefresh age and triggers a
-// refresh if the token is past the ProactiveRefreshAge threshold.
-// The auth handler callback updates Session.Auth and persists via SessionSave.
-func proactiveRefresh(ctx context.Context, session *api.Session, config *api.SessionCredentials) error {
+// proactiveRefresh checks the account session's LastRefresh age and, when it
+// exceeds the ProactiveRefreshAge threshold, performs a cross-process
+// coordinated refresh via RefreshAccountLocked instead of an uncoordinated
+// GetUser poke, so cold-starting several apps at once cannot de-auth each
+// other (Req 3.1). Style dispatch (Bearer vs cookie) is internal to
+// RefreshAccountLocked; the caller only supplies the rotating credential for
+// the active style. The rotated credentials are persisted to store with a
+// fresh LastRefresh.
+func proactiveRefresh(ctx context.Context, session *api.Session, config *api.SessionCredentials, store api.SessionStore) error {
 	if !NeedsProactiveRefresh(config.LastRefresh) {
 		return nil
 	}
 
 	slog.Debug("proactiveRefresh", "age", time.Since(config.LastRefresh))
 
-	if _, err := session.Client.GetUser(ctx); err != nil {
+	if _, err := RefreshAccountLocked(ctx, session.Manager(), store, rotatingCredential(config)); err != nil {
 		return fmt.Errorf("%w: proactive refresh: %w", ErrSessionExpired, err)
 	}
 
