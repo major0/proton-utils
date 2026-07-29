@@ -318,8 +318,13 @@ func TestRefreshLoopLatch_TransientKeepsLoopAlive(t *testing.T) {
 	mu.Lock()
 	got := count
 	mu.Unlock()
-	if got != ticks {
-		t.Fatalf("server refresh count = %d, want %d (transient must retry each tick)", got, ticks)
+	// go-proton-api now retries transient 5xx refresh failures internally
+	// (up to its retryCount), so each tick issues more than one HTTP attempt.
+	// The daemon loop's contract is only that a transient failure keeps the
+	// loop alive (no latch) and re-attempts on every tick, so assert at least
+	// one attempt per tick rather than an exact count coupled to retryCount.
+	if got < ticks {
+		t.Fatalf("server refresh count = %d, want >= %d (transient must retry each tick)", got, ticks)
 	}
 	if store.saves() != 0 {
 		t.Fatalf("store saves = %d, want 0 (transient must not persist)", store.saves())
