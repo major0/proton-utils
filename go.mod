@@ -53,14 +53,14 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	gitlab.com/c0b/go-ordered-json v0.0.0-20201030195603-febf46534d5a // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
-	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 )
 
 replace (
 	github.com/ProtonMail/go-crypto => github.com/ProtonMail/go-crypto v1.1.5-proton
-	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.4.0-proton-utils
+	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.4.0-major0.5
 	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
 	github.com/go-resty/resty/v2 => github.com/LBeernaertProton/resty/v2 v2.0.0-20231129100320-dddf8030d93a
 	github.com/spf13/pflag => github.com/major0/optargs/pflag v0.5.0
