@@ -72,7 +72,7 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 			return nil, fmt.Errorf("restore service session %q: decode keypass: %w", service, err)
 		}
 
-		child, childKeyPass, err := CookieFork(ctx, acctSession, acctConfig, svc, "", keypass, cookieStore)
+		child, childKeyPass, err := forkCookieWithRefreshRetry(ctx, acctSession, acctConfig, svc, "", keypass, cookieStore)
 		if err != nil {
 			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
 		}
@@ -139,9 +139,9 @@ func RestoreServiceSession(ctx context.Context, service string, options []proton
 		var childKeyPass []byte
 
 		if acctConfig.CookieAuth && cookieStore != nil {
-			child, childKeyPass, err = CookieFork(ctx, acctSession, acctConfig, svc, version, keypass, cookieStore)
+			child, childKeyPass, err = forkCookieWithRefreshRetry(ctx, acctSession, acctConfig, svc, version, keypass, cookieStore)
 		} else {
-			child, childKeyPass, err = ForkSessionWithKeyPass(ctx, acctSession, svc, version, keypass)
+			child, childKeyPass, err = forkBearerWithRefreshRetry(ctx, acctSession, acctConfig, svc, version, keypass, accountStore)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("restore service session %q: fork: %w", service, err)
