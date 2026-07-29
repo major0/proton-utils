@@ -62,6 +62,6 @@ replace (
 	github.com/ProtonMail/go-crypto => github.com/ProtonMail/go-crypto v1.1.5-proton
 	github.com/ProtonMail/go-proton-api => github.com/major0/go-proton-api v0.4.0-major0.5
 	github.com/ProtonMail/gopenpgp/v2 => github.com/ProtonMail/gopenpgp/v2 v2.10.0-proton
-	github.com/go-resty/resty/v2 => github.com/LBeernaertProton/resty/v2 v2.0.0-20231129100320-dddf8030d93a
+	github.com/go-resty/resty/v2 => github.com/ProtonMail/resty/v2 v2.0.0-20250929142426-e3dc6308c80b
 	github.com/spf13/pflag => github.com/major0/optargs/pflag v0.5.0
 )
