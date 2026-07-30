@@ -217,13 +217,19 @@ func (fd *FileDescriptor) Read(p []byte) (int, error) {
 		totalRead += n
 	}
 
+	// The loop only exits with totalRead == 0 when the block at the current
+	// offset yields no available bytes (decrypted content exhausted) or the
+	// offset has reached fileSize — both are genuine EOF. Returning (0, nil)
+	// here would violate the io.Reader contract and livelock no-progress
+	// consumers like io.ReadFull (e.g. the symlink target read).
+	if totalRead == 0 {
+		return 0, io.EOF
+	}
+
 	fd.mu.Lock()
 	fd.offset = offset
 	fd.mu.Unlock()
 
-	if totalRead == 0 && offset >= fileSize {
-		return 0, io.EOF
-	}
 	return totalRead, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/ProtonMail/go-proton-api"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -930,4 +931,126 @@ func TestFDConcurrentCloseWithWrite(t *testing.T) {
 
 	wg.Wait()
 	<-sawClosed
+}
+
+// ---------------------------------------------------------------------------
+// Regression: symlink READLINK livelock (encrypted-vs-plaintext size mismatch)
+// ---------------------------------------------------------------------------
+
+// newMismatchedFD builds a read-mode FD backed by a single encrypted block
+// whose decrypted plaintext is len(plaintext) bytes, but whose reported
+// fileSize is deliberately larger. This mimics the live-stat observation
+// where a symlink's ActiveRevision.Size is the encrypted on-disk size (54)
+// while the decrypted target is small (3 bytes) — the exact condition that
+// livelocked the READLINK handler when io.ReadFull spun on (0, nil).
+func newMismatchedFD(t testing.TB, plaintext []byte, fileSize int64) *FileDescriptor {
+	t.Helper()
+
+	sessionKey, err := crypto.GenerateSessionKey()
+	if err != nil {
+		t.Fatalf("GenerateSessionKey: %v", err)
+	}
+
+	encrypted, err := sessionKey.Encrypt(crypto.NewPlainMessage(plaintext))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	store := &memBlockStore{blocks: map[int][]byte{1: encrypted}} // 1-based index
+	blocks := []proton.Block{{BareURL: "https://test/block/0", Token: "token-0"}}
+
+	return &FileDescriptor{
+		linkID:     "test-link",
+		sessionKey: sessionKey,
+		blocks:     blocks,
+		fileSize:   fileSize,
+		mode:       fdRead,
+		store:      store,
+	}
+}
+
+// TestFDReadTerminatesOnSizeMismatch is a regression test for the symlink
+// READLINK livelock. When the FD's reported fileSize (54) exceeds the
+// decrypted content (3 bytes), Read must still terminate at EOF rather than
+// returning an endless stream of (0, nil). Before the fix, io.ReadAll (like
+// io.ReadFull in the symlink path) spun forever here. The drain runs in a
+// goroutine guarded by a timeout so a regression surfaces as a test failure
+// instead of hanging the whole test binary.
+func TestFDReadTerminatesOnSizeMismatch(t *testing.T) {
+	fd := newMismatchedFD(t, []byte("foo"), 54)
+
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(fd)
+		done <- result{data: data, err: err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("io.ReadAll: %v", r.err)
+		}
+		if !bytes.Equal(r.data, []byte("foo")) {
+			t.Fatalf("io.ReadAll = %q, want %q", r.data, "foo")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("io.ReadAll did not terminate: FD.Read livelocked (size-mismatch regression)")
+	}
+}
+
+// TestFDReadReturnsEOFAfterContent asserts the io.Reader contract at the heart
+// of the livelock fix: once the decrypted content is consumed, the next Read
+// returns (0, io.EOF), never (0, nil).
+func TestFDReadReturnsEOFAfterContent(t *testing.T) {
+	fd := newMismatchedFD(t, []byte("foo"), 54)
+
+	buf := make([]byte, 8)
+	n, err := fd.Read(buf)
+	if err != nil {
+		t.Fatalf("first Read: %v", err)
+	}
+	if !bytes.Equal(buf[:n], []byte("foo")) {
+		t.Fatalf("first Read = %q, want %q", buf[:n], "foo")
+	}
+
+	n, err = fd.Read(buf)
+	if n != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("second Read = (%d, %v), want (0, io.EOF)", n, err)
+	}
+}
+
+// TestReadSymlinkTargetSizeMismatch drives the split-out bounded read over a
+// FileDescriptor whose reported fileSize (54) exceeds its 3-byte target,
+// reproducing the READLINK livelock end to end at the api/drive layer. It must
+// return the verbatim target promptly — the timeout guard converts a
+// regression into a failure rather than an indefinite hang. readSymlinkTarget
+// now uses single-pass ReadAt, so the loop cannot spin.
+func TestReadSymlinkTargetSizeMismatch(t *testing.T) {
+	fd := newMismatchedFD(t, []byte("foo"), 54)
+
+	type result struct {
+		target string
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		target, err := readSymlinkTarget(fd, "test-link")
+		done <- result{target: target, err: err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("readSymlinkTarget: %v", r.err)
+		}
+		if r.target != "foo" {
+			t.Fatalf("readSymlinkTarget = %q, want %q", r.target, "foo")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("readSymlinkTarget did not terminate: READLINK livelock regression")
+	}
 }
