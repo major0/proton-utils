@@ -5,6 +5,7 @@ package drive
 import (
 	"context"
 	"errors"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"os"
@@ -31,6 +32,29 @@ var (
 	_ fusemount.NodeForgetter = (*LinkDirNode)(nil)
 	_ fusemount.NodeForgetter = (*ShareDirNode)(nil)
 )
+
+// Compile-time assertions that the drive nodes expose a stable inode number
+// through the InodeNumber method the dispatch layer type-asserts on.
+var (
+	_ interface{ InodeNumber() uint64 } = (*FileNode)(nil)
+	_ interface{ InodeNumber() uint64 } = (*LinkDirNode)(nil)
+	_ interface{ InodeNumber() uint64 } = (*ShareDirNode)(nil)
+)
+
+// inodeFromLinkID derives a stable FUSE inode number from a LinkID. The
+// FNV-64a hash is deterministic, so the same LinkID always maps to the same
+// inode number across LOOKUP/READDIRPLUS. Ino 1 is reserved for the mount
+// root, so a hash of 1 is remapped to avoid collision. LinkID is an
+// encrypted-object identifier, not plaintext, so hashing it exposes nothing.
+func inodeFromLinkID(linkID string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(linkID))
+	ino := h.Sum64()
+	if ino == 1 {
+		ino = ^uint64(0) // avoid colliding with the reserved root inode
+	}
+	return ino
+}
 
 // newLinkDirNode constructs a folder node and registers it in the handler's
 // live-node registry (keyed by LinkID) so event-driven invalidation can find
@@ -153,6 +177,12 @@ var _ fusemount.NodeCreator = (*ShareDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*ShareDirNode)(nil)
 var _ fusemount.NodeRemover = (*ShareDirNode)(nil)
 var _ fusemount.NodeRenamer = (*ShareDirNode)(nil)
+
+// InodeNumber returns the stable inode number derived from the share root's
+// LinkID, so the same object keeps one inode across LOOKUP and READDIRPLUS.
+func (n *ShareDirNode) InodeNumber() uint64 {
+	return inodeFromLinkID(n.share.Link.LinkID())
+}
 
 // Getattr returns directory attributes for the share root.
 func (n *ShareDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -420,6 +450,12 @@ var _ fusemount.NodeCreator = (*LinkDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*LinkDirNode)(nil)
 var _ fusemount.NodeRemover = (*LinkDirNode)(nil)
 var _ fusemount.NodeRenamer = (*LinkDirNode)(nil)
+
+// InodeNumber returns the stable inode number derived from the folder's
+// LinkID, so the same object keeps one inode across LOOKUP and READDIRPLUS.
+func (n *LinkDirNode) InodeNumber() uint64 {
+	return inodeFromLinkID(n.link.LinkID())
+}
 
 // Getattr returns directory attributes for the folder.
 func (n *LinkDirNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
@@ -692,6 +728,12 @@ type fdHandle struct {
 
 // Compile-time interface assertion.
 var _ fusemount.FileHandle = (*fdHandle)(nil)
+
+// InodeNumber returns the stable inode number derived from the file's LinkID,
+// so the same object keeps one inode across LOOKUP and READDIRPLUS.
+func (n *FileNode) InodeNumber() uint64 {
+	return inodeFromLinkID(n.link.LinkID())
+}
 
 // Getattr returns file attributes including size and timestamps.
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {

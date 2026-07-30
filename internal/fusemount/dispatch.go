@@ -236,6 +236,24 @@ func (d *DispatchNode) OpendirHandle(ctx context.Context, _ uint32) (fh fs.FileH
 	return handle, 0, 0
 }
 
+// stableInoder is satisfied by drive nodes that can supply a stable inode
+// number derived from their canonical LinkID. The child-minting paths
+// type-assert to it so the same object keeps one inode number across
+// LOOKUP and READDIRPLUS. Nodes that don't implement it keep Ino == 0.
+type stableInoder interface {
+	InodeNumber() uint64
+}
+
+// childStableAttr builds the StableAttr for a child mint, setting Ino from
+// the node's stable identifier when available.
+func childStableAttr(n Node, mode uint32) fs.StableAttr {
+	sa := fs.StableAttr{Mode: mode}
+	if s, ok := n.(stableInoder); ok {
+		sa.Ino = s.InodeNumber()
+	}
+	return sa
+}
+
 // wrapChild wraps a child Node in a DispatchNode, populates EntryOut
 // attributes, and returns the go-fuse Inode. Both Lookup and
 // READDIRPLUS call this to ensure consistent StableAttr and attribute
@@ -264,7 +282,7 @@ func wrapChild(ctx context.Context, parent *DispatchNode, n Node, out *fuse.Entr
 		uid:     parent.uid,
 		gid:     parent.gid,
 	}
-	inode := parent.NewInode(ctx, childNode, fs.StableAttr{Mode: mode})
+	inode := parent.NewInode(ctx, childNode, childStableAttr(n, mode))
 	return inode, 0
 }
 
@@ -330,7 +348,7 @@ func (d *DispatchNode) Create(ctx context.Context, name string, flags uint32, mo
 	}
 
 	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
-	child := d.NewInode(ctx, childNode, fs.StableAttr{Mode: syscall.S_IFREG})
+	child := d.NewInode(ctx, childNode, childStableAttr(n, syscall.S_IFREG))
 	return child, &dispatchFileHandle{handle: handle}, 0, 0
 }
 
@@ -365,7 +383,7 @@ func (d *DispatchNode) Mkdir(ctx context.Context, name string, mode uint32, _ *f
 	}
 
 	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
-	child := d.NewInode(ctx, childNode, fs.StableAttr{Mode: syscall.S_IFDIR})
+	child := d.NewInode(ctx, childNode, childStableAttr(n, syscall.S_IFDIR))
 	return child, 0
 }
 
