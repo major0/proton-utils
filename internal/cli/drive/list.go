@@ -52,8 +52,9 @@ const (
 // is resolved once at collection time via EntryName() and reused for
 // filtering, sorting, and display — avoiding repeated decryption.
 type listEntry struct {
-	entry drive.DirEntry
-	name  string // resolved display name
+	entry  drive.DirEntry
+	name   string // resolved display name
+	target string // symlink target (long format only; empty if not a symlink or unreadable)
 }
 
 type listOpts struct {
@@ -69,6 +70,7 @@ type listOpts struct {
 	trash     bool
 	classify  bool
 	inode     bool
+	noDeref   bool              // -d/--no-dereference: operate on the symlink, not its target
 	shortIDs  map[string]string // full LinkID → short display ID; nil = use full IDs
 }
 
@@ -79,6 +81,10 @@ var listFlags struct {
 	fullTime, trash, classify, inode              bool
 	format, sortWord, timeStyle, color            string
 }
+
+// listNoDeref backs the -d/--no-dereference flag. It is kept out of the
+// listFlags struct so its anonymous type (referenced by tests) stays stable.
+var listNoDeref bool
 
 var driveListCmd = &cobra.Command{
 	Use:     "list [options] [<path> ...]",
@@ -111,6 +117,7 @@ func init() {
 	cli.BoolFlag(f, &listFlags.trash, "trash", false, "Show only trashed items")
 	cli.BoolFlagP(f, &listFlags.classify, "classify", "F", false, "Append indicator (/ for directories) to entries")
 	cli.BoolFlagP(f, &listFlags.inode, "inode", "i", false, "Print link ID for each entry")
+	cli.BoolFlagP(f, &listNoDeref, "no-dereference", "d", false, "List symlinks themselves, not their targets")
 }
 
 func resolveOpts() (listOpts, error) {
@@ -119,6 +126,7 @@ func resolveOpts() (listOpts, error) {
 		human: listFlags.human, recursive: listFlags.recursive,
 		reverse: listFlags.reverse, trash: listFlags.trash,
 		classify: listFlags.classify, inode: listFlags.inode,
+		noDeref: listNoDeref,
 	}
 
 	if term.IsTerminal(int(os.Stdout.Fd())) { //nolint:gosec
@@ -376,11 +384,16 @@ func formatSize(size int64, opts listOpts) string {
 	return fmt.Sprintf("%d", size)
 }
 
-// formatMode returns the permission string for a link. If the link has a
-// non-zero Mode in its XAttr, that value is used. Otherwise defaults are
-// applied: 0700 for directories, 0600 for files (matching FUSE defaults).
-// The returned string omits the leading type character (e.g. "rwx------").
+// formatMode returns the full 10-character mode string for a link, including
+// the leading type character: 'l' for a symlink, 'd' for a directory, '-' for
+// a regular file. A symlink always renders "lrwxrwxrwx" (0777), matching ls.
+// For other links, if the XAttr carries a non-zero Mode that value is used;
+// otherwise defaults apply: 0700 for directories, 0600 for files (matching
+// FUSE defaults).
 func formatMode(link *drive.Link) string {
+	if link.IsSymlink() {
+		return "l" + os.FileMode(0777).String()[1:] // "lrwxrwxrwx"
+	}
 	mode := link.Mode()
 	if mode == 0 {
 		if link.IsDir() {
@@ -389,7 +402,8 @@ func formatMode(link *drive.Link) string {
 			mode = 0600
 		}
 	}
-	return os.FileMode(mode).String()[1:] // strip the leading type char
+	// typeChar supplies the leading 'd'/'-'; the permission bits follow.
+	return string(typeChar(link.Type())) + os.FileMode(mode).String()[1:]
 }
 
 func formatTimestamp(epoch int64, style timeStyle) string {
@@ -465,14 +479,41 @@ func printLong(e listEntry, opts listOpts) {
 	if opts.inode {
 		prefix = fmt.Sprintf("%s ", displayID(l.LinkID(), opts))
 	}
-	fmt.Printf("%s%c%-9s %8s %s %s\n",
+	arrow := ""
+	if e.target != "" {
+		arrow = " -> " + e.target
+	}
+	fmt.Printf("%s%-10s %8s %s %s%s\n",
 		prefix,
-		typeChar(l.Type()),
 		formatMode(l),
 		formatSize(l.Size(), opts),
 		formatTimestamp(l.ModifyTime(), opts.timeStyle),
 		colorName(e.name, l, opts.color, opts.classify),
+		arrow,
 	)
+}
+
+// resolveSymlinkTargets fills each symlink entry's target so the long listing
+// can render "name -> target". It only runs for the long format (the arrow is
+// a long-format detail). Reading the target operates on the symlink itself
+// (readlink semantics) and never follows it, so it is unaffected by
+// --no-dereference. A target that cannot be read degrades gracefully to no
+// arrow, matching the listing's existing error tolerance.
+func resolveSymlinkTargets(ctx context.Context, dc *drive.Client, entries []listEntry, opts listOpts) {
+	if opts.format != formatLong {
+		return
+	}
+	for i := range entries {
+		l := entries[i].entry.Link
+		if !l.IsSymlink() {
+			continue
+		}
+		target, err := dc.ReadSymlinkTarget(ctx, l)
+		if err != nil {
+			continue // degrade gracefully: render the name without an arrow
+		}
+		entries[i].target = target
+	}
 }
 
 func printEntries(entries []listEntry, opts listOpts) {
@@ -564,7 +605,7 @@ func printEntryColumns(entries []listEntry, across bool, opts listOpts) {
 	}
 }
 
-func listRecursive(ctx context.Context, prefix string, entries []listEntry, opts listOpts) error {
+func listRecursive(ctx context.Context, dc *drive.Client, prefix string, entries []listEntry, opts listOpts) error {
 	for _, e := range entries {
 		l := e.entry.Link
 		if l.Type() != proton.LinkTypeFolder {
@@ -579,11 +620,12 @@ func listRecursive(ctx context.Context, prefix string, entries []listEntry, opts
 
 		children = filterEntries(children, opts)
 		sortEntries(children, opts)
+		resolveSymlinkTargets(ctx, dc, children, opts)
 
 		fmt.Printf("\n%s:\n", prefix+e.name)
 		printEntries(children, opts)
 
-		if err := listRecursive(ctx, path, children, opts); err != nil {
+		if err := listRecursive(ctx, dc, path, children, opts); err != nil {
 			return err
 		}
 	}
@@ -609,7 +651,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	slog.Debug("drive.list", "argCount", len(args))
+	slog.Debug("drive.list", "argCount", len(args), "noDeref", opts.noDeref)
 
 	entries, err := resolveEntries(ctx, dc, args, opts)
 	if err != nil {
@@ -618,6 +660,7 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	entries = filterEntries(entries, opts)
 	sortEntries(entries, opts)
+	resolveSymlinkTargets(ctx, dc, entries, opts)
 
 	// Compute short IDs for inode display when not verbose.
 	if opts.inode && rc.Verbose < 1 {
@@ -631,7 +674,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	printEntries(entries, opts)
 
 	if opts.recursive {
-		if err := listRecursive(ctx, "", entries, opts); err != nil {
+		if err := listRecursive(ctx, dc, "", entries, opts); err != nil {
 			return err
 		}
 	}

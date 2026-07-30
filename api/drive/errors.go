@@ -12,6 +12,10 @@ var (
 	ErrNotEmpty = errors.New("directory not empty")
 	// ErrInvalidPath indicates that the provided path is malformed.
 	ErrInvalidPath = errors.New("invalid path")
+	// ErrSymlinkLoop indicates that symlink resolution exceeded the maximum
+	// follow depth (maxSymlinkDepth), signalling a loop. Callers map this to
+	// ELOOP.
+	ErrSymlinkLoop = errors.New("too many levels of symbolic links")
 	// ErrShareURLExists indicates that a ShareURL already exists for the share.
 	ErrShareURLExists = errors.New("drive: share URL already exists")
 	// ErrNoShareURL indicates that no ShareURL exists for the share.

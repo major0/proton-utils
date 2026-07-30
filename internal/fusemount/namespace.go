@@ -117,6 +117,19 @@ type NodeRenamer interface {
 	Rename(ctx context.Context, oldName string, newParent Node, newName string) syscall.Errno
 }
 
+// NodeReadlinker indicates the node is a symlink whose target can be read.
+// Readlink returns the verbatim target string as bytes (no resolution — the
+// kernel follows for the FUSE mount).
+type NodeReadlinker interface {
+	Readlink(ctx context.Context) ([]byte, syscall.Errno)
+}
+
+// NodeSymlinker indicates the handler (a directory) supports creating a symlink
+// child. Symlink stores target verbatim under name and returns the child node.
+type NodeSymlinker interface {
+	Symlink(ctx context.Context, target, name string) (Node, syscall.Errno)
+}
+
 // SetattrValid bitmask constants.
 const (
 	SetattrMode  uint32 = 1 << 0

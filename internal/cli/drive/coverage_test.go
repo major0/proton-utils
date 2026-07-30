@@ -1538,7 +1538,7 @@ func TestListRecursive(t *testing.T) {
 	os.Stdout = w
 
 	ctx := context.Background()
-	err := listRecursive(ctx, "", entries, listOpts{})
+	err := listRecursive(ctx, nil, "", entries, listOpts{})
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -1621,7 +1621,7 @@ func TestListRecursiveEmpty(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err := listRecursive(ctx, "", entries, listOpts{})
+	err := listRecursive(ctx, nil, "", entries, listOpts{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1659,7 +1659,7 @@ func TestListRecursiveNested(t *testing.T) {
 	os.Stdout = w
 
 	ctx := context.Background()
-	err := listRecursive(ctx, "", entries, listOpts{})
+	err := listRecursive(ctx, nil, "", entries, listOpts{})
 
 	_ = w.Close()
 	os.Stdout = oldStdout
@@ -1706,7 +1706,7 @@ func TestListRecursiveWithFilter(t *testing.T) {
 	os.Stdout = w
 
 	ctx := context.Background()
-	err := listRecursive(ctx, "prefix/", entries, listOpts{
+	err := listRecursive(ctx, nil, "prefix/", entries, listOpts{
 		sortBy:  sortName,
 		reverse: true,
 	})
@@ -2196,7 +2196,7 @@ func TestListRecursiveCollectError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err := listRecursive(ctx, "", entries, listOpts{})
+	err := listRecursive(ctx, nil, "", entries, listOpts{})
 	if err == nil {
 		t.Fatal("expected error")
 	}

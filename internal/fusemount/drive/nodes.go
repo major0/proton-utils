@@ -177,6 +177,7 @@ var _ fusemount.NodeCreator = (*ShareDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*ShareDirNode)(nil)
 var _ fusemount.NodeRemover = (*ShareDirNode)(nil)
 var _ fusemount.NodeRenamer = (*ShareDirNode)(nil)
+var _ fusemount.NodeSymlinker = (*ShareDirNode)(nil)
 
 // InodeNumber returns the stable inode number derived from the share root's
 // LinkID, so the same object keeps one inode across LOOKUP and READDIRPLUS.
@@ -271,6 +272,29 @@ func (n *ShareDirNode) Mkdir(_ context.Context, name string, _ uint32) (fusemoun
 	n.invalidateChildren()
 
 	return newLinkDirNode(newLink, n.client, n.handler), 0
+}
+
+// Symlink creates a symlink in the share's root directory. The target is
+// stored verbatim (no normalization, no existence check — dangling symlinks
+// are valid). An empty target maps to EINVAL. The custom NodeSymlinker
+// signature takes (target, name) in that order.
+func (n *ShareDirNode) Symlink(_ context.Context, target, name string) (fusemount.Node, syscall.Errno) {
+	newLink, err := n.client.CreateSymlink(context.Background(), n.share, n.share.Link, name, target)
+	if err != nil {
+		if errors.Is(err, drive.ErrFileNameExist) {
+			return nil, syscall.EEXIST
+		}
+		if errors.Is(err, syscall.EINVAL) {
+			return nil, syscall.EINVAL
+		}
+		slog.Debug("ShareDirNode.Symlink: failed", "shareID", n.share.Metadata().ShareID, "error", err)
+		return nil, syscall.EIO
+	}
+
+	// Invalidate children cache — directory listing is now stale.
+	n.invalidateChildren()
+
+	return &FileNode{link: newLink, client: n.client}, 0
 }
 
 // Lookup finds a child by name. Uses the retained children map from the
@@ -450,6 +474,7 @@ var _ fusemount.NodeCreator = (*LinkDirNode)(nil)
 var _ fusemount.NodeMkdirer = (*LinkDirNode)(nil)
 var _ fusemount.NodeRemover = (*LinkDirNode)(nil)
 var _ fusemount.NodeRenamer = (*LinkDirNode)(nil)
+var _ fusemount.NodeSymlinker = (*LinkDirNode)(nil)
 
 // InodeNumber returns the stable inode number derived from the folder's
 // LinkID, so the same object keeps one inode across LOOKUP and READDIRPLUS.
@@ -684,13 +709,43 @@ func (n *LinkDirNode) Mkdir(_ context.Context, name string, _ uint32) (fusemount
 	return newLinkDirNode(newLink, n.client, n.handler), 0
 }
 
+// Symlink creates a symlink in this directory. The target is stored verbatim
+// (no normalization, no existence check — dangling symlinks are valid). An
+// empty target maps to EINVAL. The custom NodeSymlinker signature takes
+// (target, name) in that order.
+func (n *LinkDirNode) Symlink(_ context.Context, target, name string) (fusemount.Node, syscall.Errno) {
+	share := n.link.Share()
+	newLink, err := n.client.CreateSymlink(context.Background(), share, n.link, name, target)
+	if err != nil {
+		if errors.Is(err, drive.ErrFileNameExist) {
+			return nil, syscall.EEXIST
+		}
+		if errors.Is(err, syscall.EINVAL) {
+			return nil, syscall.EINVAL
+		}
+		slog.Debug("LinkDirNode.Symlink: failed", "linkID", n.link.LinkID(), "error", err)
+		return nil, syscall.EIO
+	}
+
+	// Invalidate children cache — directory listing is now stale.
+	n.invalidateChildren()
+
+	return &FileNode{link: newLink, client: n.client}, 0
+}
+
 // linkMode returns the FUSE mode for a link based on its type.
-// Directories use 0700 (owner rwx). Files use 0600 (owner rw).
+// Directories use 0700 (owner rwx). Files use 0600 (owner rw). A file-type
+// link that resolves as a symlink is typed S_IFLNK | 0777 so the child inode
+// minted from this mode (via wrapChild before NewInode) is typed as a symlink
+// — the type is fixed at inode creation, so IsSymlink must resolve here.
 // Group/other bits are cosmetic — DispatchNode.checkAccess enforces
 // UID-gated access at the FUSE layer regardless of permission bits.
 func linkMode(l *drive.Link) uint32 {
 	if l.Type() == proton.LinkTypeFolder {
 		return syscall.S_IFDIR | 0700
+	}
+	if l.IsSymlink() {
+		return syscall.S_IFLNK | 0777
 	}
 	return syscall.S_IFREG | 0600
 }
@@ -720,6 +775,7 @@ var _ fusemount.NodeFsyncer = (*FileNode)(nil)
 var _ fusemount.NodeFlusher = (*FileNode)(nil)
 var _ fusemount.NodeReleaser = (*FileNode)(nil)
 var _ fusemount.NodeSetattrer = (*FileNode)(nil)
+var _ fusemount.NodeReadlinker = (*FileNode)(nil)
 
 // fdHandle wraps a *drive.FileDescriptor as a fusemount.FileHandle.
 type fdHandle struct {
@@ -735,8 +791,23 @@ func (n *FileNode) InodeNumber() uint64 {
 	return inodeFromLinkID(n.link.LinkID())
 }
 
-// Getattr returns file attributes including size and timestamps.
+// Getattr returns file attributes including size and timestamps. A symlink
+// reports S_IFLNK | 0777 with Size = len(target) (Link.Size == Common.Size ==
+// target byte length). IsSymlink resolves synchronously here so wrapChild
+// types the child inode S_IFLNK before NewInode — the inode type is fixed at
+// creation and cannot be retyped later.
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
+	if n.link.IsSymlink() {
+		//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
+		return fusemount.Attr{
+			Mode:  syscall.S_IFLNK | 0777,
+			Size:  uint64(n.link.Size()),
+			Nlink: 1,
+			Mtime: uint64(n.link.ModifyTime()),
+			Ctime: uint64(n.link.CreateTime()),
+		}, 0
+	}
+
 	mode := uint32(0600) // default
 	if m := n.link.Mode(); m != 0 {
 		mode = m & 0o7777 // mask to permission bits only
@@ -750,6 +821,23 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 		Mtime: uint64(n.link.ModifyTime()),
 		Ctime: uint64(n.link.CreateTime()),
 	}, 0
+}
+
+// Readlink returns the verbatim symlink target as bytes by reading the link's
+// content (bounded to PATH_MAX) via ReadSymlinkTarget. No resolution happens
+// here — the kernel follows the target for the FUSE mount. A non-symlink
+// returns EINVAL, matching readlink(2) on a regular file; any other read
+// failure maps to EIO. Reading a dangling symlink succeeds.
+func (n *FileNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
+	target, err := n.client.ReadSymlinkTarget(context.Background(), n.link)
+	if err != nil {
+		if errors.Is(err, drive.ErrNotSymlink) {
+			return nil, syscall.EINVAL
+		}
+		slog.Debug("FileNode.Readlink: failed", "linkID", n.link.LinkID(), "error", err)
+		return nil, syscall.EIO
+	}
+	return []byte(target), 0
 }
 
 // Setattr handles truncate (via open write FD). Chmod and utimes are

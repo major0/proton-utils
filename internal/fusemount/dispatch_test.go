@@ -637,3 +637,198 @@ func TestDispatchNodeRelease_NilNode(t *testing.T) {
 		t.Errorf("Release on nil node returned errno %d, want 0", errno)
 	}
 }
+
+// --- Task 4.5: symlink dispatch (Readlink / Symlink) ---
+
+// mockReadlinkNode implements Node + NodeReadlinker for testing the Readlink
+// delegation path. target/errno are returned verbatim from Readlink.
+type mockReadlinkNode struct {
+	attr   Attr
+	target []byte
+	errno  syscall.Errno
+}
+
+func (m *mockReadlinkNode) Getattr(_ context.Context) (Attr, syscall.Errno) {
+	return m.attr, 0
+}
+
+func (m *mockReadlinkNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
+	return m.target, m.errno
+}
+
+// mockSymlinkHandler implements NamespaceHandler + NodeSymlinker. It records
+// the (target, name) it was called with and returns a configurable child/errno.
+type mockSymlinkHandler struct {
+	mockHandler
+	gotTarget string
+	gotName   string
+	child     Node
+	errno     syscall.Errno
+}
+
+func (m *mockSymlinkHandler) Symlink(_ context.Context, target, name string) (Node, syscall.Errno) {
+	m.gotTarget = target
+	m.gotName = name
+	return m.child, m.errno
+}
+
+// mockSymlinkDirNode implements DirNode + NodeSymlinker for the child-node
+// delegation path. It records the (target, name) and returns child/errno.
+type mockSymlinkDirNode struct {
+	mockDirNode
+	gotTarget string
+	gotName   string
+	child     Node
+	errno     syscall.Errno
+}
+
+func (m *mockSymlinkDirNode) Symlink(_ context.Context, target, name string) (Node, syscall.Errno) {
+	m.gotTarget = target
+	m.gotName = name
+	return m.child, m.errno
+}
+
+func TestDispatchNodeReadlink_Delegates(t *testing.T) {
+	const want = "../lib/libfoo.so.1"
+	h := &mockHandler{}
+	n := &mockReadlinkNode{attr: Attr{Mode: syscall.S_IFLNK | 0777}, target: []byte(want)}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	got, errno := d.Readlink(context.Background())
+	if errno != 0 {
+		t.Fatalf("Readlink returned errno %d, want 0", errno)
+	}
+	if string(got) != want {
+		t.Errorf("Readlink target = %q, want %q", got, want)
+	}
+}
+
+func TestDispatchNodeReadlink_NonReadlinker_ReturnsEINVAL(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	_, errno := d.Readlink(context.Background())
+	if errno != syscall.EINVAL {
+		t.Errorf("Readlink on non-NodeReadlinker node returned errno %d, want EINVAL (%d)", errno, syscall.EINVAL)
+	}
+}
+
+func TestDispatchNodeReadlink_Root_ReturnsEINVAL(t *testing.T) {
+	h := &mockHandler{}
+	d := &DispatchNode{handler: h, isRoot: true}
+
+	_, errno := d.Readlink(context.Background())
+	if errno != syscall.EINVAL {
+		t.Errorf("Readlink on namespace root returned errno %d, want EINVAL (%d)", errno, syscall.EINVAL)
+	}
+}
+
+func TestDispatchNodeReadlink_NilNode_ReturnsEINVAL(t *testing.T) {
+	h := &mockHandler{}
+	d := &DispatchNode{handler: h, node: nil, isRoot: false}
+
+	_, errno := d.Readlink(context.Background())
+	if errno != syscall.EINVAL {
+		t.Errorf("Readlink on nil node returned errno %d, want EINVAL (%d)", errno, syscall.EINVAL)
+	}
+}
+
+func TestDispatchNodeSymlink_NonSymlinkerHandler_ReturnsEPERM(t *testing.T) {
+	h := &mockHandler{}
+	d := &DispatchNode{handler: h, isRoot: true}
+
+	_, errno := d.Symlink(context.Background(), "target", "name", &fuse.EntryOut{})
+	if errno != syscall.EPERM {
+		t.Errorf("Symlink on handler without NodeSymlinker returned errno %d, want EPERM (%d)", errno, syscall.EPERM)
+	}
+}
+
+func TestDispatchNodeSymlink_NonSymlinkerNode_ReturnsEPERM(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockNode{attr: Attr{Mode: syscall.S_IFREG | 0644}}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	_, errno := d.Symlink(context.Background(), "target", "name", &fuse.EntryOut{})
+	if errno != syscall.EPERM {
+		t.Errorf("Symlink on node without NodeSymlinker returned errno %d, want EPERM (%d)", errno, syscall.EPERM)
+	}
+}
+
+// TestDispatchNodeSymlink_DelegatesToNode verifies the child-node delegation
+// path: a node implementing NodeSymlinker is called with the verbatim
+// (target, name). The mock returns a non-EPERM errno (EEXIST) so the method
+// returns before NewInode — confirming the capability was detected and the
+// node path taken without needing a mounted FUSE tree.
+func TestDispatchNodeSymlink_DelegatesToNode(t *testing.T) {
+	h := &mockHandler{}
+	n := &mockSymlinkDirNode{errno: syscall.EEXIST}
+	d := &DispatchNode{handler: h, node: n, isRoot: false}
+
+	_, errno := d.Symlink(context.Background(), "the-target", "the-name", &fuse.EntryOut{})
+	if errno != syscall.EEXIST {
+		t.Fatalf("Symlink delegated errno %d, want EEXIST (%d)", errno, syscall.EEXIST)
+	}
+	if n.gotTarget != "the-target" {
+		t.Errorf("delegated target = %q, want %q", n.gotTarget, "the-target")
+	}
+	if n.gotName != "the-name" {
+		t.Errorf("delegated name = %q, want %q", n.gotName, "the-name")
+	}
+}
+
+// TestDispatchNodeSymlink_DelegatesAndTypesInodeS_IFLNK verifies the
+// handler-delegation success path over an in-process go-fuse bridge: the
+// handler's Symlink is called verbatim, the child inode is minted with
+// StableAttr.Mode == S_IFLNK, and EntryOut reflects the symlink attrs.
+func TestDispatchNodeSymlink_DelegatesAndTypesInodeS_IFLNK(t *testing.T) {
+	child := &mockNode{attr: Attr{Mode: syscall.S_IFLNK | 0777, Size: 5, Nlink: 1}}
+	h := &mockSymlinkHandler{child: child}
+	root := mountedRoot(h, 1, 1)
+
+	var out fuse.EntryOut
+	inode, errno := root.Symlink(context.Background(), "world", "link", &out)
+	if errno != 0 {
+		t.Fatalf("Symlink returned errno %d, want 0", errno)
+	}
+	if inode == nil {
+		t.Fatal("Symlink returned nil inode")
+	}
+	if inode.StableAttr().Mode != syscall.S_IFLNK {
+		t.Errorf("child inode StableAttr.Mode = %o, want S_IFLNK (%o)", inode.StableAttr().Mode, syscall.S_IFLNK)
+	}
+	if out.Mode != syscall.S_IFLNK|0777 {
+		t.Errorf("out.Mode = %o, want %o", out.Mode, syscall.S_IFLNK|0777)
+	}
+	if h.gotTarget != "world" || h.gotName != "link" {
+		t.Errorf("delegated (target,name) = (%q,%q), want (%q,%q)", h.gotTarget, h.gotName, "world", "link")
+	}
+}
+
+// TestWrapChild_SymlinkChildTypedS_IFLNK verifies Requirement 4.3: a symlink
+// child (Getattr reports S_IFLNK|0777) minted through the Lookup/wrapChild
+// path carries StableAttr.Mode == S_IFLNK — the inode type is fixed at
+// NewInode from the synchronously-resolved Getattr, not deferred.
+func TestWrapChild_SymlinkChildTypedS_IFLNK(t *testing.T) {
+	child := &mockNode{attr: Attr{Mode: syscall.S_IFLNK | 0777, Size: 13, Nlink: 1}}
+	h := &mockHandler{nodes: map[string]Node{"link": child}}
+	root := mountedRoot(h, 1, 1)
+
+	var out fuse.EntryOut
+	inode, errno := root.Lookup(context.Background(), "link", &out)
+	if errno != 0 {
+		t.Fatalf("Lookup returned errno %d, want 0", errno)
+	}
+	if inode == nil {
+		t.Fatal("Lookup returned nil inode")
+	}
+	if inode.StableAttr().Mode != syscall.S_IFLNK {
+		t.Errorf("symlink child inode StableAttr.Mode = %o, want S_IFLNK (%o)", inode.StableAttr().Mode, syscall.S_IFLNK)
+	}
+	if out.Mode != syscall.S_IFLNK|0777 {
+		t.Errorf("out.Mode = %o, want %o", out.Mode, syscall.S_IFLNK|0777)
+	}
+	if out.Size != 13 {
+		t.Errorf("out.Size = %d, want 13", out.Size)
+	}
+}

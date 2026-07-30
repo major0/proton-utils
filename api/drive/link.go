@@ -441,6 +441,39 @@ func (l *Link) Mode() uint32 {
 	return m.mode
 }
 
+// IsSymlink reports whether the link is a symlink — a file-type link whose
+// resolved POSIX XAttr section carries Symlink=true. Folder-type links are
+// never symlinks and short-circuit to false without any decryption.
+//
+// Detection sources the flag from the same lazy decryptXAttr path as Mode():
+// for file-type links it triggers the XAttr fetch gate, resolves the node
+// keyring, and reads PosixXAttr.Symlink from the decrypted POSIX section. A
+// nil *PosixXAttr (absent or malformed POSIX section) means "not a symlink".
+// The flag rides on the already-resolved POSIX section — no separate cache.
+//
+// The keyring is resolved BEFORE any cacheMu acquisition (KeyRing() takes
+// cacheMu.RLock internally; Go's RWMutex is not reentrant).
+func (l *Link) IsSymlink() bool {
+	// Only file-type links can be symlinks; folders short-circuit.
+	if l.protonLink.Type != proton.LinkTypeFile {
+		return false
+	}
+
+	// Trigger the fetch gate to populate the active revision XAttr,
+	// mirroring Mode()'s file-type path.
+	l.ensureXAttr()
+
+	// Resolve the node keyring, then decrypt the XAttr.
+	nodeKR, err := l.KeyRing()
+	if err != nil {
+		return false
+	}
+
+	// A nil POSIX section (absent/malformed) is not a symlink.
+	_, pfs := l.decryptXAttr(nodeKR)
+	return pfs != nil && pfs.Symlink
+}
+
 // InvalidateMeta clears the cached resolvedMeta and cachedStat so that
 // the next metadata accessor call re-resolves all fields from XAttr,
 // and the next Stat() call rebuilds FileInfo. Called by Chmod after

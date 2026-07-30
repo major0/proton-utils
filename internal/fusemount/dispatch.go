@@ -29,6 +29,8 @@ var _ = (fs.NodeFsyncer)((*DispatchNode)(nil))
 var _ = (fs.NodeUnlinker)((*DispatchNode)(nil))
 var _ = (fs.NodeRmdirer)((*DispatchNode)(nil))
 var _ = (fs.NodeRenamer)((*DispatchNode)(nil))
+var _ = (fs.NodeReadlinker)((*DispatchNode)(nil))
+var _ = (fs.NodeSymlinker)((*DispatchNode)(nil))
 var _ = (fs.NodeOnForgetter)((*DispatchNode)(nil))
 
 // DispatchNode bridges a namespace handler's Node to go-fuse's InodeEmbedder.
@@ -657,6 +659,83 @@ func (d *DispatchNode) Rename(ctx context.Context, name string, newParent fs.Ino
 	}
 
 	return renamer.Rename(ctx, name, newParentNode, newName)
+}
+
+// Readlink delegates to NodeReadlinker if the node supports it, returning the
+// verbatim symlink target as bytes. The kernel follows the target for the FUSE
+// mount — no resolution happens here. A non-symlink node (or root) returns
+// EINVAL, matching readlink(2) on a regular file.
+func (d *DispatchNode) Readlink(ctx context.Context) (target []byte, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler Readlink: %v\n%s", r, debug.Stack())
+			target = nil
+			errno = syscall.EIO
+		}
+	}()
+
+	if d.isRoot || d.node == nil {
+		return nil, syscall.EINVAL
+	}
+
+	readlinker, ok := d.node.(NodeReadlinker)
+	if !ok {
+		return nil, syscall.EINVAL
+	}
+
+	return readlinker.Readlink(ctx)
+}
+
+// Symlink delegates to NodeSymlinker if the handler supports it. The target is
+// stored verbatim (no interpretation — dangling targets are valid). The child
+// inode is typed S_IFLNK at creation so the kernel treats it as a symlink;
+// handlers that don't support symlink creation return EPERM.
+func (d *DispatchNode) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
+	if err := d.checkAccess(ctx); err != 0 {
+		return nil, err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler Symlink: %v\n%s", r, debug.Stack())
+			inode = nil
+			errno = syscall.EIO
+		}
+	}()
+
+	var tgt interface{}
+	if d.isRoot {
+		tgt = d.handler
+	} else {
+		tgt = d.node
+	}
+
+	symlinker, ok := tgt.(NodeSymlinker)
+	if !ok {
+		return nil, syscall.EPERM
+	}
+
+	n, errno := symlinker.Symlink(ctx, target, name)
+	if errno != 0 {
+		return nil, errno
+	}
+
+	if attr, aerr := n.Getattr(ctx); aerr == 0 {
+		out.Mode = attr.Mode
+		out.Size = attr.Size
+		out.Nlink = attr.Nlink
+		out.Mtime = attr.Mtime
+		out.Ctime = attr.Ctime
+		out.Atime = attr.Atime
+		out.Uid = d.uid
+		out.Gid = d.gid
+	}
+
+	childNode := &DispatchNode{handler: d.handler, node: n, isRoot: false, uid: d.uid, gid: d.gid}
+	child := d.NewInode(ctx, childNode, childStableAttr(n, syscall.S_IFLNK))
+	return child, 0
 }
 
 // OnForget is invoked by go-fuse when the kernel forgets this node's inode.

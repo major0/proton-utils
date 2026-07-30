@@ -196,7 +196,7 @@ func TestBuildRevisionXAttrPreservesSiblings_Property(t *testing.T) {
 		newBlocks := rapid.SliceOfN(rapid.Int64Range(0, 1<<20), 0, 5).Draw(t, "newBlocks")
 		newMode := rapid.Uint32().Draw(t, "newMode")
 
-		got := buildRevisionXAttr(prior, newMTime, newSize, newBlocks, newMode)
+		got := buildRevisionXAttr(prior, newMTime, newSize, newBlocks, newMode, false)
 
 		// Common reflects the NEW revision, never the stale prior.
 		if got.Common.ModificationTime != newMTime {
@@ -357,6 +357,94 @@ func TestPosixXAttrOmitEmpty_Property(t *testing.T) {
 		}
 		if len(x.Extra) != want {
 			t.Fatalf("Extra size = %d, want %d", len(x.Extra), want)
+		}
+	})
+}
+
+// TestPosixXAttrSymlinkRoundTrip_Property verifies Property 1 (POSIX marker
+// round-trip) of the protonfs-symlinks spec: for any PosixXAttr carrying
+// Symlink=true, a setPosixXAttr -> posixFromXAttr round-trip preserves the
+// Symlink flag (alongside an arbitrary Mode), while normal-file blobs — those
+// with Symlink absent — stay byte-identical:
+//
+//   - Symlink=true (any Mode) round-trips: the value read back equals the
+//     value written, and every pre-existing sibling section is preserved.
+//   - Symlink=false with Mode==0 is the normal-file case: setPosixXAttr is a
+//     no-op — no POSIX section is added and the blob is byte-identical.
+//   - Symlink=false with a non-zero Mode writes a POSIX section that carries
+//     no "Symlink" key (omitempty), so a normal file's POSIX section is
+//     byte-identical to the pre-symlink format.
+//
+// **Property 1: POSIX marker round-trip**
+// **Validates: Requirements 1.2**
+func TestPosixXAttrSymlinkRoundTrip_Property(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		siblings := genSiblingSections(t)
+
+		// Build the starting RevisionXAttr with the generated sibling sections.
+		x := &proton.RevisionXAttr{}
+		if len(siblings) > 0 {
+			x.Extra = make(map[string]json.RawMessage, len(siblings))
+			for k, v := range siblings {
+				x.Extra[k] = v
+			}
+		}
+
+		// Snapshot the canonicalized form of each sibling before the set op.
+		before := make(map[string]string, len(siblings))
+		for k, v := range siblings {
+			before[k] = canonicalizeJSON(t, v)
+		}
+
+		symlink := rapid.Bool().Draw(t, "symlink")
+		mode := rapid.Uint32Range(0, 0o7777).Draw(t, "mode")
+		pfs := PosixXAttr{Mode: mode, Symlink: symlink}
+		setPosixXAttr(x, pfs)
+
+		writesSection := symlink || mode != 0
+
+		if writesSection {
+			// Round-trip: the value read back must equal the value written,
+			// preserving Symlink (and Mode).
+			got := posixFromXAttr(x)
+			if got == nil {
+				t.Fatalf("posixFromXAttr returned nil after setPosixXAttr with %+v", pfs)
+				return
+			}
+			if *got != pfs {
+				t.Fatalf("round-trip mismatch: got %+v, want %+v", *got, pfs)
+			}
+
+			// Normal-file byte-identity: when Symlink is absent (false), the
+			// serialized POSIX section must not contain a "Symlink" key, so a
+			// normal file's blob matches the pre-symlink format exactly.
+			if !symlink {
+				var raw map[string]json.RawMessage
+				if err := json.Unmarshal(x.Extra[posixXAttrKey], &raw); err != nil {
+					t.Fatalf("unmarshal POSIX section: %v", err)
+				}
+				if _, ok := raw["Symlink"]; ok {
+					t.Fatalf("normal-file POSIX section carries a Symlink key: %s", x.Extra[posixXAttrKey])
+				}
+			}
+		} else {
+			// Normal file with no POSIX metadata: setPosixXAttr is a no-op —
+			// no POSIX key is added (byte-identical to a blob without POSIX).
+			if _, ok := x.Extra[posixXAttrKey]; ok {
+				t.Fatalf("normal-file setPosixXAttr added a POSIX section: %s", x.Extra[posixXAttrKey])
+			}
+		}
+
+		// Sibling preservation: every pre-existing section is byte-equivalent
+		// (canonicalized) to its pre-call value — nothing else is touched.
+		for k, wantCanon := range before {
+			raw, ok := x.Extra[k]
+			if !ok {
+				t.Fatalf("sibling section %q missing after setPosixXAttr", k)
+			}
+			if gotCanon := canonicalizeJSON(t, raw); gotCanon != wantCanon {
+				t.Fatalf("sibling %q changed: got %s, want %s", k, gotCanon, wantCanon)
+			}
 		}
 	})
 }

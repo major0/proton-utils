@@ -98,6 +98,12 @@ type Client struct {
 	// allowing tests to substitute a mock without network access.
 	eventFetcher driveEventFetcher
 
+	// symlinkTargetReader abstracts reading a symlink's verbatim target in
+	// the CLI resolver's follow path. Nil in production (the resolver calls
+	// ReadSymlinkTarget). Tests substitute a fake to exercise traversal and
+	// loop detection without the content-read (OpenFD/Session) path.
+	symlinkTargetReader func(ctx context.Context, l *Link) (string, error)
+
 	// invalidationHook, when set, is invoked with a parent LinkID whenever
 	// a child link is created or removed, so consumers (the FUSE
 	// DriveHandler) can refresh their own per-directory caches. Guarded by

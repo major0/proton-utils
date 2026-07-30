@@ -14,11 +14,13 @@ A command-line interface for [Proton][] services.
 ## Features
 
 - **[Proton Drive](docs/drive.md)** — full file management: ls, find,
-  cp, mv, mkdir, rm, share management, volume usage
+  cp, mv, mkdir, rm, ln/readlink (symbolic links), share management,
+  volume usage
 - **[Proton Lumo](docs/lumo.md)** — AI assistant: interactive chat,
   project spaces, and a local OpenAI-compatible API server
 - **[ProtonFS](docs/protonfs.md)** — per-user FUSE filesystem exposing
-  Proton Drive as a local directory tree (Linux)
+  Proton Drive as a local directory tree, including POSIX symbolic
+  links (Linux)
 - **Parallelism** — bounded worker pools with shared rate-limit
   throttling; concurrent directory traversal and block I/O
 - **Persistent Bearer sessions** — SRP authentication with automatic

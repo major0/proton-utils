@@ -29,6 +29,12 @@ type uploadParams struct {
 	sigAddr    string
 	unixMode   uint32
 
+	// symlink marks the committed revision as a symlink by setting
+	// PosixXAttr.Symlink = true in the POSIX section (the target lives in
+	// the single content block). Threaded like unixMode; when both apply
+	// they share one POSIX section.
+	symlink bool
+
 	// priorXAttr is the decoded XAttr of the file's previous active
 	// revision, used only on the overwrite/new-revision path so a commit
 	// preserves sibling sections (Media, Camera, Location, POSIX) written by
@@ -161,7 +167,7 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 	// other Proton clients (Media, Camera, Location, POSIX) survive the
 	// commit; for a brand-new file it is nil and the blob starts fresh.
 	modTime := time.Now().UTC().Format("2006-01-02T15:04:05-0700")
-	xAttr := buildRevisionXAttr(p.priorXAttr, modTime, totalSize, blockSizes, p.unixMode)
+	xAttr := buildRevisionXAttr(p.priorXAttr, modTime, totalSize, blockSizes, p.unixMode, p.symlink)
 
 	req := proton.UpdateRevisionReq{
 		State:             proton.RevisionStateActive,
@@ -200,7 +206,11 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 // POSIX section inherited from prior untouched — a mode-less commit must NOT
 // silently wipe a prior revision's POSIX metadata. A non-zero unixMode
 // replaces the POSIX section with the new mode (masked to its lower 12 bits).
-func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64, blockSizes []int64, unixMode uint32) *proton.RevisionXAttr {
+//
+// symlink marks the revision as a symlink (PosixXAttr.Symlink = true) — the
+// verbatim target lives in the single content block. It is threaded alongside
+// unixMode; when both apply they share one POSIX section.
+func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64, blockSizes []int64, unixMode uint32, symlink bool) *proton.RevisionXAttr {
 	x := &proton.RevisionXAttr{}
 
 	// Inherit sibling sections (and any prior POSIX) verbatim from the prior
@@ -220,9 +230,11 @@ func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64,
 		BlockSizes:       blockSizes,
 	}
 
-	// Apply the mode. Mode 0 is a no-op that preserves any inherited POSIX
-	// section (see doc comment); a non-zero mode replaces it.
-	setPosixXAttr(x, PosixXAttr{Mode: unixMode & 0o7777})
+	// Apply the POSIX section. A mode-and-symlink-less commit (Mode 0,
+	// Symlink false) marshals to "{}" so setPosixXAttr is a no-op that
+	// preserves any inherited POSIX section (see doc comment); a non-zero
+	// mode and/or the symlink marker replaces it.
+	setPosixXAttr(x, PosixXAttr{Mode: unixMode & 0o7777, Symlink: symlink})
 
 	return x
 }

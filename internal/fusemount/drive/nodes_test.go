@@ -214,3 +214,68 @@ func TestFileNode_Release_CloseError(t *testing.T) {
 		t.Fatalf("Release (second/idempotent): got errno %d, want 0", errno)
 	}
 }
+
+// --- Task 4.5: symlink FileNode (Getattr / Readlink / linkMode) ---
+
+// TestFileNode_Getattr_Symlink verifies Requirements 4.2/3.3: a symlink
+// FileNode's Getattr reports mode S_IFLNK|0777 and Size equal to the target
+// byte length (Link.Size == Common.Size == len(target)).
+func TestFileNode_Getattr_Symlink(t *testing.T) {
+	const target = "../lib/libfoo.so.1"
+	link, err := drive.NewTestSymlinkLink("mylink", target)
+	if err != nil {
+		t.Fatalf("NewTestSymlinkLink: %v", err)
+	}
+	node := &FileNode{link: link}
+
+	attr, errno := node.Getattr(context.Background())
+	if errno != 0 {
+		t.Fatalf("Getattr: got errno %d, want 0", errno)
+	}
+	if attr.Mode != syscall.S_IFLNK|0777 {
+		t.Errorf("Getattr Mode = %o, want S_IFLNK|0777 (%o)", attr.Mode, syscall.S_IFLNK|0777)
+	}
+	if attr.Size != uint64(len(target)) {
+		t.Errorf("Getattr Size = %d, want %d (len target)", attr.Size, len(target))
+	}
+}
+
+// TestFileNode_Readlink_NonSymlink_EINVAL verifies Requirement 3.3: Readlink
+// on a non-symlink returns EINVAL. IsSymlink() resolves false for a plain file
+// link, so ReadSymlinkTarget returns ErrNotSymlink (no content read) and
+// FileNode.Readlink maps it to EINVAL — hermetic, no live session.
+func TestFileNode_Readlink_NonSymlink_EINVAL(t *testing.T) {
+	link, err := drive.NewTestRegularFileLink("plain.txt", 42)
+	if err != nil {
+		t.Fatalf("NewTestRegularFileLink: %v", err)
+	}
+	node := &FileNode{link: link, client: &drive.Client{}}
+
+	_, errno := node.Readlink(context.Background())
+	if errno != syscall.EINVAL {
+		t.Errorf("Readlink(non-symlink): got errno %d, want EINVAL (%d)", errno, syscall.EINVAL)
+	}
+}
+
+// TestLinkMode_TypesSymlinkAndFile verifies that linkMode — the source of the
+// Readdir mode hint and the child inode's StableAttr.Mode via wrapChild —
+// types a resolved symlink child S_IFLNK|0777 and a plain file S_IFREG|0600.
+// This is the load-bearing detection that fixes the inode type at creation
+// (Requirements 4.3/4.4).
+func TestLinkMode_TypesSymlinkAndFile(t *testing.T) {
+	sym, err := drive.NewTestSymlinkLink("l", "target")
+	if err != nil {
+		t.Fatalf("NewTestSymlinkLink: %v", err)
+	}
+	if got := linkMode(sym); got != syscall.S_IFLNK|0777 {
+		t.Errorf("linkMode(symlink) = %o, want S_IFLNK|0777 (%o)", got, syscall.S_IFLNK|0777)
+	}
+
+	reg, err := drive.NewTestRegularFileLink("f", 10)
+	if err != nil {
+		t.Fatalf("NewTestRegularFileLink: %v", err)
+	}
+	if got := linkMode(reg); got != syscall.S_IFREG|0600 {
+		t.Errorf("linkMode(regular file) = %o, want S_IFREG|0600 (%o)", got, syscall.S_IFREG|0600)
+	}
+}
