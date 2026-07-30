@@ -69,23 +69,34 @@ func (l *Link) Readdir(ctx context.Context) <-chan DirEntry {
 		l.cacheMu.RUnlock()
 
 		if childIDs != nil {
+			// Resolve every child before emitting any. If a child was
+			// evicted mid-resolution (e.g. by a concurrent event
+			// invalidation calling deleteLink), the cache is stale: discard
+			// it and fall through to the API path WITHOUT having emitted a
+			// partial set. Emitting during resolution and then falling
+			// through would re-yield the already-sent entries from the API,
+			// duplicating them in the listing.
+			children := make([]*Link, 0, len(childIDs))
+			stale := false
 			for _, id := range childIDs {
 				child := l.resolver.GetLink(id)
 				if child == nil {
-					// Link evicted — invalidate cache and fall through to API.
 					l.cacheMu.Lock()
 					l.cachedChildIDs = nil
 					l.cacheMu.Unlock()
-					childIDs = nil
+					stale = true
 					break
 				}
-				select {
-				case ch <- DirEntry{Link: child}:
-				case <-ctx.Done():
-					return
-				}
+				children = append(children, child)
 			}
-			if childIDs != nil {
+			if !stale {
+				for _, child := range children {
+					select {
+					case ch <- DirEntry{Link: child}:
+					case <-ctx.Done():
+						return
+					}
+				}
 				return // all children yielded from cache
 			}
 		}

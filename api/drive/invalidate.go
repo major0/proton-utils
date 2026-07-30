@@ -24,6 +24,13 @@ func (c *Client) InvalidateLink(linkID, parentLinkID string, blockCount int) {
 	if blockCount > 0 {
 		c.blockStore.Invalidate(linkID, blockCount)
 	}
+	// Clear the parent's cached child listing on the retained Link object.
+	// The child was evicted above, so Readdir would fall through to the API
+	// anyway; clearing here makes the stale listing explicit and matches the
+	// local-mutation pattern (deleteLink + InvalidateChildren).
+	if parent := c.getLink(parentLinkID); parent != nil {
+		parent.InvalidateChildren()
+	}
 	c.fireInvalidationHook(parentLinkID)
 }
 
@@ -34,6 +41,15 @@ func (c *Client) InvalidateLink(linkID, parentLinkID string, blockCount int) {
 func (c *Client) InvalidateParent(parentLinkID string) {
 	if parentLinkID == "" {
 		return
+	}
+	// Clear the parent's cached child listing before deleting the table
+	// entry. The FUSE layer retains a direct reference to the parent *Link,
+	// so deleting the table entry alone does not refresh its cachedChildIDs;
+	// without this, a removed child lingers in the listing until the child
+	// link itself is evicted. This path does not evict the child, so the
+	// explicit clear is required (matches the mkdir/remove local pattern).
+	if parent := c.getLink(parentLinkID); parent != nil {
+		parent.InvalidateChildren()
 	}
 	c.deleteLink(parentLinkID)
 	c.eraseCacheEntry(parentLinkID)
