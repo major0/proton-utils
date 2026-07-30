@@ -98,6 +98,12 @@ type FileDescriptor struct {
 	// in the revision XAttr on commit. Zero means "don't store" (omitempty).
 	unixMode uint32
 
+	// priorXAttr carries the previous active revision's decoded XAttr on the
+	// overwrite path (nil for a brand-new file), so the commit preserves
+	// sibling sections written by other Proton clients. Set from
+	// FileHandle.PriorXAttr at construction.
+	priorXAttr *proton.RevisionXAttr
+
 	// isNew is true for FDs from CreateFD (a brand-new file whose initial
 	// draft revision must be committed even when empty, so `touch` produces
 	// a committed zero-byte file rather than a dangling draft). It is false
@@ -616,6 +622,7 @@ func newWriteFD(ctx context.Context, fh *FileHandle, store blockStore, session *
 		sigAddr:    fh.SigAddr,
 		verifyCode: fh.VerificationCode,
 		session:    session,
+		priorXAttr: fh.PriorXAttr,
 	}
 }
 
@@ -804,6 +811,7 @@ func (fd *FileDescriptor) uploadParams() uploadParams {
 		revisionID: fd.revisionID,
 		sigAddr:    fd.sigAddr,
 		unixMode:   fd.unixMode,
+		priorXAttr: fd.priorXAttr,
 	}
 }
 

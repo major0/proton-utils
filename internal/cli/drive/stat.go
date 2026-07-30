@@ -2,7 +2,9 @@ package driveCmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ProtonMail/go-proton-api"
@@ -101,11 +103,16 @@ func runStat(cmd *cobra.Command, args []string) error {
 					fmt.Printf("  XAttr: (nil)\n")
 				default:
 					fmt.Printf("\nDecrypted XAttr:\n")
-					fmt.Printf("  ModificationTime: %s\n", xattr.ModificationTime)
-					fmt.Printf("            Size: %d\n", xattr.Size)
-					fmt.Printf("      BlockSizes: %v\n", xattr.BlockSizes)
-					fmt.Printf("         Digests: %v\n", xattr.Digests)
-					fmt.Printf("            Mode: %04o (%d)\n", xattr.Mode, xattr.Mode)
+					fmt.Printf("  ModificationTime: %s\n", xattr.Common.ModificationTime)
+					fmt.Printf("            Size: %d\n", xattr.Common.Size)
+					fmt.Printf("      BlockSizes: %v\n", xattr.Common.BlockSizes)
+					fmt.Printf("         Digests: %v\n", xattr.Common.Digests)
+					// Mode migrated from Common to the POSIX section; other
+					// clients' sections live in Extra. Dump every preserved
+					// section verbatim (Link.Mode() below reports the mode).
+					for _, k := range sortedKeys(xattr.Extra) {
+						fmt.Printf("      Extra[%s]: %s\n", k, string(xattr.Extra[k]))
+					}
 				}
 			}
 		}
@@ -114,6 +121,17 @@ func runStat(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nLink.Mode(): %04o (%d)\n", link.Mode(), link.Mode())
 
 	return nil
+}
+
+// sortedKeys returns the keys of the Extra section map in ascending order so
+// the diagnostic XAttr dump is deterministic.
+func sortedKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func truncate(s string, n int) string {

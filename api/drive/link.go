@@ -140,30 +140,31 @@ func (l *Link) ModifyTime() int64 {
 	l.cacheMu.RUnlock()
 
 	// Resolve XAttr and keyring BEFORE acquiring cacheMu.Lock.
-	var xattr *proton.RevisionXAttrCommon
+	var common *proton.RevisionXAttrCommon
+	var pfs *PosixXAttr
 	if l.protonLink.Type == proton.LinkTypeFile {
 		l.ensureXAttr()
 		nodeKR, err := l.KeyRing()
 		if err == nil {
-			xattr = l.decryptXAttr(nodeKR)
+			common, pfs = l.decryptXAttr(nodeKR)
 		}
 	} else {
 		// Folder: decrypt link-level XAttr (no fetch needed).
 		nodeKR, err := l.KeyRing()
 		if err == nil {
-			xattr = l.decryptXAttr(nodeKR)
+			common, pfs = l.decryptXAttr(nodeKR)
 		}
 	}
 
 	// Build resolvedMeta with ALL fields.
-	m := l.buildResolvedMeta(xattr)
+	m := l.buildResolvedMeta(common, pfs)
 
 	// Cache store with double-checked locking. Do NOT cache fallback
 	// values for file-type links when the fetch is still retryable
 	// (Requirement 7.7) — allows subsequent calls to re-attempt the fetch.
 	l.cacheMu.Lock()
 	if l.meta == nil && l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
-		if xattr != nil || l.protonLink.Type != proton.LinkTypeFile || l.fetchDone {
+		if common != nil || l.protonLink.Type != proton.LinkTypeFile || l.fetchDone {
 			l.meta = m
 		}
 	}
@@ -189,30 +190,31 @@ func (l *Link) Size() int64 {
 	l.cacheMu.RUnlock()
 
 	// Resolve XAttr and keyring BEFORE acquiring cacheMu.Lock.
-	var xattr *proton.RevisionXAttrCommon
+	var common *proton.RevisionXAttrCommon
+	var pfs *PosixXAttr
 	if l.protonLink.Type == proton.LinkTypeFile {
 		l.ensureXAttr()
 		nodeKR, err := l.KeyRing()
 		if err == nil {
-			xattr = l.decryptXAttr(nodeKR)
+			common, pfs = l.decryptXAttr(nodeKR)
 		}
 	} else {
 		// Folder: decrypt link-level XAttr (no fetch needed).
 		nodeKR, err := l.KeyRing()
 		if err == nil {
-			xattr = l.decryptXAttr(nodeKR)
+			common, pfs = l.decryptXAttr(nodeKR)
 		}
 	}
 
 	// Build resolvedMeta with ALL fields.
-	m := l.buildResolvedMeta(xattr)
+	m := l.buildResolvedMeta(common, pfs)
 
 	// Cache store with double-checked locking. Do NOT cache fallback
 	// values for file-type links when the fetch is still retryable
 	// (Requirement 7.7) — allows subsequent calls to re-attempt the fetch.
 	l.cacheMu.Lock()
 	if l.meta == nil && l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
-		if xattr != nil || l.protonLink.Type != proton.LinkTypeFile || l.fetchDone {
+		if common != nil || l.protonLink.Type != proton.LinkTypeFile || l.fetchDone {
 			l.meta = m
 		}
 	}
@@ -420,17 +422,17 @@ func (l *Link) Mode() uint32 {
 	}
 
 	// Decrypt XAttr using the pre-resolved keyring.
-	xattr := l.decryptXAttr(nodeKR)
+	common, pfs := l.decryptXAttr(nodeKR)
 
 	// Build resolvedMeta with all fields from XAttr + fallbacks.
-	m := l.buildResolvedMeta(xattr)
+	m := l.buildResolvedMeta(common, pfs)
 
 	// Cache store: double-checked locking under cacheMu.Lock.
 	// Do NOT cache fallback values for file-type links when the fetch
 	// is still retryable (Requirement 7.7).
 	l.cacheMu.Lock()
 	if l.meta == nil && l.share != nil && l.share.MemoryCacheLevel >= api.CacheMetadata {
-		if xattr != nil || l.protonLink.Type != proton.LinkTypeFile || l.fetchDone {
+		if common != nil || l.protonLink.Type != proton.LinkTypeFile || l.fetchDone {
 			l.meta = m
 		}
 	}
@@ -513,14 +515,34 @@ func (l *Link) EnsureXAttrPrefetch() {
 	l.ensureXAttr()
 }
 
-// decryptXAttr decrypts the XAttr blob and returns the common fields.
-// Returns nil on any error (non-fatal — callers use fallback values).
+// decryptXAttr decrypts the XAttr blob and returns the decoded Common
+// fields together with the POSIX section (nil when absent or malformed).
+// Returns (nil, nil) on any error (non-fatal — callers use fallback values).
 // Works for both file-type links (reads ActiveRevision.XAttr) and
 // folder links (reads protonLink.XAttr).
 //
 // nodeKR is the pre-resolved node keyring — callers must obtain it via
 // l.KeyRing() BEFORE acquiring cacheMu to avoid RWMutex deadlock.
-func (l *Link) decryptXAttr(nodeKR *crypto.KeyRing) *proton.RevisionXAttrCommon {
+func (l *Link) decryptXAttr(nodeKR *crypto.KeyRing) (*proton.RevisionXAttrCommon, *PosixXAttr) {
+	x, err := l.decryptRevisionXAttr(nodeKR)
+	if err != nil || x == nil {
+		return nil, nil
+	}
+	return &x.Common, posixFromXAttr(x)
+}
+
+// decryptRevisionXAttr decrypts the XAttr blob and returns the full decoded
+// RevisionXAttr (Common + Extra). It reads ActiveRevision.XAttr for file-type
+// links and protonLink.XAttr for folders. It returns (nil, nil) when no XAttr
+// is present, and a wrapped error when address/keyring resolution or
+// decryption fails — so callers that must distinguish "absent" from "failed"
+// (the overwrite read-modify-write path, which preserves prior Extra sections)
+// can react without conflating the two. The returned error carries only the
+// encrypted LinkID for debuggability, never decrypted content.
+//
+// nodeKR is the pre-resolved node keyring — callers must obtain it via
+// l.KeyRing() BEFORE acquiring cacheMu to avoid RWMutex deadlock.
+func (l *Link) decryptRevisionXAttr(nodeKR *crypto.KeyRing) (*proton.RevisionXAttr, error) {
 	var xattrStr string
 	var sigEmail string
 
@@ -534,16 +556,16 @@ func (l *Link) decryptXAttr(nodeKR *crypto.KeyRing) *proton.RevisionXAttrCommon 
 	}
 
 	if xattrStr == "" {
-		return nil
+		return nil, nil
 	}
 
 	addr, ok := l.resolver.AddressForEmail(sigEmail)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("decryptRevisionXAttr %s: address not found for signature email", l.protonLink.LinkID)
 	}
 	addrKR, ok := l.resolver.AddressKeyRing(addr.ID)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("decryptRevisionXAttr %s: address keyring not found", l.protonLink.LinkID)
 	}
 
 	// Build a temporary RevisionMetadata to call GetDecXAttrString.
@@ -552,22 +574,24 @@ func (l *Link) decryptXAttr(nodeKR *crypto.KeyRing) *proton.RevisionXAttrCommon 
 		XAttr:          xattrStr,
 		SignatureEmail: sigEmail,
 	}
-	xattr, err := tmp.GetDecXAttrString(addrKR, nodeKR)
-	if err != nil || xattr == nil {
-		return nil
+	x, err := tmp.GetDecXAttrString(addrKR, nodeKR)
+	if err != nil {
+		return nil, fmt.Errorf("decryptRevisionXAttr %s: %w", l.protonLink.LinkID, err)
 	}
-	return xattr
+	return x, nil
 }
 
 // buildResolvedMeta constructs a resolvedMeta struct from decrypted XAttr
 // values (when available) with appropriate fallbacks. Called by all
 // fetch-triggering accessors (Size, ModifyTime, Mode) after decryption.
-func (l *Link) buildResolvedMeta(xattr *proton.RevisionXAttrCommon) *resolvedMeta {
+// common carries size/mtime/ctime; pfs carries the POSIX mode (nil when
+// absent — mode stays at its default of 0).
+func (l *Link) buildResolvedMeta(common *proton.RevisionXAttrCommon, pfs *PosixXAttr) *resolvedMeta {
 	m := &resolvedMeta{}
 
 	// size: XAttr value if available, else ActiveRevision.Size for files / 0 for folders.
-	if xattr != nil {
-		m.size = xattr.Size
+	if common != nil {
+		m.size = common.Size
 	} else if l.protonLink.Type == proton.LinkTypeFile && l.protonLink.FileProperties != nil {
 		m.size = l.protonLink.FileProperties.ActiveRevision.Size
 	}
@@ -575,8 +599,8 @@ func (l *Link) buildResolvedMeta(xattr *proton.RevisionXAttrCommon) *resolvedMet
 	// mtime: parsed ModificationTime from XAttr; fallback ActiveRevision.CreateTime
 	// for files, protonLink.ModifyTime for folders.
 	switch {
-	case xattr != nil && xattr.ModificationTime != "":
-		if t, err := time.Parse(time.RFC3339, xattr.ModificationTime); err == nil {
+	case common != nil && common.ModificationTime != "":
+		if t, err := time.Parse(time.RFC3339, common.ModificationTime); err == nil {
 			m.mtime = t.Unix()
 		} else if l.protonLink.Type == proton.LinkTypeFile && l.protonLink.FileProperties != nil {
 			m.mtime = l.protonLink.FileProperties.ActiveRevision.CreateTime
@@ -596,9 +620,9 @@ func (l *Link) buildResolvedMeta(xattr *proton.RevisionXAttrCommon) *resolvedMet
 		m.ctime = l.protonLink.CreateTime
 	}
 
-	// mode: XAttr value if available, else 0.
-	if xattr != nil {
-		m.mode = xattr.Mode
+	// mode: POSIX section value if available, else default (0).
+	if pfs != nil {
+		m.mode = pfs.Mode
 	}
 
 	return m

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -27,6 +28,14 @@ type uploadParams struct {
 	revisionID string
 	sigAddr    string
 	unixMode   uint32
+
+	// priorXAttr is the decoded XAttr of the file's previous active
+	// revision, used only on the overwrite/new-revision path so a commit
+	// preserves sibling sections (Media, Camera, Location, POSIX) written by
+	// other Proton clients — a non-destructive read-modify-write. It is nil
+	// for a brand-new file (CreateFile) or when the prior XAttr could not be
+	// fetched/decrypted, in which case the commit starts from a fresh blob.
+	priorXAttr *proton.RevisionXAttr
 }
 
 // encryptAndUploadBlock encrypts a plaintext block, signs it, computes
@@ -147,13 +156,12 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 		return fmt.Errorf("commitRevision: armor manifest sig: %w", err)
 	}
 
-	// Build XAttr with file metadata.
-	xAttrCommon := &proton.RevisionXAttrCommon{
-		ModificationTime: time.Now().UTC().Format("2006-01-02T15:04:05-0700"),
-		Size:             totalSize,
-		BlockSizes:       blockSizes,
-		Mode:             p.unixMode,
-	}
+	// Build the XAttr to commit. On the overwrite path p.priorXAttr carries
+	// the previous revision's decoded blob, so sibling sections written by
+	// other Proton clients (Media, Camera, Location, POSIX) survive the
+	// commit; for a brand-new file it is nil and the blob starts fresh.
+	modTime := time.Now().UTC().Format("2006-01-02T15:04:05-0700")
+	xAttr := buildRevisionXAttr(p.priorXAttr, modTime, totalSize, blockSizes, p.unixMode)
 
 	req := proton.UpdateRevisionReq{
 		State:             proton.RevisionStateActive,
@@ -161,7 +169,7 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 		ManifestSignature: manifestSigStr,
 		SignatureAddress:  p.sigAddr,
 	}
-	if err := req.SetEncXAttrString(p.addrKR, p.nodeKR, xAttrCommon); err != nil {
+	if err := req.SetEncXAttrString(p.addrKR, p.nodeKR, xAttr); err != nil {
 		return fmt.Errorf("commitRevision: encrypt xattr: %w", err)
 	}
 
@@ -173,4 +181,48 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 	}
 
 	return nil
+}
+
+// buildRevisionXAttr assembles the RevisionXAttr for a new revision. This is
+// a pure function (no network, no crypto) so the merge semantics are unit- and
+// property-testable in isolation.
+//
+// When prior is non-nil (the overwrite/new-revision path) the returned blob
+// starts from a copy of prior.Extra, so every sibling section written by other
+// Proton clients (Media, Camera, Location) and any inherited POSIX section
+// survive the commit — the non-destructive read-modify-write guarantee. Common
+// is ALWAYS taken from the new revision's values and never inherited from
+// prior: a stale Common would misreport size, mtime, or block sizes.
+//
+// The POSIX mode follows setPosixXAttr's section-level omitempty semantics.
+// unixMode == 0 means "no explicit mode" (e.g. a plain upload, or a Chmod that
+// happens to pass 0): setPosixXAttr elides the empty section, which leaves any
+// POSIX section inherited from prior untouched — a mode-less commit must NOT
+// silently wipe a prior revision's POSIX metadata. A non-zero unixMode
+// replaces the POSIX section with the new mode (masked to its lower 12 bits).
+func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64, blockSizes []int64, unixMode uint32) *proton.RevisionXAttr {
+	x := &proton.RevisionXAttr{}
+
+	// Inherit sibling sections (and any prior POSIX) verbatim from the prior
+	// revision so the commit is non-destructive. Copy into a fresh map so the
+	// prior blob is never mutated.
+	if prior != nil && len(prior.Extra) > 0 {
+		x.Extra = make(map[string]json.RawMessage, len(prior.Extra))
+		for k, v := range prior.Extra {
+			x.Extra[k] = v
+		}
+	}
+
+	// Common always reflects the new revision — never the stale prior Common.
+	x.Common = proton.RevisionXAttrCommon{
+		ModificationTime: modTime,
+		Size:             size,
+		BlockSizes:       blockSizes,
+	}
+
+	// Apply the mode. Mode 0 is a no-op that preserves any inherited POSIX
+	// section (see doc comment); a non-zero mode replaces it.
+	setPosixXAttr(x, PosixXAttr{Mode: unixMode & 0o7777})
+
+	return x
 }

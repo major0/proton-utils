@@ -116,6 +116,12 @@ type ProtonWriter struct {
 	totalSize int64
 	closed    bool // prevents double-commit
 	unixMode  uint32
+
+	// priorXAttr carries the previous active revision's decoded XAttr on the
+	// overwrite path (nil for a brand-new file), so the commit preserves
+	// sibling sections written by other Proton clients. Set from
+	// FileHandle.PriorXAttr at construction.
+	priorXAttr *proton.RevisionXAttr
 }
 
 // uploadedBlock holds the result of a single block upload.
@@ -141,6 +147,7 @@ func NewProtonWriter(fh *FileHandle, store blockStore, session *api.Session) *Pr
 		session:    session,
 		verifyCode: fh.VerificationCode,
 		uploaded:   make(map[int]uploadedBlock),
+		priorXAttr: fh.PriorXAttr,
 	}
 }
 
@@ -173,6 +180,7 @@ func (w *ProtonWriter) uploadParams() uploadParams {
 		revisionID: w.revisionID,
 		sigAddr:    w.sigAddr,
 		unixMode:   w.unixMode,
+		priorXAttr: w.priorXAttr,
 	}
 }
 

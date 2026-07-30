@@ -33,6 +33,13 @@ type FileHandle struct {
 	AddressID        string          // address ID for block upload requests
 	SigAddr          string          // signature address for UpdateRevision
 	VerificationCode []byte          // raw verification code for block tokens
+
+	// PriorXAttr holds the decoded XAttr of the file's previous active
+	// revision, populated by OverwriteFile so the new revision's commit
+	// preserves sibling sections (Media, Camera, Location, POSIX) written by
+	// other Proton clients. Nil for CreateFile (brand-new file) or when the
+	// prior XAttr was absent or could not be decrypted (non-fatal).
+	PriorXAttr *proton.RevisionXAttr
 }
 
 // CreateFile creates a file draft in Proton Drive and returns a
@@ -175,8 +182,8 @@ func (c *Client) OpenFile(ctx context.Context, link *Link) (*FileHandle, error) 
 	if err == nil {
 		xattr, xErr := revision.GetDecXAttrString(addrKR, nodeKR)
 		if xErr == nil && xattr != nil {
-			if xattr.ModificationTime != "" {
-				if mt, tErr := time.Parse(time.RFC3339, xattr.ModificationTime); tErr == nil {
+			if xattr.Common.ModificationTime != "" {
+				if mt, tErr := time.Parse(time.RFC3339, xattr.Common.ModificationTime); tErr == nil {
 					modTime = mt
 				}
 			}
@@ -235,6 +242,20 @@ func (c *Client) OverwriteFile(ctx context.Context, share *Share, link *Link) (*
 		return nil, fmt.Errorf("OverwriteFile: %s: signature address: %w", linkID, err)
 	}
 
+	// Read the prior active revision's XAttr so the new revision's commit
+	// preserves sibling sections (Media, Camera, Location, POSIX) written by
+	// other Proton clients — a non-destructive read-modify-write. ensureXAttr
+	// lazily populates ActiveRevision.XAttr if a listing did not. This is
+	// non-fatal: on any decrypt/keyring failure we log at debug (no decrypted
+	// content) and fall back to a fresh blob rather than failing the upload.
+	link.ensureXAttr()
+	priorXAttr, xErr := link.decryptRevisionXAttr(nodeKR)
+	if xErr != nil {
+		slog.Debug("OverwriteFile: prior XAttr unavailable, committing fresh XAttr",
+			"linkID", linkID, "err", xErr)
+		priorXAttr = nil
+	}
+
 	// Create a new revision on the existing link.
 	res, err := c.Session.Client.CreateRevision(ctx, shareID, linkID)
 	if err != nil {
@@ -283,6 +304,7 @@ func (c *Client) OverwriteFile(ctx context.Context, share *Share, link *Link) (*
 		AddressID:        share.ProtonShare().AddressID,
 		SigAddr:          sigAddr,
 		VerificationCode: verifyCode,
+		PriorXAttr:       priorXAttr,
 	}, nil
 }
 

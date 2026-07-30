@@ -34,13 +34,25 @@ type fataler interface {
 }
 
 // encryptXAttrT encrypts a RevisionXAttrCommon into an armored PGP message
-// suitable for use as the XAttr field on a revision or link.
+// suitable for use as the XAttr field on a revision or link. mode (when
+// non-zero) is written into the POSIX section via setPosixXAttr, since
+// Common.Mode was removed by the xattr-protonfs-namespace migration.
 // Works with both *testing.T and *rapid.T via the fataler interface.
-func encryptXAttrT(t fataler, nodeKR, addrKR *crypto.KeyRing, common *proton.RevisionXAttrCommon) string {
-	data, err := json.Marshal(proton.RevisionXAttr{Common: *common})
+func encryptXAttrT(t fataler, nodeKR, addrKR *crypto.KeyRing, common *proton.RevisionXAttrCommon, mode uint32) string {
+	x := proton.RevisionXAttr{Common: *common}
+	setPosixXAttr(&x, PosixXAttr{Mode: mode})
+	data, err := json.Marshal(x)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
+	return encryptArmoredXAttrT(t, nodeKR, addrKR, data)
+}
+
+// encryptArmoredXAttrT encrypts an already-marshaled XAttr JSON blob into an
+// armored PGP message. It is the shared encrypt+armor tail used by
+// encryptXAttrT and by tests that need to encrypt hand-built (e.g. legacy)
+// XAttr JSON that the typed RevisionXAttr cannot express.
+func encryptArmoredXAttrT(t fataler, nodeKR, addrKR *crypto.KeyRing, data []byte) string {
 	enc, err := nodeKR.Encrypt(crypto.NewPlainMessage(data), addrKR)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
@@ -145,9 +157,8 @@ func TestXAttrAccessorResolution_Property(t *testing.T) {
 		xattrCommon := &proton.RevisionXAttrCommon{
 			ModificationTime: mtimeStr,
 			Size:             xattrSize,
-			Mode:             xattrMode,
 		}
-		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon)
+		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon, xattrMode)
 
 		// Build mock resolver that populates XAttr on fetch.
 		resolver := &xattrResolver{
@@ -295,9 +306,8 @@ func TestXAttrFolderLinkLevel_Property(t *testing.T) {
 		xattrCommon := &proton.RevisionXAttrCommon{
 			ModificationTime: mtimeStr,
 			Size:             xattrSize,
-			Mode:             xattrMode,
 		}
-		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon)
+		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon, xattrMode)
 
 		resolver := &xattrResolver{
 			addrKR: kr,
@@ -539,9 +549,8 @@ func TestXAttrSingleFlightConcurrency_Property(t *testing.T) {
 		xattrCommon := &proton.RevisionXAttrCommon{
 			ModificationTime: mtimeStr,
 			Size:             xattrSize,
-			Mode:             xattrMode,
 		}
-		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon)
+		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon, xattrMode)
 
 		// Mock resolver with a brief sleep to simulate network latency.
 		resolver := &xattrResolver{
@@ -632,9 +641,8 @@ func TestXAttrCachingAfterResolution_Property(t *testing.T) {
 		xattrCommon := &proton.RevisionXAttrCommon{
 			ModificationTime: mtimeStr,
 			Size:             xattrSize,
-			Mode:             xattrMode,
 		}
-		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon)
+		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon, xattrMode)
 
 		resolver := &xattrResolver{
 			addrKR: kr,
@@ -728,9 +736,8 @@ func TestXAttrRetryOnTransientFailure_Property(t *testing.T) {
 		xattrCommon := &proton.RevisionXAttrCommon{
 			ModificationTime: mtimeStr,
 			Size:             xattrSize,
-			Mode:             xattrMode,
 		}
-		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon)
+		xattrBlob := encryptXAttrT(t, kr, kr, xattrCommon, xattrMode)
 
 		// Counter-based mock: first call does nothing (simulates failure),
 		// second call populates XAttr (simulates success).
@@ -815,9 +822,8 @@ func TestXAttrFetchDoesNotBlockCacheReads(t *testing.T) {
 			xattrCommon := &proton.RevisionXAttrCommon{
 				ModificationTime: time.Now().UTC().Format(time.RFC3339),
 				Size:             1234,
-				Mode:             0o644,
 			}
-			link.protonLink.FileProperties.ActiveRevision.XAttr = encryptXAttrT(t, kr, kr, xattrCommon)
+			link.protonLink.FileProperties.ActiveRevision.XAttr = encryptXAttrT(t, kr, kr, xattrCommon, 0o644)
 			link.protonLink.FileProperties.ActiveRevision.SignatureEmail = "test@test.local"
 		},
 	}
@@ -914,6 +920,266 @@ func TestXAttrNoFetchWithoutAccessor_Property(t *testing.T) {
 		// Verify FetchRevisionXAttr was never called.
 		if n := resolver.fetchCount.Load(); n != 0 {
 			t.Fatalf("FetchRevisionXAttr called %d times, want 0", n)
+		}
+	})
+}
+
+// TestXAttrLegacyCommonModeFallback_Property verifies the migration-safety
+// guarantee: for any file whose XAttr carries the now-unmodeled legacy
+// Common.Mode member (and NO POSIX section), the read path decodes and
+// resolves without error and Mode() returns 0 (default permissions).
+//
+// The legacy blob is hand-built as raw JSON — a "Common" object that INCLUDES
+// a stray "Mode" member plus valid ModificationTime/Size, alongside arbitrary
+// sibling sections, but no "POSIX" key. proton.RevisionXAttrCommon can no
+// longer express Mode, so the fork's typed decode drops the stray member and
+// never surfaces it via Extra; posixFromXAttr then returns nil and Mode()
+// falls back to 0. Approach (a): the blob is encrypted with a test keyring and
+// driven through the same decrypt+resolve path the accessors use.
+//
+// **Property 5: Migration fallback is safe**
+// **Validates: Requirements 5.1, 5.3, 8.1**
+func TestXAttrLegacyCommonModeFallback_Property(t *testing.T) {
+	// Generate keyring once (expensive RSA keygen) — reused across iterations.
+	kr := xattrTestKeyRing(t)
+
+	rapid.Check(t, func(t *rapid.T) {
+		// Arbitrary sibling sections written by other Proton clients. Drop any
+		// "Common" key: we set Common explicitly below, and the fork discards a
+		// stray Extra["Common"] anyway. POSIX is already excluded by the
+		// generator — the whole point is a blob with no POSIX section.
+		siblings := genSiblingSections(t)
+		delete(siblings, "Common")
+
+		// Legacy Common: valid ModificationTime/Size plus the stray, unmodeled
+		// Mode member (0..0o7777) that predates the POSIX migration.
+		legacyMode := rapid.Uint32Range(0, 0o7777).Draw(t, "legacyMode")
+		legacySize := rapid.Int64Range(0, 1<<40).Draw(t, "legacySize")
+		mtimeUnix := rapid.Int64Range(1000000000, 2000000000).Draw(t, "legacyMtime")
+		mtimeStr := time.Unix(mtimeUnix, 0).UTC().Format(time.RFC3339)
+
+		commonRaw, err := json.Marshal(map[string]any{
+			"ModificationTime": mtimeStr,
+			"Size":             legacySize,
+			"Mode":             legacyMode, // legacy stray member — must be ignored
+		})
+		if err != nil {
+			t.Fatalf("marshal legacy Common: %v", err)
+		}
+
+		// Assemble the top-level legacy blob: siblings + a Common carrying Mode.
+		top := make(map[string]json.RawMessage, len(siblings)+1)
+		for k, v := range siblings {
+			top[k] = v
+		}
+		top["Common"] = commonRaw
+		legacyBlob, err := json.Marshal(top)
+		if err != nil {
+			t.Fatalf("marshal legacy blob: %v", err)
+		}
+
+		xattrArmored := encryptArmoredXAttrT(t, kr, kr, legacyBlob)
+
+		// Resolver populates the file's active revision XAttr on fetch.
+		resolver := &xattrResolver{
+			addrKR: kr,
+			addrID: "addr-1",
+			fetchFunc: func(link *Link) {
+				link.protonLink.FileProperties.ActiveRevision.XAttr = xattrArmored
+				link.protonLink.FileProperties.ActiveRevision.SignatureEmail = "test@test.local"
+			},
+		}
+
+		share := makeXAttrShare(resolver)
+
+		pLink := &proton.Link{
+			LinkID:         "legacy-file",
+			Type:           proton.LinkTypeFile,
+			State:          proton.LinkStateActive,
+			SignatureEmail: "test@test.local",
+			FileProperties: &proton.FileProperties{
+				ActiveRevision: proton.RevisionMetadata{
+					ID:             "rev-1",
+					State:          proton.RevisionStateActive,
+					Size:           legacySize + 1, // distinct API fallback
+					CreateTime:     mtimeUnix,
+					SignatureEmail: "test@test.local",
+				},
+			},
+		}
+		link := NewTestLink(pLink, share.Link, share, resolver, "legacy.txt")
+		// Pre-cache the keyring to bypass real crypto derivation in tests.
+		link.cachedKeyRing = kr
+
+		// The legacy Mode member must NOT be resolved: Mode() falls back to 0.
+		if got := link.Mode(); got != 0 {
+			t.Fatalf("Mode() = %d, want 0 (legacy Common.Mode must not resolve)", got)
+		}
+
+		// The read must otherwise succeed: the typed Common still decodes, so
+		// Size() reflects the legacy Common.Size (proving decode did not error
+		// and did not fall back to the API value).
+		if got := link.Size(); got != legacySize {
+			t.Fatalf("Size() = %d, want %d (legacy Common decoded cleanly)", got, legacySize)
+		}
+	})
+}
+
+// TestXAttrPosixDegradation_Property verifies Requirement 8 (non-fatal
+// degradation): a file whose POSIX section is absent, malformed, or whose
+// XAttr blob is undecryptable resolves to DEFAULT permissions (Mode() == 0)
+// without the read path erroring or panicking.
+//
+//   - ABSENT       — XAttr present, valid Common, no POSIX section. Common
+//     decodes, posixFromXAttr returns nil, Mode() == 0, and size/mtime still
+//     resolve from Common.
+//   - MALFORMED    — XAttr present, valid Common, but Extra["POSIX"] is
+//     unparseable/schema-invalid JSON (e.g. `123`, `"not-an-object"`,
+//     `[1,2,3]`, `{"Mode":"x"}`). posixFromXAttr returns nil (non-fatal),
+//     Mode() == 0, and size/mtime still resolve from Common.
+//   - UNDECRYPTABLE — the XAttr blob itself cannot be decrypted, either because
+//     the resolver cannot supply an address keyring (AddressForEmail not-ok) or
+//     because the node keyring is mismatched. decryptXAttr returns (nil, nil),
+//     Mode() == 0, and size/mtime fall back cleanly to the API values.
+//
+// In every case the accessors return without error or panic.
+//
+// **Validates: Requirements 8.1, 8.2, 8.3, 8.4**
+func TestXAttrPosixDegradation_Property(t *testing.T) {
+	// Generate keyrings once (expensive RSA keygen) — reused across iterations.
+	// wrongKR is a distinct keyring used to force an undecryptable blob.
+	kr := xattrTestKeyRing(t)
+	wrongKR := xattrTestKeyRing(t)
+
+	// malformedPOSIX are valid top-level JSON values that are NOT a decodable
+	// PosixXAttr object: json.Unmarshal into PosixXAttr fails for each, so
+	// posixFromXAttr returns nil (non-fatal). `null`/`{}` are deliberately
+	// excluded — they decode to a zero PosixXAttr rather than nil.
+	malformedPOSIX := []string{
+		`123`,
+		`12.5`,
+		`"not-an-object"`,
+		`true`,
+		`[1,2,3]`,
+		`{"Mode":"not-a-number"}`,
+		`{"Mode":[1,2]}`,
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		degradation := rapid.SampledFrom([]string{
+			"absent",
+			"malformed",
+			"undecryptable_no_address",
+			"undecryptable_wrong_keyring",
+		}).Draw(t, "degradation")
+
+		// Common (typed) values — distinct ranges from the API fallbacks so the
+		// size/mtime assertions discriminate the source.
+		commonSize := rapid.Int64Range(1<<20, 1<<40).Draw(t, "commonSize")
+		commonMtime := rapid.Int64Range(1500000000, 2000000000).Draw(t, "commonMtime")
+		commonMtimeStr := time.Unix(commonMtime, 0).UTC().Format(time.RFC3339)
+
+		// API-level fallback values (ActiveRevision) — disjoint from Common.
+		apiSize := rapid.Int64Range(1, 1<<19).Draw(t, "apiSize")
+		revCreateTime := rapid.Int64Range(1000000000, 1400000000).Draw(t, "revCreateTime")
+
+		common := &proton.RevisionXAttrCommon{
+			ModificationTime: commonMtimeStr,
+			Size:             commonSize,
+		}
+
+		// Build the encrypted XAttr blob and the resolver / node keyring for the
+		// chosen degradation. wantCommon reports whether the read path should be
+		// able to source size/mtime from Common (true) or must fall back to the
+		// API values (false, undecryptable).
+		var xattrBlob string
+		nodeKR := kr
+		resolver := &xattrResolver{addrKR: kr, addrID: "addr-1"}
+		wantCommon := true
+
+		switch degradation {
+		case "absent":
+			// mode == 0 => setPosixXAttr writes no POSIX section.
+			xattrBlob = encryptXAttrT(t, kr, kr, common, 0)
+		case "malformed":
+			// Hand-build the blob: valid Common + a bad POSIX value.
+			bad := rapid.SampledFrom(malformedPOSIX).Draw(t, "malformedPOSIX")
+			commonRaw, err := json.Marshal(map[string]any{
+				"ModificationTime": commonMtimeStr,
+				"Size":             commonSize,
+			})
+			if err != nil {
+				t.Fatalf("marshal Common: %v", err)
+			}
+			top := map[string]json.RawMessage{
+				"Common": commonRaw,
+				"POSIX":  json.RawMessage(bad),
+			}
+			blob, err := json.Marshal(top)
+			if err != nil {
+				t.Fatalf("marshal malformed blob: %v", err)
+			}
+			xattrBlob = encryptArmoredXAttrT(t, kr, kr, blob)
+		case "undecryptable_no_address":
+			// Blob encrypts fine, but the resolver cannot supply an address
+			// keyring — AddressForEmail returns not-ok, so decryption never runs.
+			xattrBlob = encryptXAttrT(t, kr, kr, common, 0o644)
+			resolver.addrKR = nil
+			wantCommon = false
+		case "undecryptable_wrong_keyring":
+			// Blob is encrypted to wrongKR, but the resolved node keyring is kr,
+			// so GetDecXAttrString cannot decrypt the armored blob.
+			xattrBlob = encryptXAttrT(t, wrongKR, kr, common, 0o644)
+			nodeKR = kr
+			wantCommon = false
+		}
+
+		resolver.fetchFunc = func(link *Link) {
+			link.protonLink.FileProperties.ActiveRevision.XAttr = xattrBlob
+			link.protonLink.FileProperties.ActiveRevision.SignatureEmail = "test@test.local"
+		}
+
+		share := makeXAttrShare(resolver)
+
+		pLink := &proton.Link{
+			LinkID:         "degraded-file",
+			Type:           proton.LinkTypeFile,
+			State:          proton.LinkStateActive,
+			SignatureEmail: "test@test.local",
+			FileProperties: &proton.FileProperties{
+				ActiveRevision: proton.RevisionMetadata{
+					ID:             "rev-1",
+					State:          proton.RevisionStateActive,
+					Size:           apiSize,
+					CreateTime:     revCreateTime,
+					SignatureEmail: "test@test.local",
+				},
+			},
+		}
+		link := NewTestLink(pLink, share.Link, share, resolver, "degraded.txt")
+		// Pre-cache the node keyring (mismatched for the wrong-keyring case) to
+		// bypass real crypto derivation in tests.
+		link.cachedKeyRing = nodeKR
+
+		// The POSIX section never resolves: Mode() falls back to default (0),
+		// without error or panic.
+		if got := link.Mode(); got != 0 {
+			t.Fatalf("[%s] Mode() = %d, want 0 (default permissions)", degradation, got)
+		}
+
+		// size/mtime resolve from Common when the blob decodes (absent,
+		// malformed) or fall back cleanly to the API values (undecryptable).
+		wantSize := apiSize
+		wantMtime := revCreateTime
+		if wantCommon {
+			wantSize = commonSize
+			wantMtime = commonMtime
+		}
+		if got := link.Size(); got != wantSize {
+			t.Fatalf("[%s] Size() = %d, want %d", degradation, got, wantSize)
+		}
+		if got := link.ModifyTime(); got != wantMtime {
+			t.Fatalf("[%s] ModifyTime() = %d, want %d", degradation, got, wantMtime)
 		}
 	})
 }
