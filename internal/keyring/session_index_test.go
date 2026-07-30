@@ -981,3 +981,276 @@ func TestWildcardFallback_Property(t *testing.T) {
 		}
 	})
 }
+
+// --- DeleteAllSessions tests (account-logout-scope) ------------------------
+
+// accountSlots is the full multi-service slot set for one account, matching
+// the design's "account, drive, lumo, cookie, *" universe.
+var accountSlots = []string{"account", "drive", "lumo", "cookie", "*"}
+
+// seedAccount saves a session under every service slot for the given account.
+func seedAccount(t *testing.T, indexPath, account string, kr Keyring, services ...string) {
+	t.Helper()
+	for _, svc := range services {
+		s := NewSessionStore(indexPath, account, svc, kr)
+		if err := s.Save(testSession(account + "-" + svc)); err != nil {
+			t.Fatalf("seed %s/%s: %v", account, svc, err)
+		}
+	}
+}
+
+// TestSessionIndex_DeleteAllSessions verifies that DeleteAllSessions removes
+// every service slot and the account record, purges each keyring secret, and
+// leaves sibling accounts untouched.
+func TestSessionIndex_DeleteAllSessions(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	seedAccount(t, indexPath, "alice", kr, accountSlots...)
+	seedAccount(t, indexPath, "bob", kr, "drive")
+
+	// Capture alice's keyring UUIDs so we can assert the secrets are gone.
+	data, _ := os.ReadFile(indexPath) //nolint:gosec // G304: test code reading test fixture.
+	var idx SessionIndexData
+	_ = json.Unmarshal(data, &idx)
+	aliceUUIDs := make([]string, 0, len(accountSlots))
+	for _, id := range idx.Accounts["alice"].Sessions {
+		aliceUUIDs = append(aliceUUIDs, id)
+	}
+
+	store := NewSessionStore(indexPath, "alice", "account", kr)
+	if err := store.DeleteAllSessions(); err != nil {
+		t.Fatalf("DeleteAllSessions: %v", err)
+	}
+
+	// The account record is removed; only bob remains.
+	lister := NewSessionStore(indexPath, "", "", kr)
+	names, err := lister.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(names) != 1 || names[0] != "bob" {
+		t.Errorf("remaining accounts = %v, want [bob]", names)
+	}
+
+	// Every alice keyring secret is purged.
+	for _, id := range aliceUUIDs {
+		if _, err := kr.Get(KeyringService, id); err == nil {
+			t.Errorf("keyring secret %q survived DeleteAllSessions", id)
+		}
+	}
+
+	// Sibling account bob is intact.
+	bobLoad := NewSessionStore(indexPath, "bob", "drive", kr)
+	if _, err := bobLoad.Load(); err != nil {
+		t.Errorf("sibling account bob was affected: %v", err)
+	}
+}
+
+// TestSessionIndex_DeleteAllSessionsIdempotent verifies that DeleteAllSessions
+// on a missing account is a no-op (nil error) whether or not the index exists,
+// and does not disturb other accounts.
+func TestSessionIndex_DeleteAllSessionsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	// Missing index file entirely.
+	ghost := NewSessionStore(indexPath, "ghost", "account", kr)
+	if err := ghost.DeleteAllSessions(); err != nil {
+		t.Fatalf("DeleteAllSessions on missing index: %v", err)
+	}
+
+	// Index exists but lacks the target account.
+	seedAccount(t, indexPath, "alice", kr, "drive")
+	if err := ghost.DeleteAllSessions(); err != nil {
+		t.Fatalf("DeleteAllSessions on absent account: %v", err)
+	}
+	alice := NewSessionStore(indexPath, "alice", "drive", kr)
+	if _, err := alice.Load(); err != nil {
+		t.Errorf("alice affected by ghost DeleteAllSessions: %v", err)
+	}
+}
+
+// TestSessionIndex_DeleteAllSessionsAggregatesKeyringErrors verifies that
+// per-entry keyring failures are aggregated (not aborted mid-sweep) and that
+// the account record is removed regardless so no stale mapping survives.
+func TestSessionIndex_DeleteAllSessionsAggregatesKeyringErrors(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "sessions.json")
+	kr := NewMockKeyring()
+
+	services := []string{"account", "drive", "lumo"}
+	seedAccount(t, indexPath, "alice", kr, services...)
+
+	// Every keyring delete fails; the sweep must continue and aggregate.
+	kr.ErrDelete = errors.New("keyring locked")
+
+	store := NewSessionStore(indexPath, "alice", "account", kr)
+	err := store.DeleteAllSessions()
+	if err == nil {
+		t.Fatal("DeleteAllSessions with failing keyring: expected aggregated error, got nil")
+	}
+	// The aggregated error names each failing service slot.
+	for _, svc := range services {
+		if !strings.Contains(err.Error(), svc) {
+			t.Errorf("aggregated error missing service %q: %v", svc, err)
+		}
+	}
+
+	// The account record is removed regardless of the keyring failures.
+	lister := NewSessionStore(indexPath, "", "", kr)
+	names, listErr := lister.List()
+	if listErr != nil {
+		t.Fatalf("List: %v", listErr)
+	}
+	if len(names) != 0 {
+		t.Errorf("account record survived the sweep: %v", names)
+	}
+}
+
+// --- DeleteAllSessions property test (account-logout-scope, Task 4) --------
+
+// accountLayout is a testing/quick fixture modelling "arbitrary account
+// records (random service-slot sets)": one target account with a non-empty
+// random subset of the known service slots, plus zero or more sibling accounts
+// each with their own non-empty subset. The generator is constrained to the
+// real slot universe (accountSlots) rather than arbitrary strings.
+type accountLayout struct {
+	targetSlots []string
+	siblings    map[string][]string
+}
+
+// randomSlotSubset returns a non-empty subset of accountSlots.
+func randomSlotSubset(r *rand.Rand) []string {
+	picked := make([]string, 0, len(accountSlots))
+	for _, s := range accountSlots {
+		if r.Intn(2) == 0 {
+			picked = append(picked, s)
+		}
+	}
+	if len(picked) == 0 { // guarantee non-empty so the removal is observable
+		picked = append(picked, accountSlots[r.Intn(len(accountSlots))])
+	}
+	return picked
+}
+
+// Generate implements quick.Generator for accountLayout.
+func (accountLayout) Generate(r *rand.Rand, _ int) reflect.Value {
+	layout := accountLayout{
+		targetSlots: randomSlotSubset(r),
+		siblings:    make(map[string][]string),
+	}
+	for i := 0; i < r.Intn(4); i++ { // 0..3 sibling accounts
+		layout.siblings[fmt.Sprintf("sibling%d", i)] = randomSlotSubset(r)
+	}
+	return reflect.ValueOf(layout)
+}
+
+// readIndexFile reads and unmarshals the on-disk session index for assertions.
+func readIndexFile(t *testing.T, indexPath string) SessionIndexData {
+	t.Helper()
+	data, err := os.ReadFile(indexPath) //nolint:gosec // G304: test fixture path.
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	var idx SessionIndexData
+	if err := json.Unmarshal(data, &idx); err != nil {
+		t.Fatalf("unmarshal index: %v", err)
+	}
+	return idx
+}
+
+// slotUUIDs returns the keyring UUIDs stored for every slot of the account.
+func slotUUIDs(idx SessionIndexData, account string) []string {
+	acct := idx.Accounts[account]
+	ids := make([]string, 0, len(acct.Sessions))
+	for _, id := range acct.Sessions {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// TestSessionIndex_DeleteAllSessions_Property verifies that for any layout of a
+// target account and sibling accounts (each with a random subset of the known
+// service slots), DeleteAllSessions removes EXACTLY the target account's index
+// entries and keyring secrets while leaving every sibling account fully intact.
+//
+// **Validates: Requirements 2.4**
+func TestSessionIndex_DeleteAllSessions_Property(t *testing.T) {
+	const target = "target"
+	dir := t.TempDir()
+	var counter int
+
+	prop := func(layout accountLayout) bool {
+		counter++
+		indexPath := filepath.Join(dir, fmt.Sprintf("sessions_%d.json", counter))
+		kr := NewMockKeyring()
+
+		// Seed the target and each sibling account.
+		seedAccount(t, indexPath, target, kr, layout.targetSlots...)
+		for name, slots := range layout.siblings {
+			seedAccount(t, indexPath, name, kr, slots...)
+		}
+
+		// Capture keyring UUIDs before deletion.
+		before := readIndexFile(t, indexPath)
+		targetUUIDs := slotUUIDs(before, target)
+		siblingUUIDs := make(map[string][]string, len(layout.siblings))
+		for name := range layout.siblings {
+			siblingUUIDs[name] = slotUUIDs(before, name)
+		}
+
+		// Delete every session for the target account.
+		store := NewSessionStore(indexPath, target, "account", kr)
+		if err := store.DeleteAllSessions(); err != nil {
+			t.Logf("DeleteAllSessions: %v", err)
+			return false
+		}
+
+		after := readIndexFile(t, indexPath)
+
+		// The target record is gone and each of its secrets purged.
+		if _, ok := after.Accounts[target]; ok {
+			t.Logf("target record survived")
+			return false
+		}
+		for _, id := range targetUUIDs {
+			if _, err := kr.Get(KeyringService, id); err == nil {
+				t.Logf("target keyring secret %q survived", id)
+				return false
+			}
+		}
+
+		// Every sibling is fully preserved: same slot set and live secrets.
+		for name, slots := range layout.siblings {
+			acct, ok := after.Accounts[name]
+			if !ok {
+				t.Logf("sibling %q was removed", name)
+				return false
+			}
+			if len(acct.Sessions) != len(slots) {
+				t.Logf("sibling %q slot count changed: got %d want %d", name, len(acct.Sessions), len(slots))
+				return false
+			}
+			for _, svc := range slots {
+				if _, ok := acct.Sessions[svc]; !ok {
+					t.Logf("sibling %q lost slot %q", name, svc)
+					return false
+				}
+			}
+			for _, id := range siblingUUIDs[name] {
+				if _, err := kr.Get(KeyringService, id); err != nil {
+					t.Logf("sibling %q secret %q wrongly removed", name, id)
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	if err := quick.Check(prop, &quick.Config{MaxCount: 200}); err != nil {
+		t.Fatalf("DeleteAllSessions property failed: %v", err)
+	}
+}

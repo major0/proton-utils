@@ -170,19 +170,32 @@ func SessionSave(store api.SessionStore, session *api.Session, keypass []byte) e
 	return store.Save(config)
 }
 
-// SessionRevoke revokes the API session and deletes it from the store.
-// If force is true, store deletion proceeds even when the API revoke fails.
-func SessionRevoke(ctx context.Context, session *api.Session, store api.SessionStore, force bool) error {
-	if session != nil {
-		slog.Debug("SessionRevoke", "uid", session.Auth.UID)
-		if err := session.Client.AuthRevoke(ctx, session.Auth.UID); err != nil {
-			if !force {
-				return err
-			}
-			slog.Error("SessionRevoke", "error", err)
-		}
+// sessionAuthDeleteFn performs the self-delete revoke against the session's
+// own token. It is a package var so tests can inject a revoke outcome (e.g. a
+// 9101 "insufficient scope" error) without a live client.
+var sessionAuthDeleteFn = func(ctx context.Context, s *api.Session) error {
+	return s.Client.AuthDelete(ctx)
+}
+
+// SessionRevoke revokes the account session via the self-delete endpoint
+// (DELETE /auth/v4, through AuthDelete), which authenticates with the
+// session's own token and needs no elevated scope. Dependent child forks
+// (Independent: 0) are cascaded and invalidated server-side. A nil session
+// (not logged in) is a no-op. When the revoke fails, the error is returned
+// unless force is set, in which case it is logged and swallowed. Local
+// session-store cleanup is the caller's responsibility.
+func SessionRevoke(ctx context.Context, session *api.Session, force bool) error {
+	if session == nil {
+		return nil // not logged in: nothing to revoke server-side
 	}
-	return store.Delete()
+	slog.Debug("SessionRevoke", "uid", session.Auth.UID)
+	if err := sessionAuthDeleteFn(ctx, session); err != nil {
+		if !force {
+			return err
+		}
+		slog.Error("SessionRevoke", "error", err)
+	}
+	return nil
 }
 
 // SessionList returns account names from the session store.

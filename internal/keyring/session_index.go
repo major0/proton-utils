@@ -245,3 +245,37 @@ func (si *SessionIndex) Delete() error {
 
 	return nil
 }
+
+// DeleteAllSessions removes every session for the current account from both the
+// keyring and the on-disk index. It enumerates each (service → UUID) entry in
+// the account record, deletes the corresponding keyring secret, then removes
+// the account record entirely. A missing account is a no-op (idempotent).
+//
+// Lookups are keyed by UUID only — no decrypted content is inspected. Per-entry
+// keyring failures are aggregated with errors.Join and do not abort the sweep,
+// and the account record is removed regardless so no stale mapping survives.
+func (si *SessionIndex) DeleteAllSessions() error {
+	idx, err := si.readIndex()
+	if err != nil {
+		return fmt.Errorf("session delete-all %q: %w", si.account, err)
+	}
+
+	acct, ok := idx.Accounts[si.account]
+	if !ok {
+		return nil // idempotent: nothing stored for this account
+	}
+
+	var errs []error
+	for service, id := range acct.Sessions { // account, drive, lumo, cookie, *
+		if err := si.kr.Delete(KeyringService, id); err != nil {
+			errs = append(errs, fmt.Errorf("delete %q: %w", service, err))
+		}
+	}
+
+	delete(idx.Accounts, si.account)
+	if err := si.writeIndex(idx); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errors.Join(errs...)
+}

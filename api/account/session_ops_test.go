@@ -43,17 +43,6 @@ func (s *errStore) Delete() error                          { return nil }
 func (s *errStore) List() ([]string, error)                { return nil, nil }
 func (s *errStore) Switch(string) error                    { return nil }
 
-// deleteStore tracks whether Delete was called.
-type deleteStore struct {
-	mockStore
-	deleted bool
-}
-
-func (s *deleteStore) Delete() error {
-	s.deleted = true
-	return nil
-}
-
 // --- SessionFromCredentials error path tests ---
 
 func TestSessionFromCredentials(t *testing.T) {
@@ -129,14 +118,76 @@ func TestSessionList(t *testing.T) {
 
 // --- SessionRevoke tests ---
 
+// TestSessionRevoke exercises the self-delete revoke path via the
+// sessionAuthDeleteFn seam: a nil session is a no-op, a revoke error is
+// returned when force is unset, and swallowed when force is set.
 func TestSessionRevoke(t *testing.T) {
-	store := &deleteStore{}
-	err := SessionRevoke(context.Background(), nil, store, false)
-	if err != nil {
-		t.Fatalf("SessionRevoke: %v", err)
+	origFn := sessionAuthDeleteFn
+	t.Cleanup(func() { sessionAuthDeleteFn = origFn })
+
+	// Mirrors the 403 "insufficient scope" (Code 9101) the real revoke returns.
+	revokeErr := errors.New("insufficient scope (9101)")
+
+	tests := []struct {
+		name      string
+		session   *api.Session
+		force     bool
+		deleteErr error
+		wantCall  bool  // whether sessionAuthDeleteFn should be invoked
+		wantErr   error // sentinel to match with errors.Is; nil means no error
+	}{
+		{
+			name:     "nil session is a no-op",
+			session:  nil,
+			force:    false,
+			wantCall: false,
+			wantErr:  nil,
+		},
+		{
+			name:     "revoke success returns nil",
+			session:  &api.Session{},
+			force:    false,
+			wantCall: true,
+			wantErr:  nil,
+		},
+		{
+			name:      "revoke error without force is returned",
+			session:   &api.Session{},
+			force:     false,
+			deleteErr: revokeErr,
+			wantCall:  true,
+			wantErr:   revokeErr,
+		},
+		{
+			name:      "revoke error with force is swallowed",
+			session:   &api.Session{},
+			force:     true,
+			deleteErr: revokeErr,
+			wantCall:  true,
+			wantErr:   nil,
+		},
 	}
-	if !store.deleted {
-		t.Fatal("expected store.Delete to be called")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var called bool
+			sessionAuthDeleteFn = func(_ context.Context, _ *api.Session) error {
+				called = true
+				return tt.deleteErr
+			}
+
+			err := SessionRevoke(context.Background(), tt.session, tt.force)
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("error = %v, want %v", err, tt.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if called != tt.wantCall {
+				t.Fatalf("sessionAuthDeleteFn called = %v, want %v", called, tt.wantCall)
+			}
+		})
 	}
 }
 
