@@ -228,3 +228,29 @@ func NewTestSymlinkLink(name, target string) (*Link, error) {
 func NewTestRegularFileLink(name string, size int64) (*Link, error) {
 	return newTestPosixFileLink(name, size, false)
 }
+
+// NewTestResolvedFileLink builds a plain (non-symlink) file Link whose
+// metadata accessors return the given values directly, WITHOUT any crypto:
+// the resolvedMeta cache is pre-populated and the XAttr fetch gate is marked
+// done, so Mode()/Size()/ModifyTime()/CreateTime() resolve from the cache and
+// IsSymlink() returns false (no keyring is available, so decryption is never
+// attempted). This is the fast path for unit and property tests that need a
+// *Link reporting a specific mode without paying for RSA key generation.
+func NewTestResolvedFileLink(name string, size int64, mode uint32) *Link {
+	pLink := &proton.Link{
+		LinkID: "file-" + name,
+		Type:   proton.LinkTypeFile,
+		State:  proton.LinkStateActive,
+		FileProperties: &proton.FileProperties{
+			ActiveRevision: proton.RevisionMetadata{
+				ID:    "rev-" + name,
+				State: proton.RevisionStateActive,
+				Size:  size,
+			},
+		},
+	}
+	l := NewTestLink(pLink, nil, nil, nil, name)
+	l.meta = &resolvedMeta{size: size, mode: mode}
+	l.fetchDone = true
+	return l
+}

@@ -253,7 +253,7 @@ func (n *ShareDirNode) Create(_ context.Context, name string, _ uint32, _ uint32
 	newLink := fd.Link()
 	fileNode := &FileNode{link: newLink, client: n.client}
 
-	return fileNode, &fdHandle{fd: fd}, 0
+	return fileNode, &fdHandle{fd: fd, write: true}, 0
 }
 
 // Mkdir creates a new subdirectory at the share root.
@@ -684,7 +684,7 @@ func (n *LinkDirNode) Create(_ context.Context, name string, _ uint32, _ uint32)
 	newLink := fd.Link()
 	fileNode := &FileNode{link: newLink, client: n.client}
 
-	return fileNode, &fdHandle{fd: fd}, 0
+	return fileNode, &fdHandle{fd: fd, write: true}, 0
 }
 
 // Mkdir creates a new subdirectory in this folder.
@@ -759,11 +759,48 @@ func linkNode(l *drive.Link, client *drive.Client, handler *DriveHandler) fusemo
 	return &FileNode{link: l, client: client}
 }
 
+// driveClient is the narrow set of drive.Client operations a FileNode calls.
+// FileNode depends on this interface rather than the concrete *drive.Client so
+// tests can substitute a fake without session/crypto infrastructure (accept
+// interfaces per go-lang steering). The real *drive.Client satisfies it
+// unchanged.
+type driveClient interface {
+	OpenFD(ctx context.Context, link *drive.Link) (*drive.FileDescriptor, error)
+	OverwriteFD(ctx context.Context, share *drive.Share, link *drive.Link) (*drive.FileDescriptor, error)
+	ReadSymlinkTarget(ctx context.Context, l *drive.Link) (string, error)
+	Chmod(ctx context.Context, share *drive.Share, link *drive.Link, mode uint32) error
+	StatLink(ctx context.Context, share *drive.Share, parentLink *drive.Link, linkID string) (*drive.Link, error)
+}
+
+// Compile-time assertion that the real client satisfies the narrow interface.
+var _ driveClient = (*drive.Client)(nil)
+
 // FileNode wraps a *drive.Link (file) and implements fusemount.Node,
 // NodeOpener, NodeReader, and NodeReleaser for read-only file access.
+//
+// mu guards link, which is swapped by Setattr after a chmod persists a new
+// revision so a same-process Getattr observes the new mode. All reads of link
+// go through curLink(); the single writer is setLink().
 type FileNode struct {
+	mu     sync.RWMutex
 	link   *drive.Link
-	client *drive.Client
+	client driveClient
+}
+
+// curLink returns the node's current link under a read lock. All link reads go
+// through this accessor so a concurrent setLink swap (after chmod) is race-free.
+func (n *FileNode) curLink() *drive.Link {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.link
+}
+
+// setLink atomically swaps the node's link under a write lock. Called after a
+// chmod persists a new revision and a fresh link is re-fetched.
+func (n *FileNode) setLink(l *drive.Link) {
+	n.mu.Lock()
+	n.link = l
+	n.mu.Unlock()
 }
 
 // Compile-time interface assertions.
@@ -777,9 +814,13 @@ var _ fusemount.NodeReleaser = (*FileNode)(nil)
 var _ fusemount.NodeSetattrer = (*FileNode)(nil)
 var _ fusemount.NodeReadlinker = (*FileNode)(nil)
 
-// fdHandle wraps a *drive.FileDescriptor as a fusemount.FileHandle.
+// fdHandle wraps a *drive.FileDescriptor as a fusemount.FileHandle. write is
+// true for write-mode descriptors (from OverwriteFD/CreateFD) and false for
+// read-mode (OpenFD); Setattr uses it to decide whether to stage a chmod on
+// the open draft revision or persist it via a standalone Chmod.
 type fdHandle struct {
-	fd *drive.FileDescriptor
+	fd    *drive.FileDescriptor
+	write bool
 }
 
 // Compile-time interface assertion.
@@ -788,7 +829,7 @@ var _ fusemount.FileHandle = (*fdHandle)(nil)
 // InodeNumber returns the stable inode number derived from the file's LinkID,
 // so the same object keeps one inode across LOOKUP and READDIRPLUS.
 func (n *FileNode) InodeNumber() uint64 {
-	return inodeFromLinkID(n.link.LinkID())
+	return inodeFromLinkID(n.curLink().LinkID())
 }
 
 // Getattr returns file attributes including size and timestamps. A symlink
@@ -797,29 +838,30 @@ func (n *FileNode) InodeNumber() uint64 {
 // types the child inode S_IFLNK before NewInode — the inode type is fixed at
 // creation and cannot be retyped later.
 func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
-	if n.link.IsSymlink() {
+	l := n.curLink()
+	if l.IsSymlink() {
 		//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
 		return fusemount.Attr{
 			Mode:  syscall.S_IFLNK | 0777,
-			Size:  uint64(n.link.Size()),
+			Size:  uint64(l.Size()),
 			Nlink: 1,
-			Mtime: uint64(n.link.ModifyTime()),
-			Ctime: uint64(n.link.CreateTime()),
+			Mtime: uint64(l.ModifyTime()),
+			Ctime: uint64(l.CreateTime()),
 		}, 0
 	}
 
 	mode := uint32(0600) // default
-	if m := n.link.Mode(); m != 0 {
+	if m := l.Mode(); m != 0 {
 		mode = m & 0o7777 // mask to permission bits only
 	}
 
 	//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API
 	return fusemount.Attr{
 		Mode:  syscall.S_IFREG | mode,
-		Size:  uint64(n.link.Size()),
+		Size:  uint64(l.Size()),
 		Nlink: 1,
-		Mtime: uint64(n.link.ModifyTime()),
-		Ctime: uint64(n.link.CreateTime()),
+		Mtime: uint64(l.ModifyTime()),
+		Ctime: uint64(l.CreateTime()),
 	}, 0
 }
 
@@ -829,37 +871,72 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 // returns EINVAL, matching readlink(2) on a regular file; any other read
 // failure maps to EIO. Reading a dangling symlink succeeds.
 func (n *FileNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
-	target, err := n.client.ReadSymlinkTarget(context.Background(), n.link)
+	l := n.curLink()
+	target, err := n.client.ReadSymlinkTarget(context.Background(), l)
 	if err != nil {
 		if errors.Is(err, drive.ErrNotSymlink) {
 			return nil, syscall.EINVAL
 		}
-		slog.Debug("FileNode.Readlink: failed", "linkID", n.link.LinkID(), "error", err)
+		slog.Debug("FileNode.Readlink: failed", "linkID", l.LinkID(), "error", err)
 		return nil, syscall.EIO
 	}
 	return []byte(target), 0
 }
 
-// Setattr handles truncate (via open write FD). Chmod and utimes are
-// silent no-ops — mode persistence is deferred to a future spec.
+// Setattr handles truncate and chmod; utimes is accepted as a no-op and chown
+// is rejected earlier at the dispatch layer. Truncate resizes via an open
+// write-mode FD (path-based truncate without an FD stays a no-op success).
+//
+// Chmod persists the new permission bits. With an open write FD the mode is
+// staged on the draft revision via SetMode, so it commits together with any
+// pending truncate in a single revision (a standalone Chmod would open a second
+// overwrite and return EBUSY). Otherwise the mode is persisted via
+// drive.Client.Chmod, then the node's link is re-stat'd so a same-process
+// Getattr reflects the new mode — Chmod already evicted the link-table and
+// object-cache entries, so StatLink re-fetches fresh state. A refresh failure
+// after a successful persist is a transient coherence miss (the mode is already
+// stored server-side), so it logs and returns success. ENOSYS is never returned
+// (go-fuse caches it per-connection, which would disable setattr filesystem-wide).
 func (n *FileNode) Setattr(_ context.Context, fh fusemount.FileHandle, in *fusemount.SetattrIn) syscall.Errno {
-	// Truncate: only works with an open write-mode FD.
-	if in.Valid&fusemount.SetattrSize != 0 {
-		h, ok := fh.(*fdHandle)
-		if !ok || h == nil {
-			// No write FD — path-based truncate is not supported.
-			// Return success (no-op) to avoid breaking tools.
-			return 0
-		}
+	l := n.curLink()
+
+	// Detect an open write-mode FD once — both truncate and chmod staging use it.
+	h, _ := fh.(*fdHandle)
+	hasWriteFD := h != nil && h.write
+
+	// Truncate: only works with an open write-mode FD. Path-based truncate
+	// (no FD) stays a no-op success to avoid breaking tools.
+	if in.Valid&fusemount.SetattrSize != 0 && hasWriteFD {
 		if err := h.fd.Truncate(int64(in.Size)); err != nil { //nolint:gosec // size from kernel setattr is non-negative
-			slog.Debug("FileNode.Setattr: truncate failed",
-				"linkID", n.link.LinkID(), "error", err)
+			slog.Debug("FileNode.Setattr: truncate failed", "linkID", l.LinkID(), "error", err)
 			return syscall.EIO
 		}
 	}
 
-	// Mode and Mtime: silent no-ops (return 0 without server call).
-	// Future specs will implement persistence via XAttr revision commit.
+	// Chmod: persist the new permission bits (masked to 0o7777).
+	if in.Valid&fusemount.SetattrMode != 0 {
+		mode := in.Mode & 0o7777
+		if hasWriteFD {
+			// Stage on the open draft revision — commits with any truncate
+			// above in a single revision.
+			h.fd.SetMode(mode)
+		} else {
+			if err := n.client.Chmod(context.Background(), l.Share(), l, mode); err != nil {
+				slog.Debug("FileNode.Setattr: chmod failed", "linkID", l.LinkID(), "error", err)
+				return apiErrno(err)
+			}
+			// Refresh the node's link so a same-process Getattr sees the new
+			// mode. A refresh miss is non-fatal — the mode is already persisted.
+			fresh, err := n.client.StatLink(context.Background(), l.Share(), l.ParentLink(), l.LinkID())
+			if err != nil {
+				slog.Debug("FileNode.Setattr: link refresh after chmod failed", "linkID", l.LinkID(), "error", err)
+				return 0
+			}
+			n.setLink(fresh)
+		}
+	}
+
+	// Mtime: silent no-op (accepted so cp -a / touch succeed).
 
 	return 0
 }
@@ -868,30 +945,31 @@ func (n *FileNode) Setattr(_ context.Context, fh fusemount.FileHandle, in *fusem
 // The context passed to OpenFD/OverwriteFD is context.Background() — the FD
 // context must outlive the FUSE request.
 func (n *FileNode) Open(_ context.Context, flags uint32) (fusemount.FileHandle, syscall.Errno) {
+	l := n.curLink()
 	// Determine mode from flags.
 	isWrite := flags&(syscall.O_WRONLY|syscall.O_RDWR) != 0
 
 	if isWrite {
-		share := n.link.Share()
-		fd, err := n.client.OverwriteFD(context.Background(), share, n.link)
+		share := l.Share()
+		fd, err := n.client.OverwriteFD(context.Background(), share, l)
 		if err != nil {
 			if errors.Is(err, drive.ErrDraftExist) {
 				return nil, syscall.EBUSY
 			}
-			slog.Debug("FileNode.Open: write failed", "linkID", n.link.LinkID(), "error", err)
+			slog.Debug("FileNode.Open: write failed", "linkID", l.LinkID(), "error", err)
 			return nil, syscall.EIO
 		}
 		// Handle O_TRUNC: reset file size to 0.
 		if flags&syscall.O_TRUNC != 0 {
 			_ = fd.Truncate(0)
 		}
-		return &fdHandle{fd: fd}, 0
+		return &fdHandle{fd: fd, write: true}, 0
 	}
 
 	// Read mode — existing behavior.
-	fd, err := n.client.OpenFD(context.Background(), n.link)
+	fd, err := n.client.OpenFD(context.Background(), l)
 	if err != nil {
-		slog.Debug("FileNode.Open: read failed", "linkID", n.link.LinkID(), "error", err)
+		slog.Debug("FileNode.Open: read failed", "linkID", l.LinkID(), "error", err)
 		return nil, syscall.EIO
 	}
 	return &fdHandle{fd: fd}, 0
@@ -914,7 +992,7 @@ func (n *FileNode) Read(_ context.Context, fh fusemount.FileHandle, dest []byte,
 		if errors.Is(err, os.ErrClosed) {
 			return 0, syscall.EBADF
 		}
-		slog.Debug("FileNode.Read: EIO", "linkID", n.link.LinkID(), "offset", off, "error", err)
+		slog.Debug("FileNode.Read: EIO", "linkID", n.curLink().LinkID(), "offset", off, "error", err)
 		return 0, syscall.EIO
 	}
 	return bytesRead, 0
@@ -934,7 +1012,7 @@ func (n *FileNode) Write(_ context.Context, fh fusemount.FileHandle, data []byte
 		if errors.Is(err, syscall.EBADF) {
 			return 0, syscall.EBADF
 		}
-		slog.Debug("FileNode.Write: EIO", "linkID", n.link.LinkID(), "offset", off, "error", err)
+		slog.Debug("FileNode.Write: EIO", "linkID", n.curLink().LinkID(), "offset", off, "error", err)
 		return 0, syscall.EIO
 	}
 	return uint32(written), 0 //nolint:gosec // written is bounded by len(data) which fits uint32
@@ -950,7 +1028,7 @@ func (n *FileNode) Fsync(_ context.Context, fh fusemount.FileHandle, _ uint32) s
 		if errors.Is(err, syscall.EBADF) || errors.Is(err, os.ErrClosed) {
 			return 0 // read-only or already-closed FD — no-op
 		}
-		slog.Debug("FileNode.Fsync: EIO", "linkID", n.link.LinkID(), "error", err)
+		slog.Debug("FileNode.Fsync: EIO", "linkID", n.curLink().LinkID(), "error", err)
 		return syscall.EIO
 	}
 	return 0
@@ -970,7 +1048,7 @@ func (n *FileNode) Flush(_ context.Context, fh fusemount.FileHandle) syscall.Err
 		if errors.Is(err, syscall.EBADF) || errors.Is(err, os.ErrClosed) {
 			return 0 // read-only or already-closed FD — no-op
 		}
-		slog.Debug("FileNode.Flush: EIO", "linkID", n.link.LinkID(), "error", err)
+		slog.Debug("FileNode.Flush: EIO", "linkID", n.curLink().LinkID(), "error", err)
 		return syscall.EIO
 	}
 	return 0
@@ -984,7 +1062,7 @@ func (n *FileNode) Release(_ context.Context, fh fusemount.FileHandle) syscall.E
 		return 0
 	}
 	if err := h.fd.Close(); err != nil {
-		slog.Warn("FileNode.Release: close error", "linkID", n.link.LinkID(), "error", err)
+		slog.Warn("FileNode.Release: close error", "linkID", n.curLink().LinkID(), "error", err)
 	}
 	return 0
 }
