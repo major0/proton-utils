@@ -27,7 +27,10 @@ type uploadParams struct {
 	linkID     string
 	revisionID string
 	sigAddr    string
-	unixMode   uint32
+	// unixMode carries the write-path mode. nil = not set (inherited POSIX
+	// preserved); non-nil (even 0) = present, so an explicit chmod 0000
+	// persists rather than being elided.
+	unixMode *uint32
 
 	// symlink marks the committed revision as a symlink by setting
 	// PosixXAttr.Symlink = true in the POSIX section (the target lives in
@@ -200,17 +203,19 @@ func commitRevisionFromTokens(ctx context.Context, session *api.Session, p uploa
 // is ALWAYS taken from the new revision's values and never inherited from
 // prior: a stale Common would misreport size, mtime, or block sizes.
 //
-// The POSIX mode follows setPosixXAttr's section-level omitempty semantics.
-// unixMode == 0 means "no explicit mode" (e.g. a plain upload, or a Chmod that
-// happens to pass 0): setPosixXAttr elides the empty section, which leaves any
-// POSIX section inherited from prior untouched — a mode-less commit must NOT
-// silently wipe a prior revision's POSIX metadata. A non-zero unixMode
-// replaces the POSIX section with the new mode (masked to its lower 12 bits).
+// The POSIX mode is built from presence, not value. unixMode == nil means "no
+// explicit mode" (e.g. a plain upload that never called SetMode): the POSIX
+// section carries no Mode field, so with symlink == false it marshals to "{}"
+// and setPosixXAttr elides it, leaving any POSIX section inherited from prior
+// untouched — a mode-less commit must NOT silently wipe a prior revision's
+// POSIX metadata. A non-nil unixMode (even a pointer to 0) records the mode as
+// present (masked to its lower 12 bits), so an explicit chmod 0000 persists as
+// {"Mode":0} rather than being dropped.
 //
 // symlink marks the revision as a symlink (PosixXAttr.Symlink = true) — the
 // verbatim target lives in the single content block. It is threaded alongside
 // unixMode; when both apply they share one POSIX section.
-func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64, blockSizes []int64, unixMode uint32, symlink bool) *proton.RevisionXAttr {
+func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64, blockSizes []int64, unixMode *uint32, symlink bool) *proton.RevisionXAttr {
 	x := &proton.RevisionXAttr{}
 
 	// Inherit sibling sections (and any prior POSIX) verbatim from the prior
@@ -230,11 +235,17 @@ func buildRevisionXAttr(prior *proton.RevisionXAttr, modTime string, size int64,
 		BlockSizes:       blockSizes,
 	}
 
-	// Apply the POSIX section. A mode-and-symlink-less commit (Mode 0,
-	// Symlink false) marshals to "{}" so setPosixXAttr is a no-op that
-	// preserves any inherited POSIX section (see doc comment); a non-zero
-	// mode and/or the symlink marker replaces it.
-	setPosixXAttr(x, PosixXAttr{Mode: unixMode & 0o7777, Symlink: symlink})
+	// Apply the POSIX section from presence. When unixMode is nil and symlink
+	// is false, pfs marshals to "{}" so setPosixXAttr is a no-op that
+	// preserves any inherited POSIX section (see doc comment). A present mode
+	// (non-nil pointer, even to 0) and/or the symlink marker replaces it.
+	var pfs PosixXAttr
+	pfs.Symlink = symlink
+	if unixMode != nil {
+		m := *unixMode & 0o7777
+		pfs.Mode = &m
+	}
+	setPosixXAttr(x, pfs)
 
 	return x
 }

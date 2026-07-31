@@ -20,8 +20,8 @@ const posixXAttrKey = "POSIX"
 // with no POSIX metadata produces no "POSIX" section at all. This is the
 // extension point for future POSIX metadata.
 type PosixXAttr struct {
-	Mode    uint32 `json:"Mode,omitempty"`    // Unix permission bits (lower 12: 0o7777)
-	Symlink bool   `json:"Symlink,omitempty"` // marks a symlink file (target held in content)
+	Mode    *uint32 `json:"Mode,omitempty"`    // Unix permission bits (lower 12: 0o7777); nil = absent, non-nil = present (may be 0)
+	Symlink bool    `json:"Symlink,omitempty"` // marks a symlink file (target held in content)
 }
 
 // posixFromXAttr extracts the POSIX section from a decoded RevisionXAttr,

@@ -19,10 +19,10 @@ import (
 // Allocated once on first successful resolution; never mutated after creation.
 // Invalidation: set the pointer to nil under cacheMu.Lock.
 type resolvedMeta struct {
-	size  int64  // plaintext file size from XAttr (or fallback)
-	mtime int64  // modification time as Unix epoch (or fallback)
-	ctime int64  // creation time as Unix epoch (or fallback)
-	mode  uint32 // Unix permission bits from XAttr (or fallback)
+	size  int64   // plaintext file size from XAttr (or fallback)
+	mtime int64   // modification time as Unix epoch (or fallback)
+	ctime int64   // creation time as Unix epoch (or fallback)
+	mode  *uint32 // Unix permission bits from XAttr; nil = absent (mode not present)
 }
 
 // Link represents a file or folder in a Proton Drive share. The raw
@@ -297,8 +297,8 @@ func (l *Link) Stat() FileInfo {
 	mtime := l.ModifyTime()
 	ctime := l.CreateTime()
 	// Mode() is called to ensure resolvedMeta is populated as a side effect.
-	// The return value is intentionally discarded — FileInfo has no Mode field.
-	l.Mode()
+	// The return values are intentionally discarded — FileInfo has no Mode field.
+	_, _ = l.Mode()
 
 	fi := FileInfo{
 		LinkID:     l.protonLink.LinkID,
@@ -392,20 +392,25 @@ func (l *Link) KeyRing() (*crypto.KeyRing, error) {
 	return kr, nil
 }
 
-// Mode returns the Unix permission bits from the XAttr blob.
-// For file-type links, triggers a lazy XAttr fetch on first access.
-// For folder links, reads from the link-level XAttr (populated by the
-// listing API). Returns 0 when Mode is not set (legacy files, fetch
-// failure, or decryption error).
+// Mode returns the Unix permission bits from the XAttr blob together with a
+// presence flag. For file-type links, triggers a lazy XAttr fetch on first
+// access. For folder links, reads from the link-level XAttr (populated by the
+// listing API). Returns (mode, true) when the POSIX section carries a present
+// mode (including an explicit 0000), and (0, false) when the mode is not
+// present (legacy files with no POSIX section, fetch failure, or decryption
+// error) so consumers apply their own default.
 //
 // The keyring is resolved BEFORE acquiring cacheMu.Lock to avoid the
 // RWMutex deadlock (KeyRing() acquires cacheMu.RLock internally).
-func (l *Link) Mode() uint32 {
+func (l *Link) Mode() (mode uint32, present bool) {
 	// Fast path: return cached value if available.
 	l.cacheMu.RLock()
 	if m := l.meta; m != nil {
 		l.cacheMu.RUnlock()
-		return m.mode
+		if m.mode != nil {
+			return *m.mode, true
+		}
+		return 0, false
 	}
 	l.cacheMu.RUnlock()
 
@@ -418,7 +423,7 @@ func (l *Link) Mode() uint32 {
 	// acquires cacheMu.RLock internally; Go's RWMutex is not reentrant.
 	nodeKR, err := l.KeyRing()
 	if err != nil {
-		return 0
+		return 0, false
 	}
 
 	// Decrypt XAttr using the pre-resolved keyring.
@@ -438,7 +443,10 @@ func (l *Link) Mode() uint32 {
 	}
 	l.cacheMu.Unlock()
 
-	return m.mode
+	if m.mode != nil {
+		return *m.mode, true
+	}
+	return 0, false
 }
 
 // IsSymlink reports whether the link is a symlink — a file-type link whose
@@ -653,9 +661,12 @@ func (l *Link) buildResolvedMeta(common *proton.RevisionXAttrCommon, pfs *PosixX
 		m.ctime = l.protonLink.CreateTime
 	}
 
-	// mode: POSIX section value if available, else default (0).
-	if pfs != nil {
-		m.mode = pfs.Mode
+	// mode: set the pointer only when the POSIX section carries a present
+	// mode (non-nil Mode). A nil pfs or nil pfs.Mode leaves m.mode nil,
+	// signalling "absent" so consumers apply their default.
+	if pfs != nil && pfs.Mode != nil {
+		mode := *pfs.Mode
+		m.mode = &mode
 	}
 
 	return m

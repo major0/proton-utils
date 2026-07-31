@@ -73,6 +73,29 @@ func genSiblingSections(t *rapid.T) map[string]json.RawMessage {
 	return out
 }
 
+// modePtr returns a *uint32 for a test mode value, preserving the historical
+// "0 means absent" convention these tests were written under: 0 yields nil (no
+// POSIX Mode key), any non-zero value yields a pointer to it. The present-zero
+// path (&0) is exercised directly by the chmod-zero-vs-unset-mode bugfix tests.
+func modePtr(mode uint32) *uint32 {
+	if mode == 0 {
+		return nil
+	}
+	return &mode
+}
+
+// samePosix reports whether two PosixXAttr values are equal, comparing the
+// optional Mode by presence and value rather than by pointer address.
+func samePosix(a, b PosixXAttr) bool {
+	if a.Symlink != b.Symlink {
+		return false
+	}
+	if (a.Mode == nil) != (b.Mode == nil) {
+		return false
+	}
+	return a.Mode == nil || *a.Mode == *b.Mode
+}
+
 // TestPosixXAttrRoundTrip_Property verifies that a PosixXAttr with a non-zero
 // field survives a setPosixXAttr -> posixFromXAttr round-trip unchanged, and
 // that the set operation leaves every pre-existing sibling section in Extra
@@ -101,7 +124,7 @@ func TestPosixXAttrRoundTrip_Property(t *testing.T) {
 
 		// Apply setPosixXAttr with a generated non-zero Mode.
 		mode := rapid.Uint32Range(1, math.MaxUint32).Draw(t, "mode")
-		pfs := PosixXAttr{Mode: mode}
+		pfs := PosixXAttr{Mode: &mode}
 		setPosixXAttr(x, pfs)
 
 		// Round-trip: the value read back must equal the value written.
@@ -110,7 +133,7 @@ func TestPosixXAttrRoundTrip_Property(t *testing.T) {
 			t.Fatalf("posixFromXAttr returned nil after setPosixXAttr with Mode=%d", mode)
 			return
 		}
-		if *got != pfs {
+		if !samePosix(*got, pfs) {
 			t.Fatalf("round-trip mismatch: got %+v, want %+v", *got, pfs)
 		}
 
@@ -181,7 +204,7 @@ func TestBuildRevisionXAttrPreservesSiblings_Property(t *testing.T) {
 		}
 		priorMode := rapid.Uint32Range(0, 0o7777).Draw(t, "priorMode")
 		if priorMode != 0 {
-			setPosixXAttr(prior, PosixXAttr{Mode: priorMode})
+			setPosixXAttr(prior, PosixXAttr{Mode: &priorMode})
 		}
 
 		// Snapshot canonicalized sibling values before the merge.
@@ -196,7 +219,14 @@ func TestBuildRevisionXAttrPreservesSiblings_Property(t *testing.T) {
 		newBlocks := rapid.SliceOfN(rapid.Int64Range(0, 1<<20), 0, 5).Draw(t, "newBlocks")
 		newMode := rapid.Uint32().Draw(t, "newMode")
 
-		got := buildRevisionXAttr(prior, newMTime, newSize, newBlocks, newMode, false)
+		// The write path treats a mode whose low 12 bits are 0 as mode-less
+		// (nil), matching the pre-fix "0 means absent" convention this test was
+		// written under; any other value is a present mode.
+		var newModeArg *uint32
+		if newMode&0o7777 != 0 {
+			newModeArg = &newMode
+		}
+		got := buildRevisionXAttr(prior, newMTime, newSize, newBlocks, newModeArg, false)
 
 		// Common reflects the NEW revision, never the stale prior.
 		if got.Common.ModificationTime != newMTime {
@@ -231,11 +261,11 @@ func TestBuildRevisionXAttrPreservesSiblings_Property(t *testing.T) {
 		pfs := posixFromXAttr(got)
 		switch {
 		case effNew != 0:
-			if pfs == nil || pfs.Mode != effNew {
+			if pfs == nil || pfs.Mode == nil || *pfs.Mode != effNew {
 				t.Fatalf("POSIX mode = %v, want %d (new mode)", pfs, effNew)
 			}
 		case priorMode != 0:
-			if pfs == nil || pfs.Mode != priorMode {
+			if pfs == nil || pfs.Mode == nil || *pfs.Mode != priorMode {
 				t.Fatalf("inherited POSIX mode = %v, want %d (preserved)", pfs, priorMode)
 			}
 		default:
@@ -314,7 +344,7 @@ func TestPosixXAttrOmitEmpty_Property(t *testing.T) {
 		var priorPosixCanon string
 		if hasPriorPosix {
 			priorMode := rapid.Uint32Range(1, 0o7777).Draw(t, "prior_mode")
-			setPosixXAttr(x, PosixXAttr{Mode: priorMode})
+			setPosixXAttr(x, PosixXAttr{Mode: &priorMode})
 			priorPosixCanon = canonicalizeJSON(t, x.Extra[posixXAttrKey])
 		}
 
@@ -398,7 +428,7 @@ func TestPosixXAttrSymlinkRoundTrip_Property(t *testing.T) {
 
 		symlink := rapid.Bool().Draw(t, "symlink")
 		mode := rapid.Uint32Range(0, 0o7777).Draw(t, "mode")
-		pfs := PosixXAttr{Mode: mode, Symlink: symlink}
+		pfs := PosixXAttr{Mode: modePtr(mode), Symlink: symlink}
 		setPosixXAttr(x, pfs)
 
 		writesSection := symlink || mode != 0
@@ -411,7 +441,7 @@ func TestPosixXAttrSymlinkRoundTrip_Property(t *testing.T) {
 				t.Fatalf("posixFromXAttr returned nil after setPosixXAttr with %+v", pfs)
 				return
 			}
-			if *got != pfs {
+			if !samePosix(*got, pfs) {
 				t.Fatalf("round-trip mismatch: got %+v, want %+v", *got, pfs)
 			}
 

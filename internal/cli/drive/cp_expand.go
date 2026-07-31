@@ -218,7 +218,7 @@ func expandProtonRecursive(ctx context.Context, dc *drive.Client, src, dstBase *
 
 		// Collect preservation metadata for Proton→local.
 		if fileDst.pathType == PathLocal {
-			if m := entry.Link.Mode(); m != 0 {
+			if m, ok := entry.Link.Mode(); ok {
 				preserves = append(preserves, preserveEntry{
 					dstPath: fileDst.localPath,
 					mode:    os.FileMode(m),

@@ -40,7 +40,7 @@ type fataler interface {
 // Works with both *testing.T and *rapid.T via the fataler interface.
 func encryptXAttrT(t fataler, nodeKR, addrKR *crypto.KeyRing, common *proton.RevisionXAttrCommon, mode uint32) string {
 	x := proton.RevisionXAttr{Common: *common}
-	setPosixXAttr(&x, PosixXAttr{Mode: mode})
+	setPosixXAttr(&x, PosixXAttr{Mode: modePtr(mode)})
 	data, err := json.Marshal(x)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
@@ -205,7 +205,7 @@ func TestXAttrAccessorResolution_Property(t *testing.T) {
 		}
 
 		// Verify Mode() returns XAttr mode.
-		gotMode := link.Mode()
+		gotMode, _ := link.Mode()
 		if gotMode != xattrMode {
 			t.Fatalf("Mode() = %d, want %d (xattr)", gotMode, xattrMode)
 		}
@@ -218,9 +218,13 @@ func TestXAttrAccessorResolution_Property(t *testing.T) {
 			t.Fatal("resolvedMeta is nil after accessor call")
 			return
 		}
-		if m.size != xattrSize || m.mtime != xattrMtime || m.mode != xattrMode {
+		gotMetaMode := uint32(0)
+		if m.mode != nil {
+			gotMetaMode = *m.mode
+		}
+		if m.size != xattrSize || m.mtime != xattrMtime || gotMetaMode != xattrMode {
 			t.Fatalf("resolvedMeta fields mismatch: size=%d mtime=%d mode=%d",
-				m.size, m.mtime, m.mode)
+				m.size, m.mtime, gotMetaMode)
 		}
 	})
 }
@@ -278,9 +282,9 @@ func TestXAttrFallbackOnFailure_Property(t *testing.T) {
 			t.Fatalf("CreateTime() = %d, want %d (rev.CreateTime)", got, revCreateTime)
 		}
 
-		// Mode() returns 0 (no XAttr to decrypt).
-		if got := link.Mode(); got != 0 {
-			t.Fatalf("Mode() = %d, want 0 (fallback)", got)
+		// Mode() reports not-present (no XAttr to decrypt).
+		if _, present := link.Mode(); present {
+			t.Fatalf("Mode() present = true, want false (fallback)")
 		}
 	})
 }
@@ -337,7 +341,7 @@ func TestXAttrFolderLinkLevel_Property(t *testing.T) {
 		if got := link.ModifyTime(); got != xattrMtime {
 			t.Fatalf("folder ModifyTime() = %d, want %d", got, xattrMtime)
 		}
-		if got := link.Mode(); got != xattrMode {
+		if got, _ := link.Mode(); got != xattrMode {
 			t.Fatalf("folder Mode() = %d, want %d", got, xattrMode)
 		}
 
@@ -479,7 +483,7 @@ func TestXAttrSkipConditions_Property(t *testing.T) {
 		// Call all metadata accessors.
 		_ = link.Size()
 		_ = link.ModifyTime()
-		_ = link.Mode()
+		_, _ = link.Mode()
 
 		// Verify FetchRevisionXAttr was never called.
 		if n := resolver.fetchCount.Load(); n != 0 {
@@ -698,7 +702,7 @@ func TestXAttrCachingAfterResolution_Property(t *testing.T) {
 		if gotMtime != xattrMtime {
 			t.Fatalf("ModifyTime() = %d, want %d", gotMtime, xattrMtime)
 		}
-		gotMode := link.Mode()
+		gotMode, _ := link.Mode()
 		if gotMode != xattrMode {
 			t.Fatalf("Mode() = %d, want %d", gotMode, xattrMode)
 		}
@@ -1011,9 +1015,9 @@ func TestXAttrLegacyCommonModeFallback_Property(t *testing.T) {
 		// Pre-cache the keyring to bypass real crypto derivation in tests.
 		link.cachedKeyRing = kr
 
-		// The legacy Mode member must NOT be resolved: Mode() falls back to 0.
-		if got := link.Mode(); got != 0 {
-			t.Fatalf("Mode() = %d, want 0 (legacy Common.Mode must not resolve)", got)
+		// The legacy Mode member must NOT be resolved: Mode() reports absent.
+		if _, present := link.Mode(); present {
+			t.Fatalf("Mode() present = true, want false (legacy Common.Mode must not resolve)")
 		}
 
 		// The read must otherwise succeed: the typed Common still decodes, so
@@ -1161,10 +1165,10 @@ func TestXAttrPosixDegradation_Property(t *testing.T) {
 		// bypass real crypto derivation in tests.
 		link.cachedKeyRing = nodeKR
 
-		// The POSIX section never resolves: Mode() falls back to default (0),
-		// without error or panic.
-		if got := link.Mode(); got != 0 {
-			t.Fatalf("[%s] Mode() = %d, want 0 (default permissions)", degradation, got)
+		// The POSIX section never resolves: Mode() reports absent so the
+		// consumer applies the default, without error or panic.
+		if _, present := link.Mode(); present {
+			t.Fatalf("[%s] Mode() present = true, want false (default permissions)", degradation)
 		}
 
 		// size/mtime resolve from Common when the blob decodes (absent,

@@ -231,7 +231,7 @@ func runCp(cmd *cobra.Command, args []string) error {
 			})
 		}
 		if fileDst.pathType == PathLocal && srcEp.pathType == PathProton && srcEp.link != nil {
-			if m := srcEp.link.Mode(); m != 0 {
+			if m, ok := srcEp.link.Mode(); ok {
 				preserves = append(preserves, preserveEntry{
 					dstPath: fileDst.localPath,
 					mode:    os.FileMode(m),

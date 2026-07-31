@@ -118,7 +118,8 @@ func runStat(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("\nLink.Mode(): %04o (%d)\n", link.Mode(), link.Mode())
+	mode, present := link.Mode()
+	fmt.Printf("\nLink.Mode(): %04o (%d) present=%v\n", mode, mode, present)
 
 	return nil
 }

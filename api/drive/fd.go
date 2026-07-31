@@ -95,8 +95,11 @@ type FileDescriptor struct {
 	client *Client
 
 	// unixMode holds Unix permission bits (lower 12: 0o7777) to store
-	// in the revision XAttr on commit. Zero means "don't store" (omitempty).
-	unixMode uint32
+	// in the revision XAttr on commit. A nil pointer means "not set" — the
+	// commit preserves any inherited POSIX section. A non-nil pointer (even
+	// to 0) means the mode is present and must be persisted, so an explicit
+	// chmod 0000 is recorded rather than elided.
+	unixMode *uint32
 
 	// priorXAttr carries the previous active revision's decoded XAttr on the
 	// overwrite path (nil for a brand-new file), so the commit preserves
@@ -588,11 +591,15 @@ func (fd *FileDescriptor) Stat() FileInfo {
 }
 
 // SetMode sets the Unix permission bits to store in the revision XAttr.
-// Must be called before Close(). Zero means don't store (omitempty).
+// Must be called before Close(). Any call records the mode as present —
+// including SetMode(0) — so an explicit chmod 0000 persists. A plain upload
+// that never calls SetMode leaves the mode absent (nil), preserving inherited
+// POSIX metadata.
 func (fd *FileDescriptor) SetMode(mode uint32) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	fd.unixMode = mode
+	m := mode
+	fd.unixMode = &m
 }
 
 // Link returns the Link associated with this FD. For write-mode FDs

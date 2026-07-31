@@ -74,7 +74,7 @@ func TestNoPlaintextMetadataAtRest_Property(t *testing.T) {
 		for k, v := range siblings {
 			x.Extra[k] = v
 		}
-		setPosixXAttr(x, PosixXAttr{Mode: mode})
+		setPosixXAttr(x, PosixXAttr{Mode: &mode})
 
 		// Sanity: the PLAINTEXT marshaling really does carry every marker we
 		// claim is hidden. Without this, the negative assertions below would be
@@ -147,8 +147,8 @@ func TestNoPlaintextMetadataAtRest_Property(t *testing.T) {
 			t.Fatal("decrypted XAttr carries no POSIX section")
 			return
 		}
-		if gotPosix.Mode != mode {
-			t.Fatalf("decrypted POSIX mode = %d, want %d", gotPosix.Mode, mode)
+		if gotPosix.Mode == nil || *gotPosix.Mode != mode {
+			t.Fatalf("decrypted POSIX mode = %v, want %d", gotPosix.Mode, mode)
 		}
 		media, ok := dec.Extra["Media"]
 		if !ok {

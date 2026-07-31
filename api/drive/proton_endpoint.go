@@ -115,7 +115,10 @@ type ProtonWriter struct {
 	uploaded  map[int]uploadedBlock
 	totalSize int64
 	closed    bool // prevents double-commit
-	unixMode  uint32
+	// unixMode holds Unix permission bits to store in the revision XAttr on
+	// commit. nil = not set (inherited POSIX preserved); non-nil (even 0) =
+	// present, so an explicit chmod 0000 persists.
+	unixMode *uint32
 
 	// priorXAttr carries the previous active revision's decoded XAttr on the
 	// overwrite path (nil for a brand-new file), so the commit preserves
@@ -203,11 +206,15 @@ func (w *ProtonWriter) WriteBlock(ctx context.Context, index int, data []byte) e
 func (w *ProtonWriter) Describe() string { return w.linkID }
 
 // SetMode sets the Unix permission bits to store in the revision XAttr.
-// Must be called before Close(). Zero means "don't store" (omitempty).
+// Must be called before Close(). Any call records the mode as present —
+// including SetMode(0) — so an explicit chmod 0000 persists. A plain upload
+// that never calls SetMode leaves the mode absent (nil), preserving inherited
+// POSIX metadata.
 func (w *ProtonWriter) SetMode(mode uint32) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.unixMode = mode
+	m := mode
+	w.unixMode = &m
 }
 
 // Close commits the revision by signing the manifest and calling

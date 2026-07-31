@@ -850,9 +850,9 @@ func (n *FileNode) Getattr(_ context.Context) (fusemount.Attr, syscall.Errno) {
 		}, 0
 	}
 
-	mode := uint32(0600) // default
-	if m := l.Mode(); m != 0 {
-		mode = m & 0o7777 // mask to permission bits only
+	mode := uint32(0600) // default for absent mode
+	if m, ok := l.Mode(); ok {
+		mode = m & 0o7777 // present — use exactly, including 0000
 	}
 
 	//nolint:gosec // Size/ModifyTime/CreateTime are non-negative from API

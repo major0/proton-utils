@@ -250,7 +250,16 @@ func NewTestResolvedFileLink(name string, size int64, mode uint32) *Link {
 		},
 	}
 	l := NewTestLink(pLink, nil, nil, nil, name)
-	l.meta = &resolvedMeta{size: size, mode: mode}
+	// resolvedMeta.mode is *uint32 (presence model): a zero mode maps to nil
+	// (absent — consumers apply their default), a non-zero mode to a present
+	// pointer. This keeps the uint32 signature convenient for callers while
+	// preserving the absent-vs-present distinction.
+	m := &resolvedMeta{size: size}
+	if mode != 0 {
+		v := mode
+		m.mode = &v
+	}
+	l.meta = m
 	l.fetchDone = true
 	return l
 }

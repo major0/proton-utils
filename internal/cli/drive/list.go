@@ -387,15 +387,15 @@ func formatSize(size int64, opts listOpts) string {
 // formatMode returns the full 10-character mode string for a link, including
 // the leading type character: 'l' for a symlink, 'd' for a directory, '-' for
 // a regular file. A symlink always renders "lrwxrwxrwx" (0777), matching ls.
-// For other links, if the XAttr carries a non-zero Mode that value is used;
-// otherwise defaults apply: 0700 for directories, 0600 for files (matching
-// FUSE defaults).
+// For other links, a present mode is used exactly as stored (including 0000);
+// the defaults (0700 for directories, 0600 for files, matching FUSE defaults)
+// apply only when the mode is absent.
 func formatMode(link *drive.Link) string {
 	if link.IsSymlink() {
 		return "l" + os.FileMode(0777).String()[1:] // "lrwxrwxrwx"
 	}
-	mode := link.Mode()
-	if mode == 0 {
+	mode, ok := link.Mode()
+	if !ok {
 		if link.IsDir() {
 			mode = 0700
 		} else {

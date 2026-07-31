@@ -26,7 +26,7 @@ func encryptSymlinkXAttrT(t fataler, kr *crypto.KeyRing, mode uint32, symlink bo
 	x := proton.RevisionXAttr{
 		Common: proton.RevisionXAttrCommon{ModificationTime: "2024-01-01T00:00:00+0000"},
 	}
-	setPosixXAttr(&x, PosixXAttr{Mode: mode, Symlink: symlink})
+	setPosixXAttr(&x, PosixXAttr{Mode: modePtr(mode), Symlink: symlink})
 	data, err := json.Marshal(x)
 	if err != nil {
 		t.Fatalf("marshal symlink xattr: %v", err)
@@ -337,7 +337,7 @@ func TestSymlinkNoPlaintextTargetAtRest_Property(t *testing.T) {
 		for k, v := range siblings {
 			x.Extra[k] = v
 		}
-		setPosixXAttr(x, PosixXAttr{Mode: mode, Symlink: true})
+		setPosixXAttr(x, PosixXAttr{Mode: modePtr(mode), Symlink: true})
 
 		// Sanity: the plaintext XAttr carries the markers we claim are hidden,
 		// and — crucially — never the target (the target lives in content).
@@ -392,8 +392,12 @@ func TestSymlinkNoPlaintextTargetAtRest_Property(t *testing.T) {
 		if gotPosix == nil || !gotPosix.Symlink {
 			t.Fatalf("decrypted POSIX section = %+v, want Symlink=true", gotPosix)
 		}
-		if gotPosix.Mode != mode {
-			t.Fatalf("decrypted POSIX Mode = %d, want %d", gotPosix.Mode, mode)
+		if mode == 0 {
+			if gotPosix.Mode != nil {
+				t.Fatalf("decrypted POSIX Mode = %d, want absent", *gotPosix.Mode)
+			}
+		} else if gotPosix.Mode == nil || *gotPosix.Mode != mode {
+			t.Fatalf("decrypted POSIX Mode = %v, want %d", gotPosix.Mode, mode)
 		}
 		media, ok := dec.Extra["Media"]
 		if !ok || !strings.Contains(string(media), siblingSentinel) {
@@ -406,7 +410,7 @@ func TestSymlinkNoPlaintextTargetAtRest_Property(t *testing.T) {
 			t.Fatalf("symlink POSIX section lacks \"Symlink\":true: %s", x.Extra[posixXAttrKey])
 		}
 		normal := &proton.RevisionXAttr{}
-		setPosixXAttr(normal, PosixXAttr{Mode: mode | 1, Symlink: false})
+		setPosixXAttr(normal, PosixXAttr{Mode: modePtr(mode | 1), Symlink: false})
 		if raw, ok := normal.Extra[posixXAttrKey]; ok && bytes.Contains(raw, []byte("Symlink")) {
 			t.Fatalf("normal-file POSIX section carries a Symlink key: %s", raw)
 		}
