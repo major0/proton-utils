@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -98,15 +97,15 @@ func testSession(t *testing.T) *api.Session {
 	}
 }
 
+// TestGenerate_MockServer drives the Lumo 2.0 chat/completions path end to end:
+// it asserts the request lands on the new endpoint in the expected shape, then
+// replies with an encrypted delta and [DONE], and checks the delta is decrypted.
 func TestGenerate_MockServer(t *testing.T) {
 	pubKey, privKR := testKeyPair(t)
 
-	// The mock server decrypts the request key from the incoming request,
-	// then encrypts response token_data with that key + response AD.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify auth headers.
-		if got := r.Header.Get("x-pm-uid"); got != "test-uid-123" {
-			t.Errorf("x-pm-uid = %q, want %q", got, "test-uid-123")
+		if got := r.URL.Path; got != "/api/"+ChatEndpoint {
+			t.Errorf("path = %q, want %q", got, "/api/"+ChatEndpoint)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token-abc" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer test-token-abc")
@@ -115,43 +114,33 @@ func TestGenerate_MockServer(t *testing.T) {
 			t.Errorf("Accept = %q, want %q", got, "text/event-stream")
 		}
 
-		// Parse the request body to extract the request key and ID.
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Errorf("read body: %v", err)
-			http.Error(w, "bad body", http.StatusBadRequest)
-			return
+			t.Fatalf("read body: %v", err)
 		}
-		var req ChatEndpointGenerationRequest
+		var req chatCompletionsBody
 		if err := json.Unmarshal(body, &req); err != nil {
-			t.Errorf("unmarshal: %v", err)
-			http.Error(w, "bad json", http.StatusBadRequest)
-			return
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		if req.Model != chatModel {
+			t.Errorf("model = %q, want %q", req.Model, chatModel)
+		}
+		if !req.Stream {
+			t.Errorf("stream = false, want true")
+		}
+		if len(req.Messages) != 1 || !req.Messages[0].Encrypted {
+			t.Errorf("messages = %+v, want one encrypted message", req.Messages)
 		}
 
-		requestID := req.Prompt.RequestID
-		aesKey := decryptRequestKey(t, req.Prompt.RequestKey, privKR)
+		requestID := req.Lumo.RequestID
+		aesKey := decryptRequestKey(t, req.Lumo.RequestKey, privKR)
 		responseAD := []byte(ResponseAD(requestID))
-
-		// Encrypt a known plaintext for the response.
 		encContent := testEncryptAESGCM(t, []byte("Hello from Lumo"), aesKey, responseAD)
 
-		// Write SSE stream: queued → ingesting → encrypted token_data → done.
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-
-		lines := []string{
-			sseData(t, GenerationResponseMessage{Type: "queued"}),
-			sseData(t, GenerationResponseMessage{Type: "ingesting"}),
-			sseData(t, GenerationResponseMessage{
-				Type:      "token_data",
-				Target:    TargetMessage,
-				Content:   encContent,
-				Encrypted: true,
-			}),
-			sseData(t, GenerationResponseMessage{Type: "done"}),
-		}
-		_, _ = w.Write([]byte(strings.Join(lines, "")))
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q,\"encrypted\":true}}]}\n\n", encContent)
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
@@ -176,96 +165,84 @@ func TestGenerate_MockServer(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	// Verify we got all 4 messages.
-	if len(messages) != 4 {
-		t.Fatalf("got %d messages, want 4", len(messages))
+	if len(messages) != 2 {
+		t.Fatalf("got %d messages, want 2 (token_data, done)", len(messages))
 	}
-
-	// Verify the token_data was decrypted.
-	tokenMsg := messages[2]
-	if tokenMsg.Type != "token_data" {
-		t.Fatalf("message[2].Type = %q, want %q", tokenMsg.Type, "token_data")
+	token := messages[0]
+	if token.Type != "token_data" {
+		t.Fatalf("message[0].Type = %q, want token_data", token.Type)
 	}
-	if tokenMsg.Content != "Hello from Lumo" {
-		t.Fatalf("decrypted content = %q, want %q", tokenMsg.Content, "Hello from Lumo")
+	if token.Content != "Hello from Lumo" {
+		t.Fatalf("decrypted content = %q, want %q", token.Content, "Hello from Lumo")
 	}
-	if tokenMsg.Encrypted {
+	if token.Encrypted {
 		t.Fatal("token_data should be decrypted (Encrypted=false)")
 	}
-}
-
-func TestGenerate_Rejected(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "data: {\"type\":\"rejected\"}\n\n")
-	}))
-	defer srv.Close()
-
-	pubKey, _ := testKeyPair(t)
-	sess := testSession(t)
-	c := NewClient(sess)
-	c.BaseURL = srv.URL + "/api"
-
-	err := c.Generate(context.Background(), []Turn{
-		{Role: RoleUser, Content: "bad"},
-	}, GenerateOpts{LumoPubKey: pubKey})
-
-	if !errors.Is(err, ErrRejected) {
-		t.Fatalf("err = %v, want ErrRejected", err)
+	if messages[1].Type != "done" {
+		t.Fatalf("message[1].Type = %q, want done", messages[1].Type)
 	}
 }
 
+// TestGenerate_Harmful maps a content_filter finish_reason to ErrHarmful.
 func TestGenerate_Harmful(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "data: {\"type\":\"harmful\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"finish_reason\":\"content_filter\",\"delta\":{}}]}\n\n")
 	}))
 	defer srv.Close()
 
 	pubKey, _ := testKeyPair(t)
-	sess := testSession(t)
-	c := NewClient(sess)
+	c := NewClient(testSession(t))
 	c.BaseURL = srv.URL + "/api"
 
 	err := c.Generate(context.Background(), []Turn{
 		{Role: RoleUser, Content: "bad"},
 	}, GenerateOpts{LumoPubKey: pubKey})
-
 	if !errors.Is(err, ErrHarmful) {
 		t.Fatalf("err = %v, want ErrHarmful", err)
 	}
 }
 
-func TestGenerate_Timeout(t *testing.T) {
+// TestGenerate_ErrorEvent maps an error chunk to ErrStreamClosed.
+func TestGenerate_ErrorEvent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "data: {\"type\":\"timeout\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"error\":{\"message\":\"boom\",\"code\":\"server_error\"}}\n\n")
 	}))
 	defer srv.Close()
 
 	pubKey, _ := testKeyPair(t)
-	sess := testSession(t)
-	c := NewClient(sess)
+	c := NewClient(testSession(t))
 	c.BaseURL = srv.URL + "/api"
 
 	err := c.Generate(context.Background(), []Turn{
-		{Role: RoleUser, Content: "slow"},
+		{Role: RoleUser, Content: "x"},
 	}, GenerateOpts{LumoPubKey: pubKey})
-
-	if !errors.Is(err, ErrTimeout) {
-		t.Fatalf("err = %v, want ErrTimeout", err)
+	if !errors.Is(err, ErrStreamClosed) {
+		t.Fatalf("err = %v, want ErrStreamClosed", err)
 	}
 }
 
-// sseData serializes a message to an SSE data: line.
-func sseData(t *testing.T, msg GenerationResponseMessage) string {
-	t.Helper()
-	b, err := MarshalSSE(msg)
-	if err != nil {
-		t.Fatalf("MarshalSSE: %v", err)
+// TestGenerate_StreamClosed reports ErrStreamClosed when the stream ends without
+// a [DONE] marker.
+func TestGenerate_StreamClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n")
+	}))
+	defer srv.Close()
+
+	pubKey, _ := testKeyPair(t)
+	c := NewClient(testSession(t))
+	c.BaseURL = srv.URL + "/api"
+
+	err := c.Generate(context.Background(), []Turn{
+		{Role: RoleUser, Content: "x"},
+	}, GenerateOpts{LumoPubKey: pubKey})
+	if !errors.Is(err, ErrStreamClosed) {
+		t.Fatalf("err = %v, want ErrStreamClosed", err)
 	}
-	return string(b)
 }

@@ -84,41 +84,21 @@ func (c *Client) Generate(ctx context.Context, turns []Turn, opts GenerateOpts) 
 	}
 
 	targets := opts.Targets
-	if targets == nil {
+	if len(targets) == 0 {
 		targets = []GenerationTarget{TargetMessage}
 	}
 
-	var options *Options
-	if len(opts.Tools) > 0 {
-		options = &Options{Tools: opts.Tools}
-	}
+	reqBody := buildChatCompletionsBody(turns, opts.Tools, targets[0], encKey, requestID)
 
-	req := ChatEndpointGenerationRequest{
-		Prompt: GenerationRequest{
-			Type:       "generation_request",
-			Turns:      turns,
-			Options:    options,
-			Targets:    targets,
-			RequestKey: encKey,
-			RequestID:  requestID,
-		},
-	}
-
-	body, err := c.Session.DoSSE(ctx, c.url("/ai/v1/chat"), req)
+	body, err := c.Session.DoSSE(ctx, c.url("/"+ChatEndpoint), reqBody)
 	if err != nil {
 		return fmt.Errorf("lumo: chat request: %w", err)
 	}
 	defer func() { _ = body.Close() }()
 
-	var proc StreamProcessor
-	return proc.Process(ctx, body, func(msg GenerationResponseMessage) {
+	return processV2Stream(ctx, body, func(msg GenerationResponseMessage) {
 		if msg.Type == "token_data" && msg.Encrypted {
 			if err := DecryptTokenData(&msg, key, requestID); err != nil {
-				return
-			}
-		}
-		if msg.Type == "image_data" && msg.Encrypted {
-			if err := DecryptImageData(&msg, key, requestID); err != nil {
 				return
 			}
 		}
