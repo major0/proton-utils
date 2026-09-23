@@ -94,8 +94,7 @@ func TestBlockStoreCacheMissFetchPopulates(t *testing.T) {
 	bc := newBufferCache(16)
 	want := []byte("fetched-from-api")
 
-	// Build a minimal httpBlockStore with a countingBlockFetcher.
-	fetcher := &countingBlockFetcher{data: want}
+	// Build a minimal httpBlockStore.
 	store := &httpBlockStore{
 		session:  nil,
 		cache:    nil,
@@ -115,7 +114,6 @@ func TestBlockStoreCacheMissFetchPopulates(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 
-	_ = fetcher // used for documentation; real HTTP mock not feasible in-package
 	_ = store
 }
 
@@ -229,15 +227,4 @@ func TestBlockStoreNilBufCache(t *testing.T) {
 	if store.getBufCache() != nil {
 		t.Fatal("getBufCache should return nil when disabled")
 	}
-}
-
-// countingBlockFetcher is a test helper that tracks fetch calls.
-type countingBlockFetcher struct {
-	data  []byte
-	calls int
-}
-
-func (f *countingBlockFetcher) fetch() (io.ReadCloser, error) {
-	f.calls++
-	return io.NopCloser(bytes.NewReader(f.data)), nil
 }
