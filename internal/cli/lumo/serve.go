@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ type serveFlags struct {
 	tlsCert   string
 	tlsKey    string
 	noTLS     bool
+	webSearch bool
 }
 
 var sFlags serveFlags
@@ -46,6 +48,10 @@ func init() {
 	if v := os.Getenv("LUMO_API_KEY"); v != "" {
 		apiKeyDefault = v
 	}
+	webSearchDefault := false
+	if v := os.Getenv("LUMO_WEB_SEARCH"); v == "1" || strings.EqualFold(v, "true") {
+		webSearchDefault = true
+	}
 
 	serveCmd.Flags().StringVar(&sFlags.addr, "addr", addrDefault, "Listen address and port [$LUMO_ENDPOINT]")
 	serveCmd.Flags().StringVar(&sFlags.apiKey, "api-key", apiKeyDefault, "Use this API key (not persisted) [$LUMO_API_KEY]")
@@ -53,6 +59,7 @@ func init() {
 	serveCmd.Flags().StringVar(&sFlags.tlsCert, "tls-cert", "", "Custom TLS certificate path")
 	serveCmd.Flags().StringVar(&sFlags.tlsKey, "tls-key", "", "Custom TLS key path")
 	serveCmd.Flags().BoolVar(&sFlags.noTLS, "no-tls", false, "Disable TLS, serve plain HTTP")
+	serveCmd.Flags().BoolVar(&sFlags.webSearch, "web-search", webSearchDefault, "Enable Lumo's native web search tool [$LUMO_WEB_SEARCH]")
 }
 
 func runServe(cmd *cobra.Command, _ []string) error {
@@ -76,7 +83,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/chat/completions", chatHandler(client))
+	mux.HandleFunc("POST /v1/chat/completions", chatHandler(client, sFlags.webSearch))
 	mux.HandleFunc("GET /v1/models", modelsHandler())
 
 	handler := authMiddleware(apiKey, loggingMiddleware(mux))

@@ -13,9 +13,20 @@ import (
 	"github.com/major0/proton-utils/api/lumo"
 )
 
+// webSearchTools returns the tool list to pass to Generate: Lumo's native
+// web_search when enabled, otherwise none. Kept in one place so the streaming
+// and non-streaming paths request the same tools.
+func webSearchTools(enabled bool) []lumo.ToolName {
+	if enabled {
+		return []lumo.ToolName{lumo.ToolWebSearch}
+	}
+	return nil
+}
+
 // chatHandler returns an http.HandlerFunc that proxies OpenAI-format chat
-// completion requests to Lumo via the provided client.
-func chatHandler(client *lumo.Client) http.HandlerFunc {
+// completion requests to Lumo via the provided client. When webSearch is set,
+// Lumo's native web_search tool is enabled for every request.
+func chatHandler(client *lumo.Client, webSearch bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req lumo.ChatCompletionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -28,15 +39,15 @@ func chatHandler(client *lumo.Client) http.HandlerFunc {
 		model := "lumo"
 
 		if req.Stream {
-			streamResponse(r.Context(), w, client, turns, id, model)
+			streamResponse(r.Context(), w, client, turns, id, model, webSearch)
 		} else {
-			nonStreamResponse(r.Context(), w, client, turns, id, model)
+			nonStreamResponse(r.Context(), w, client, turns, id, model, webSearch)
 		}
 	}
 }
 
 // streamResponse handles streaming (SSE) chat completions.
-func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Client, turns []lumo.Turn, id, model string) {
+func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Client, turns []lumo.Turn, id, model string, webSearch bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "server_error", "Streaming not supported")
@@ -49,6 +60,7 @@ func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Cli
 	w.WriteHeader(http.StatusOK)
 
 	err := client.Generate(ctx, turns, lumo.GenerateOpts{
+		Tools: webSearchTools(webSearch),
 		ChunkCallback: func(msg lumo.GenerationResponseMessage) {
 			chunk, ok := ChunkToSSEEvent(msg, id, model)
 			if !ok {
@@ -84,10 +96,11 @@ func streamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Cli
 }
 
 // nonStreamResponse handles non-streaming chat completions.
-func nonStreamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Client, turns []lumo.Turn, id, model string) {
+func nonStreamResponse(ctx context.Context, w http.ResponseWriter, client *lumo.Client, turns []lumo.Turn, id, model string, webSearch bool) {
 	var content strings.Builder
 
 	err := client.Generate(ctx, turns, lumo.GenerateOpts{
+		Tools: webSearchTools(webSearch),
 		ChunkCallback: func(msg lumo.GenerationResponseMessage) {
 			if msg.Type == "token_data" && msg.Content != "" {
 				content.WriteString(msg.Content)
