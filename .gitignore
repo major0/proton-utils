@@ -22,6 +22,10 @@
 go.work
 go.work.sum
 
+# Python bytecode, from the pre-commit hook scripts under .github/scripts
+__pycache__/
+*.py[cod]
+
 # env file
 .env
 
