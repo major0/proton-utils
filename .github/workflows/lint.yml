@@ -15,7 +15,13 @@ jobs:
     - uses: actions/setup-go@v5
       with:
         go-version: '1.26'
+    - name: Install Go tools
+      run: .github/scripts/install-go-tools.sh
     - uses: golangci/golangci-lint-action@v7
       with:
-        version: v2.11.4
+        # install-mode 'none' makes the action use the golangci-lint already on
+        # PATH, installed by the step above. The version is therefore declared
+        # only in install-go-tools.sh, so this job, the pre-commit job, and a
+        # local checkout all lint with the same binary.
+        install-mode: none
         args: --config ${{ github.workspace }}/.golangci.yml
