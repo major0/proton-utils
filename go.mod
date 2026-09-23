@@ -1,6 +1,6 @@
 module github.com/major0/proton-utils
 
-go 1.26.1
+go 1.26.8
 
 require (
 	github.com/ProtonMail/go-proton-api v0.4.0
