@@ -5,7 +5,7 @@ BINDIR          ?= $(PREFIX)/bin
 SBINDIR         ?= $(PREFIX)/sbin
 UNITDIR_USER    ?= $(PREFIX)/lib/systemd/user
 
-.PHONY: test coverage coverage-html coverage-func lint fmt vet mod-tidy mod-verify \
+.PHONY: tools test coverage coverage-html coverage-func lint fmt vet mod-tidy mod-verify \
         build clean help \
         install install-proton-cli install-protonfs
 
@@ -13,6 +13,7 @@ help:
 	@echo "proton Development Targets"
 	@echo "=========================="
 	@echo ""
+	@echo "  tools             - Install pinned Go dev tools (goimports, golangci-lint)"
 	@echo "  test              - Run all tests"
 	@echo "  coverage          - Generate coverage profile"
 	@echo "  coverage-html     - Generate HTML coverage report"
@@ -46,6 +47,12 @@ coverage-html: coverage
 
 coverage-func: coverage
 	go tool cover -func=coverage.out
+
+# Installs the versions pinned in the script, which is the same script CI runs.
+# Without this a local checkout has no way to learn which linter version the
+# repository expects, and pre-commit then disagrees with CI.
+tools:
+	.github/scripts/install-go-tools.sh
 
 lint:
 	golangci-lint run --config .golangci.yml ./...
