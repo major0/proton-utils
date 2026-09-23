@@ -12,12 +12,28 @@ repos:
       - id: go-fmt
       - id: go-imports
       - id: no-go-testing
-      - id: golangci-lint
-  # Local hook replaces the upstream go-unit-tests which hard-codes a
-  # 30s timeout (too short for property-based tests on cold cache) and
-  # uses -v (produces enormous race-detector noise from go-fuse).
+  # Local hooks replace two upstream dnephin hooks whose hard-coded flags are
+  # wrong for this repository.
+  #
+  # golangci-lint: upstream hard-codes --new-from-rev HEAD, which in CI diffs
+  # the pull request head against itself and so blames a pull request for
+  # pre-existing findings anywhere in the module. lint_diff.py uses the refs
+  # pre-commit already exports so CI compares against the pull request base.
+  # It is Python rather than shell because pre-commit guarantees Python and
+  # this repository is built for Windows as well as Unix.
+  #
+  # go-unit-tests: upstream hard-codes a 30s timeout (too short for
+  # property-based tests on cold cache) and uses -v (produces enormous
+  # race-detector noise from go-fuse).
   - repo: local
     hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: python .github/scripts/lint_diff.py
+        language: python
+        pass_filenames: false
+        types: [go]
+        require_serial: true
       - id: go-unit-tests
         name: go unit tests
         entry: go test -short -timeout 120s -count=1 ./...
